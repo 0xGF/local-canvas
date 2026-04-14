@@ -28,7 +28,7 @@ function NavSection({
   pathname: string;
 }) {
   return (
-    <div className="mb-4">
+    <div className="mb-8">
       {title && (
         <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider pl-3 mb-1.5">
           {title}

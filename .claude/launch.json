@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "test-app",
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": ["-c", "cd test-app && PATH=/opt/homebrew/bin:/Users/0xgf/.bun/bin:$PATH npx vite --port 4200"],
+      "port": 4200,
+      "autoPort": false
+    },
+    {
+      "name": "local-canvas",
+      "runtimeExecutable": "/opt/homebrew/bin/node",
+      "runtimeArgs": ["dist/cli/index.js", "dev", "--target", "4200", "--port", "4400", "--root", "test-app"],
+      "port": 4400,
+      "autoPort": false
+    }
+  ]
+}

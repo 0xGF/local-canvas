@@ -36,4 +36,4 @@ done
 # Start proxy (foreground — Ctrl+C kills everything)
 echo "Starting editor on :3001..."
 trap 'kill $(jobs -p) 2>/dev/null' EXIT
-node dist/cli/index.js dev
+node dist/cli/index.js dev --root test-app

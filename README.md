@@ -66,22 +66,16 @@ The Babel plugin injects `data-source-file`, `data-source-line`, and `data-sourc
 
 ## Architecture
 
-```
-Browser                          Server
-  |                                |
-  |  Shadow DOM Overlay            |
-  |  (React app in shadow root)   |
-  |                                |
-  |  Canvas Layer                  |
-  |  (selection, badges, handles)  |
-  |                                |
-  |  --- WebSocket (mutations) --> |
-  |                                |  ts-morph (AST)
-  |  <-- HMR (file changed) ----- |  writes to disk
-  |                                |
-  |  Iframe (breakpoint preview)   |
-  |  (320px / 768px / 1280px)      |
-```
+Local Canvas has three parts:
+
+**HTTP Proxy** sits between your browser and dev server. It forwards all requests and injects the overlay script into HTML responses. Your app runs normally — the proxy just adds the editing layer on top.
+
+**Shadow DOM Overlay** renders inside an isolated Shadow DOM (z-index 2147483647) so your app's styles never conflict. Inside it:
+- A **canvas layer** draws selection highlights, spacing badges, resize handles, and drag indicators using the HTML-in-Canvas API (`drawElementImage`) with manual fallback. Text measurement uses [@chenglou/pretext](https://github.com/chenglou/pretext) for DOM-free layout without triggering reflows
+- A **React app** renders the toolbar, properties panel, context menu, and floating inputs
+- An **iframe** shows your page at different breakpoint widths for responsive editing
+
+**WebSocket + ts-morph** handles the actual code changes. When you drag a spacing handle or change a property, a mutation is sent over WebSocket. The server uses ts-morph to find the exact JSX element in your source file and modify its className. The file is saved to disk, your dev server's HMR picks it up, and the page updates live.
 
 ## MCP Server
 

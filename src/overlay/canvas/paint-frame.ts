@@ -394,23 +394,25 @@ export function paintFrame(
       // When margin or padding is 0 on a side, add thin invisible hit zones along the edge
       // so users can drag from zero to add spacing.
       const EDGE_THICKNESS = 12;
+      const CORNER_INSET = 20; // keep corners clear for resize handles
       const addZeroHandle = (cssVal: number, type: "margin" | "padding", side: "top" | "right" | "bottom" | "left") => {
-        if (cssVal > 0) return; // Skip if spacing already exists (has a badge)
+        if (cssVal > 0) return;
         const prefix = SIDE_PREFIX[type][side];
+        const isVert = side === "top" || side === "bottom";
         let hx: number, hy: number, hw: number, hh: number;
         if (type === "padding") {
-          // Padding handles are just inside the element border
-          if (side === "top") { hx = r.left; hy = r.top; hw = r.width; hh = EDGE_THICKNESS; }
-          else if (side === "bottom") { hx = r.left; hy = r.top + r.height - EDGE_THICKNESS; hw = r.width; hh = EDGE_THICKNESS; }
-          else if (side === "left") { hx = r.left; hy = r.top; hw = EDGE_THICKNESS; hh = r.height; }
-          else { hx = r.left + r.width - EDGE_THICKNESS; hy = r.top; hw = EDGE_THICKNESS; hh = r.height; }
+          if (side === "top") { hx = r.left + CORNER_INSET; hy = r.top; hw = r.width - CORNER_INSET * 2; hh = EDGE_THICKNESS; }
+          else if (side === "bottom") { hx = r.left + CORNER_INSET; hy = r.top + r.height - EDGE_THICKNESS; hw = r.width - CORNER_INSET * 2; hh = EDGE_THICKNESS; }
+          else if (side === "left") { hx = r.left; hy = r.top + CORNER_INSET; hw = EDGE_THICKNESS; hh = r.height - CORNER_INSET * 2; }
+          else { hx = r.left + r.width - EDGE_THICKNESS; hy = r.top + CORNER_INSET; hw = EDGE_THICKNESS; hh = r.height - CORNER_INSET * 2; }
         } else {
-          // Margin handles are just outside the element border
-          if (side === "top") { hx = r.left; hy = r.top - EDGE_THICKNESS; hw = r.width; hh = EDGE_THICKNESS; }
-          else if (side === "bottom") { hx = r.left; hy = r.top + r.height; hw = r.width; hh = EDGE_THICKNESS; }
-          else if (side === "left") { hx = r.left - EDGE_THICKNESS; hy = r.top; hw = EDGE_THICKNESS; hh = r.height; }
-          else { hx = r.left + r.width; hy = r.top; hw = EDGE_THICKNESS; hh = r.height; }
+          if (side === "top") { hx = r.left + CORNER_INSET; hy = r.top - EDGE_THICKNESS; hw = r.width - CORNER_INSET * 2; hh = EDGE_THICKNESS; }
+          else if (side === "bottom") { hx = r.left + CORNER_INSET; hy = r.top + r.height; hw = r.width - CORNER_INSET * 2; hh = EDGE_THICKNESS; }
+          else if (side === "left") { hx = r.left - EDGE_THICKNESS; hy = r.top + CORNER_INSET; hw = EDGE_THICKNESS; hh = r.height - CORNER_INSET * 2; }
+          else { hx = r.left + r.width; hy = r.top + CORNER_INSET; hw = EDGE_THICKNESS; hh = r.height - CORNER_INSET * 2; }
         }
+        // Skip if element too small for inset
+        if (hw <= 0 || hh <= 0) return;
         badges.push({ x: hx, y: hy, w: hw, h: hh, type, side, value: 0, prefix });
 
         // Only draw dashed line indicator when mouse is hovering near the edge

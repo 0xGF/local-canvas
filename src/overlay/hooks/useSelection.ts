@@ -11,56 +11,31 @@ import { wasDragRecent } from "../utils/drag-state.js";
  * Triggers refreshSelection immediately when className is updated externally.
  */
 function useClassObserver() {
-  const mutationObserverRef = useRef<MutationObserver | null>(null);
-  const resizeObserverRef = useRef<ResizeObserver | null>(null);
-  const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const observerRef = useRef<MutationObserver | null>(null);
   const observedElRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    const unsub = useEditorStore.subscribe((state, prev) => {
+    const unsub = useEditorStore.subscribe((state) => {
       const el = state.selectedElement?.element;
-      const prevEl = prev.selectedElement?.element;
 
-      // Only re-attach observers when the actual element changes, not just rect
       if (el === observedElRef.current) return;
       observedElRef.current = el || null;
 
-      // Clean up previous observers
-      mutationObserverRef.current?.disconnect();
-      mutationObserverRef.current = null;
-      resizeObserverRef.current?.disconnect();
-      resizeObserverRef.current = null;
-      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+      observerRef.current?.disconnect();
+      observerRef.current = null;
 
       if (!el || !el.isConnected) return;
 
-      // Watch for class attribute changes (HMR)
-      mutationObserverRef.current = new MutationObserver(() => {
+      // Watch for class attribute changes (HMR updates)
+      observerRef.current = new MutationObserver(() => {
         useEditorStore.getState().refreshSelection();
       });
-      mutationObserverRef.current.observe(el, { attributes: true, attributeFilter: ["class"] });
-
-      // Watch for size changes — only refresh if rect actually changed
-      let lastRectStr = "";
-      resizeObserverRef.current = new ResizeObserver(() => {
-        if (!el.isConnected) return;
-        const r = el.getBoundingClientRect();
-        const rectStr = `${r.left},${r.top},${r.width},${r.height}`;
-        if (rectStr === lastRectStr) return; // No actual change
-        lastRectStr = rectStr;
-        if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
-        resizeTimerRef.current = setTimeout(() => {
-          useEditorStore.getState().refreshSelection();
-        }, 200);
-      });
-      resizeObserverRef.current.observe(el);
+      observerRef.current.observe(el, { attributes: true, attributeFilter: ["class"] });
     });
 
     return () => {
       unsub();
-      mutationObserverRef.current?.disconnect();
-      resizeObserverRef.current?.disconnect();
-      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+      observerRef.current?.disconnect();
     };
   }, []);
 }

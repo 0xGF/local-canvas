@@ -3,8 +3,12 @@
  *
  * In edit mode, page content renders inside an iframe in the shadow DOM.
  * Events inside iframes don't bubble to the parent document. This utility
- * attaches event listeners to the iframe document and optionally translates
- * coordinates from iframe-local to parent viewport space.
+ * attaches event listeners to the iframe document and translates coordinates
+ * from iframe-local to parent viewport space.
+ *
+ * Parent document handlers are guarded: they skip events when the cursor is
+ * over the iframe, since the iframe handler handles those with proper
+ * coordinate translation.
  */
 
 const OVERLAY_HOST_ID = "local-canvas-host";
@@ -22,7 +26,7 @@ export function getIframeDocument(): Document | null {
   try {
     return getEditorIframe()?.contentDocument ?? null;
   } catch {
-    return null; // Cross-origin iframe
+    return null;
   }
 }
 
@@ -40,6 +44,9 @@ interface AttachOptions {
  * Attach event listeners to both the parent document and iframe document.
  * Handles iframe remounting (breakpoint changes) via polling.
  *
+ * Parent handlers are guarded to skip when the cursor is inside the iframe area.
+ * Iframe handlers translate coordinates to parent viewport space.
+ *
  * Returns a cleanup function.
  */
 export function attachToDocumentAndIframe(
@@ -48,22 +55,38 @@ export function attachToDocumentAndIframe(
 ): () => void {
   const { translateCoords = false, capture = true } = opts;
   let iframeDoc: Document | null = null;
-  const wrappedHandlers: Array<{ event: EventName; handler: Listener }> = [];
 
-  // Attach to parent document
+  // --- Parent document handlers (guarded) ---
+  const parentHandlers: Array<{ event: EventName; handler: Listener }> = [];
+
   for (const { event, handler } of events) {
-    document.addEventListener(event, handler, capture);
+    const guarded = (e: Event) => {
+      // Skip mouse events when cursor is over the iframe — iframe handler covers those
+      if (e instanceof MouseEvent && e.isTrusted) {
+        const iframe = getEditorIframe();
+        if (iframe) {
+          const ir = iframe.getBoundingClientRect();
+          if (e.clientX >= ir.left && e.clientX <= ir.right &&
+              e.clientY >= ir.top && e.clientY <= ir.bottom) {
+            return;
+          }
+        }
+      }
+      handler(e);
+    };
+    document.addEventListener(event, guarded, capture);
+    parentHandlers.push({ event, handler: guarded });
   }
 
-  // Create wrapped handlers for iframe (coordinate translation)
+  // --- Iframe handlers (coordinate translation) ---
+  const iframeHandlers: Array<{ event: EventName; handler: Listener }> = [];
+
   function wrapHandler(handler: Listener): Listener {
     if (!translateCoords) return handler;
     return (e: MouseEvent) => {
       const iframe = getEditorIframe();
       if (!iframe) return;
       const ir = iframe.getBoundingClientRect();
-      // Scale iframe-local coords to screen coords.
-      // iframe renders at natural width but is displayed smaller/larger by CSS transform.
       const naturalW = parseInt(iframe.style.width) || ir.width;
       const scale = ir.width / naturalW;
       const translated = new MouseEvent(e.type, {
@@ -85,12 +108,12 @@ export function attachToDocumentAndIframe(
   }
 
   for (const { event, handler } of events) {
-    wrappedHandlers.push({ event, handler: wrapHandler(handler) });
+    iframeHandlers.push({ event, handler: wrapHandler(handler) });
   }
 
   function detachIframe() {
     if (!iframeDoc) return;
-    for (const { event, handler } of wrappedHandlers) {
+    for (const { event, handler } of iframeHandlers) {
       try { iframeDoc.removeEventListener(event, handler, capture); } catch { /* ignore */ }
     }
   }
@@ -100,7 +123,7 @@ export function attachToDocumentAndIframe(
     if (doc && doc !== iframeDoc) {
       detachIframe();
       iframeDoc = doc;
-      for (const { event, handler } of wrappedHandlers) {
+      for (const { event, handler } of iframeHandlers) {
         try { iframeDoc.addEventListener(event, handler, capture); } catch { /* cross-origin */ }
       }
     }
@@ -111,7 +134,7 @@ export function attachToDocumentAndIframe(
 
   return () => {
     clearInterval(poll);
-    for (const { event, handler } of events) {
+    for (const { event, handler } of parentHandlers) {
       document.removeEventListener(event, handler, capture);
     }
     detachIframe();

@@ -5,6 +5,14 @@ import { PortalContainerProvider } from "./lib/portal-container.js";
 import { createOverlayContainer, injectStyles } from "./utils/shadow-dom.js";
 import styles from "./styles.css?inline";
 
+// Suppress ResizeObserver loop error — benign, caused by layout settling across frames
+window.addEventListener("error", (e) => {
+  if (e.message?.includes("ResizeObserver loop")) {
+    e.stopImmediatePropagation();
+    e.preventDefault();
+  }
+});
+
 function bootstrap() {
   // Never run inside iframes (prevents recursive canvas-in-canvas)
   if (window.parent !== window) return;

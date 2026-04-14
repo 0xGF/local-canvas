@@ -1,0 +1,16 @@
+export const THEME = {
+  bg: "#1e1e1e",
+  bgAlt: "#2c2c2c",
+  bgHover: "#363636",
+  fg: "#e0e0e0",
+  fgDim: "#8c8c8c",
+  fgMuted: "#5c5c5c",
+  border: "#3a3a3a",
+  borderLight: "#2f2f2f",
+  accent: "#0c8ce9",
+  success: "#14ae5c",
+  danger: "#f24822",
+  warning: "#ffb800",
+  mono: "'SF Mono','Fira Code','Fira Mono',monospace",
+  font: "-apple-system,BlinkMacSystemFont,'Inter',sans-serif",
+} as const;

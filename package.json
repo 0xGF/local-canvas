@@ -1,0 +1,102 @@
+{
+  "name": "local-canvas",
+  "version": "0.1.0",
+  "description": "Visual editor for React apps that writes to source code",
+  "type": "module",
+  "bin": {
+    "local-canvas": "./bin/local-canvas.js"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./babel": {
+      "types": "./dist/plugin/babel-transform.d.ts",
+      "import": "./dist/plugin/babel-transform.mjs",
+      "require": "./dist/plugin/babel-transform.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin/vite.d.ts",
+      "import": "./dist/plugin/vite.mjs",
+      "require": "./dist/plugin/vite.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && npm run build:overlay",
+    "build:server": "tsup",
+    "build:overlay": "vite build --config overlay.vite.config.ts",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test-app": "npm run dev --prefix test-app",
+    "test-app:canvas": "npm run build && node dist/cli/index.js dev",
+    "start": "bash bin/start.sh"
+  },
+  "dependencies": {
+    "@babel/core": "^7.24.0",
+    "@babel/plugin-syntax-jsx": "^7.24.0",
+    "@babel/plugin-syntax-typescript": "^7.24.0",
+    "@chenglou/pretext": "^0.0.5",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0",
+    "http-proxy": "^1.18.0",
+    "open": "^10.0.0",
+    "ts-morph": "^23.0.0",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@radix-ui/react-collapsible": "^1.1.12",
+    "@radix-ui/react-popover": "^1.1.15",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-separator": "^1.1.8",
+    "@radix-ui/react-slider": "^1.3.6",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-toggle-group": "^1.1.11",
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/http-proxy": "^1.17.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/ws": "^8.5.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "autoprefixer": "^10.4.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.0",
+    "framer-motion": "^12.38.0",
+    "jsdom": "^29.0.2",
+    "lucide-react": "^0.400.0",
+    "postcss": "^8.4.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tailwind-merge": "^2.3.0",
+    "tailwindcss": "^3.4.0",
+    "tailwindcss-animate": "^1.0.7",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.0.0",
+    "vitest": "^4.1.3",
+    "zustand": "^4.5.0"
+  },
+  "peerDependencies": {
+    "vite": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
+  }
+}

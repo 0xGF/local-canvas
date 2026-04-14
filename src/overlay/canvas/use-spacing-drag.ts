@@ -143,13 +143,23 @@ export function useSpacingDrag(
       if (ro) {
         const parent = ro.el.parentElement;
         if (!parent) return;
+        // Translate iframe-local rects to screen space
+        const sel = useEditorStore.getState().selectedElement;
+        const iframeEl = sel?.iframeRef as HTMLIFrameElement | undefined;
+        let oy = 0, ifs = 1;
+        if (iframeEl) {
+          const ir = iframeEl.getBoundingClientRect();
+          const naturalW = parseInt(iframeEl.style.width) || ir.width;
+          ifs = ir.width / naturalW;
+          oy = ir.top;
+        }
         const children = Array.from(parent.children).filter(c => c !== ro.el);
         let closestIdx = 0, closestDist = Infinity, closestRect: DOMRect | null = null;
         children.forEach((child, idx) => {
           const cr = child.getBoundingClientRect();
-          const mid = cr.top + cr.height / 2;
-          const dist = Math.abs(e.clientY - mid);
-          if (dist < closestDist) { closestDist = dist; closestIdx = e.clientY > mid ? idx + 1 : idx; closestRect = cr; }
+          const screenMid = cr.top * ifs + oy + (cr.height * ifs) / 2;
+          const dist = Math.abs(e.clientY - screenMid);
+          if (dist < closestDist) { closestDist = dist; closestIdx = e.clientY > screenMid ? idx + 1 : idx; closestRect = cr; }
         });
         ro.insertionIndex = closestIdx;
         ro.insertionRect = closestRect;

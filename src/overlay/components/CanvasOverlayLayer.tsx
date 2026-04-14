@@ -147,9 +147,12 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
       const ro = reorderRef.current;
       if (ro && ro.insertionRect) {
         const ir = ro.insertionRect;
-        const lineY = ir.top - 1;
-        const lineLeft = ir.left;
-        const lineRight = ir.left + ir.width;
+        // Translate iframe-local coords to screen space
+        const ifs3 = iframeOffset.scale ?? 1;
+        const ox3 = iframeOffset.x, oy3 = iframeOffset.y;
+        const lineY = ir.top * ifs3 + oy3 - 1;
+        const lineLeft = ir.left * ifs3 + ox3;
+        const lineRight = (ir.left + ir.width) * ifs3 + ox3;
 
         ctx!.save();
         // Main line

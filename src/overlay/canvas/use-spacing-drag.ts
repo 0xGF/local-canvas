@@ -92,6 +92,9 @@ export function useSpacingDrag(
           e.stopPropagation();
           reorderRef.current = { el: sel.element, startY: e.clientY, insertionIndex: null, insertionRect: null };
           document.body.style.cursor = "grabbing";
+          // Ghost effect — fade the element being dragged
+          sel.element.style.opacity = "0.4";
+          sel.element.style.transition = "opacity 0.15s";
         }
       }
     }
@@ -263,15 +266,22 @@ export function useSpacingDrag(
       }
 
       const ro = reorderRef.current;
-      if (ro && ro.insertionIndex !== null) {
-        const parent = ro.el.parentElement;
-        if (parent) {
-          const parentSource = resolveSource(parent);
-          if (parentSource) {
-            const children = Array.from(parent.children);
-            const fromIndex = children.indexOf(ro.el);
-            if (fromIndex !== -1 && fromIndex !== ro.insertionIndex) {
-              sendMutation({ type: "reorder", source: parentSource, fromIndex, toIndex: ro.insertionIndex } as any).then(() => incrementPending());
+      if (ro) {
+        // Restore opacity
+        ro.el.style.opacity = "";
+        ro.el.style.transition = "";
+
+        if (ro.insertionIndex !== null) {
+          const parent = ro.el.parentElement;
+          if (parent) {
+            const parentSource = resolveSource(parent);
+            if (parentSource) {
+              const children = Array.from(parent.children);
+              const fromIndex = children.indexOf(ro.el);
+              if (fromIndex !== -1 && fromIndex !== ro.insertionIndex) {
+                markDragEnd();
+                sendMutation({ type: "reorder", source: parentSource, fromIndex, toIndex: ro.insertionIndex } as any).then(() => incrementPending());
+              }
             }
           }
         }

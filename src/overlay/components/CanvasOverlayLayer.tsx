@@ -62,7 +62,7 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
       const viewport = useViewportStore.getState();
 
       // Dirty-check: skip repaint if nothing changed
-      const isDragging = spacingDragRef.current?.moved;
+      const isDragging = spacingDragRef.current?.moved || reorderRef.current;
       // Check if mouse moved (needed for notch hover badges)
       const mp = mousePosRef.current;
       const pmp = prevMousePosRef.current;
@@ -143,12 +143,31 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
         ctx!.restore();
       }
 
-      // Reorder insertion line
+      // Reorder insertion line — blue line with circle endpoints
       const ro = reorderRef.current;
       if (ro && ro.insertionRect) {
+        const ir = ro.insertionRect;
+        const lineY = ir.top - 1;
+        const lineLeft = ir.left;
+        const lineRight = ir.left + ir.width;
+
         ctx!.save();
+        // Main line
+        ctx!.strokeStyle = COL.blue;
+        ctx!.lineWidth = 2;
+        ctx!.beginPath();
+        ctx!.moveTo(lineLeft, lineY);
+        ctx!.lineTo(lineRight, lineY);
+        ctx!.stroke();
+
+        // Dot endpoints
         ctx!.fillStyle = COL.blue;
-        ctx!.fillRect(ro.insertionRect.left, ro.insertionRect.top - 2, ro.insertionRect.width, 3);
+        ctx!.beginPath();
+        ctx!.arc(lineLeft, lineY, 4, 0, Math.PI * 2);
+        ctx!.fill();
+        ctx!.beginPath();
+        ctx!.arc(lineRight, lineY, 4, 0, Math.PI * 2);
+        ctx!.fill();
         ctx!.restore();
       }
 

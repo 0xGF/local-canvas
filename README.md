@@ -36,11 +36,9 @@ Then open `http://localhost:3001` in your browser.
 |----------|--------|
 | `V` | Edit mode (canvas with zoom/pan) |
 | `N` | Navigate mode (interact with your app normally) |
-| `C` | Toggle component view |
 | `Cmd+Z` | Undo |
 | `Cmd+Shift+Z` | Redo |
 | `Cmd+S` | Save changes |
-| `Cmd+K` | Command bar |
 | `Escape` | Deselect / exit edit mode |
 | `Ctrl+Click` | Context menu |
 | `Double-click` | Edit text inline |

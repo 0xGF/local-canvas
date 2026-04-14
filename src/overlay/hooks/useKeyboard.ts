@@ -39,14 +39,14 @@ export function useKeyboard() {
         s.selectElement(null); s.setCommandBarOpen(false); s.setMode("navigate"); return;
       }
       if (isMeta && e.key === "s") { e.preventDefault(); e.stopPropagation(); s.send({ type: "save" as any }); s.clearPending(); s.clearChanges(); s.historyReset(); return; }
-      if (isMeta && e.key === "k") { e.preventDefault(); s.setCommandBarOpen(true); return; }
+      // Cmd+K reserved for future command bar
       if (isMeta && e.key === "z" && !e.shiftKey) { e.preventDefault(); if (useEditorStore.getState().pendingCount <= 0) return; s.undo(); s.didUndo(); s.decrementPending(); const es = useEditorStore.getState(); es.showToast("↩ Undo"); es.triggerElementFlash(); return; }
       if (isMeta && e.key === "z" && e.shiftKey) { e.preventDefault(); s.redo(); s.didRedo(); s.incrementPending(); const es = useEditorStore.getState(); es.showToast("↪ Redo"); es.triggerElementFlash(); return; }
 
       if (isTyping(e)) return;
       if (e.key === "n" && !isMeta) { s.setMode("navigate"); return; }
       if (e.key === "v" && !isMeta) { s.setMode("edit"); return; }
-      if (e.key === "c" && !isMeta) { const vm = s.getViewMode(); s.setViewMode(vm === "page" ? "component" : "page"); return; }
+      // C key reserved for future component view
     }
 
     return attachToDocumentAndIframe([{ event: "keydown", handler: handleKeyDown }]);

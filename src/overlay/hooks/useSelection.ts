@@ -146,6 +146,7 @@ export function useSelection() {
   const handleClick = useCallback(
     (e: MouseEvent) => {
       if (mode !== "edit") return;
+      if (useEditorStore.getState().editingText) return;
       if (isClickInsideOverlay(e)) return;
       // Skip selection if a drag just ended — prevents deselecting after margin/resize drag
       if (wasDragRecent(300)) return;
@@ -275,12 +276,14 @@ export function useSelection() {
 
   // Block text selection and native drag in edit mode
   const blockSelection = useCallback((e: Event) => {
+    if (useEditorStore.getState().editingText) return;
     if (isClickInsideOverlay(e as MouseEvent)) return;
     e.preventDefault();
   }, []);
 
   const blockMouseDown = useCallback((e: MouseEvent) => {
     if (mode !== "edit") return;
+    if (useEditorStore.getState().editingText) return;
     if (isClickInsideOverlay(e)) return;
     e.preventDefault();
   }, [mode]);

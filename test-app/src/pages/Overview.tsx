@@ -17,7 +17,7 @@ export default function Overview() {
 
       <CodeBlock code="npx local-canvas dev --target 3000" />
 
-      <hr className="border-neutral-200" />
+      <hr className="border-neutral-200 2xl:mb-10" />
 
       <div className="space-y-4">
         <h2 className="text-lg font-semibold tracking-tight">How it works</h2>

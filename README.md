@@ -5,11 +5,35 @@ A visual editing overlay for React apps. Select any element, tweak Tailwind clas
 ## Quick Start
 
 ```bash
-npm install local-canvas
-npx local-canvas dev --target 3000
+# 1. Start your dev server (e.g. Vite on port 3000)
+cd my-react-app && npm run dev
+
+# 2. In another terminal, start local-canvas pointing at your app
+npx local-canvas dev --target 3000 --root ./my-react-app
 ```
 
 Then open `http://localhost:3001` in your browser.
+
+The `--root` flag tells Local Canvas where your source files live so it can write changes back to them. If your source files are in the current directory, you can omit it.
+
+### Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--target` | `3000` | Port your dev server runs on |
+| `--port` | `3001` | Port for the Local Canvas editor |
+| `--root` | `.` | Path to your project's source root |
+| `--host` | `localhost` | Dev server hostname |
+
+You can also put these in a `.local-canvas.json` file in your project root:
+
+```json
+{
+  "target": 3000,
+  "port": 3001,
+  "root": "./my-react-app"
+}
+```
 
 ## How It Works
 

@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useWebSocket } from "./useWebSocket.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
@@ -9,33 +9,40 @@ import { attachToDocumentAndIframe } from "../utils/iframe-events.js";
  * Double-click on text elements to edit them inline.
  * Makes the actual element contenteditable inside the iframe —
  * no floating overlay, the text edits in place.
+ *
+ * Sets editor store `editingText` flag so useSelection yields
+ * its mousedown/selectstart/click blockers during editing.
  */
 export function useTextEdit() {
-  const { sendMutation } = useWebSocket();
-  const incrementPending = useEditorStore((s) => s.incrementPending);
+  const wsRef = useRef(useWebSocket());
+  // Keep wsRef current every render
+  wsRef.current = useWebSocket();
+
   const activeRef = useRef<{ element: HTMLElement; originalText: string } | null>(null);
 
-  const commitAndClose = useCallback(() => {
-    const active = activeRef.current;
-    if (!active) return;
-    const { element, originalText } = active;
-
-    const newText = (element.textContent || "").trim();
-    element.contentEditable = "false";
-    element.style.outline = "";
-    element.style.outlineOffset = "";
-    element.style.borderRadius = "";
-    activeRef.current = null;
-
-    if (newText === originalText) return;
-    const source = resolveSource(element);
-    if (!source) return;
-    sendMutation({ type: "modify-text", source, newText });
-    incrementPending();
-  }, [sendMutation, incrementPending]);
-
-  // Listen for double-click to start text editing
   useEffect(() => {
+    function commitAndClose() {
+      const active = activeRef.current;
+      if (!active) return;
+      const { element, originalText } = active;
+
+      const newText = (element.textContent || "").trim();
+      element.contentEditable = "false";
+      element.style.outline = "";
+      element.style.outlineOffset = "";
+      element.style.borderRadius = "";
+      activeRef.current = null;
+      useEditorStore.getState().setEditingText(false);
+
+      if (newText === originalText) return;
+      const source = resolveSource(element);
+      if (!source) return;
+      wsRef.current.sendMutation({ type: "modify-text", source, newText });
+      useEditorStore.getState().incrementPending();
+    }
+
+    // ── Double-click listener ──
+
     function isTextElement(el: HTMLElement): boolean {
       const childEls = el.children.length;
       if (childEls > 0) {
@@ -89,12 +96,20 @@ export function useTextEdit() {
         commitAndClose();
       }
 
+      // Signal to useSelection that text editing is active
+      useEditorStore.getState().setEditingText(true);
+
       // Make the actual element editable in place
       activeRef.current = { element: target, originalText: target.textContent?.trim() || "" };
       target.contentEditable = "true";
       target.style.outline = "2px solid rgba(12,140,233,0.6)";
       target.style.outlineOffset = "2px";
       target.style.borderRadius = "2px";
+
+      // Focus: iframe window first, then the element
+      if (iframe?.contentWindow) {
+        iframe.contentWindow.focus();
+      }
       target.focus();
 
       // Select all text inside the element
@@ -108,14 +123,8 @@ export function useTextEdit() {
       }
     }
 
-    return attachToDocumentAndIframe(
-      [{ event: "dblclick", handler: onDblClick }],
-      { translateCoords: true },
-    );
-  }, [commitAndClose]);
+    // ── Blur / keyboard handlers ──
 
-  // Blur and keyboard handlers for the active editable element
-  useEffect(() => {
     function onBlur(e: FocusEvent) {
       if (!activeRef.current) return;
       if (e.target === activeRef.current.element) {
@@ -131,17 +140,24 @@ export function useTextEdit() {
         commitAndClose();
       }
       if (e.key === "Escape") {
-        // Revert text
         activeRef.current.element.textContent = activeRef.current.originalText;
         commitAndClose();
       }
     }
 
-    // Attach to both parent and iframe
+    // ── Attach everything ──
+
+    // dblclick via shared iframe helper (translates coords from iframe to parent)
+    const cleanupDblClick = attachToDocumentAndIframe(
+      [{ event: "dblclick", handler: onDblClick }],
+      { translateCoords: true },
+    );
+
+    // blur/keydown on parent document
     document.addEventListener("blur", onBlur, true);
     document.addEventListener("keydown", onKeyDown, true);
 
-    // Also attach to iframe document if available
+    // Also attach blur/keydown to iframe doc (polls for iframe remounts)
     let iframeDoc: Document | null = null;
     function attachIframe() {
       const host = document.getElementById("local-canvas-host");
@@ -162,6 +178,9 @@ export function useTextEdit() {
     const poll = setInterval(attachIframe, 1000);
 
     return () => {
+      // If still editing when unmounting, commit
+      if (activeRef.current) commitAndClose();
+      cleanupDblClick();
       clearInterval(poll);
       document.removeEventListener("blur", onBlur, true);
       document.removeEventListener("keydown", onKeyDown, true);
@@ -170,5 +189,5 @@ export function useTextEdit() {
         iframeDoc.removeEventListener("keydown", onKeyDown, true);
       }
     };
-  }, [commitAndClose]);
+  }, []); // stable — reads everything from refs / getState()
 }

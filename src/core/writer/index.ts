@@ -1,6 +1,6 @@
 import { Project } from "ts-morph";
 import { resolve } from "path";
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync } from "fs";
 import type { Mutation, MutationResult } from "../../server/types.js";
 import { modifyClassName } from "./class-modifier.js";
 import { reorderChildren } from "./reorder.js";
@@ -35,7 +35,7 @@ export class MutationWriter {
     }
 
     // All mutations in a batch target the same file (grouped by caller)
-    const filePath = resolve(this.projectRoot, mutations[0].source.filePath);
+    const filePath = this.resolveFilePath(mutations[0].source.filePath);
     const beforeContent = readFileSync(filePath, "utf-8");
     const snapshots: FileSnapshot[] = [{ filePath, content: beforeContent }];
 
@@ -96,8 +96,26 @@ export class MutationWriter {
     }
   }
 
+  /** Resolve a source file path, searching subdirectories if not found at root. */
+  private resolveFilePath(relativePath: string): string {
+    const direct = resolve(this.projectRoot, relativePath);
+    if (existsSync(direct)) return direct;
+    // Search common subdirectories (test-app, app, src, etc.)
+    for (const sub of readdirSync(this.projectRoot, { withFileTypes: true })) {
+      if (!sub.isDirectory() || sub.name === "node_modules" || sub.name === "dist" || sub.name.startsWith(".")) continue;
+      const candidate = resolve(this.projectRoot, sub.name, relativePath);
+      if (existsSync(candidate)) {
+        // Update projectRoot for future mutations
+        this.projectRoot = resolve(this.projectRoot, sub.name);
+        console.log(`[local-canvas] Auto-detected project root: ${this.projectRoot}`);
+        return candidate;
+      }
+    }
+    return direct; // Fall back to original (will error with clear ENOENT)
+  }
+
   async apply(mutation: Mutation): Promise<MutationResult> {
-    const filePath = resolve(this.projectRoot, mutation.source.filePath);
+    const filePath = this.resolveFilePath(mutation.source.filePath);
 
     // Snapshot for undo
     const beforeContent = readFileSync(filePath, "utf-8");

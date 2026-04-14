@@ -15,33 +15,58 @@ import type {
  * are detected (e.g. when HMR is disabled or the change is CSS-only).
  */
 function waitForDomUpdate(onUpdate: () => void) {
-  const root = document.getElementById("root");
-  if (!root) {
-    // No #root — just refresh after a short delay
-    setTimeout(onUpdate, 300);
-    return;
-  }
-
   let resolved = false;
   const resolve = () => {
     if (resolved) return;
     resolved = true;
-    observer.disconnect();
+    observers.forEach(o => o.disconnect());
     clearTimeout(fallback);
-    // Give the browser one frame to settle after the mutation
     requestAnimationFrame(onUpdate);
   };
 
-  const observer = new MutationObserver(resolve);
-  observer.observe(root, {
-    subtree: true,
-    childList: true,
-    attributes: true,
-    attributeFilter: ["class"],
-  });
+  const observers: MutationObserver[] = [];
+  const observeOpts: MutationObserverInit = {
+    subtree: true, childList: true, attributes: true, attributeFilter: ["class"],
+  };
 
-  // Fallback: if HMR doesn't fire within 2s, refresh anyway
-  const fallback = setTimeout(resolve, 2000);
+  // Observe #root (navigate mode)
+  const root = document.getElementById("root");
+  if (root) {
+    const mo = new MutationObserver(resolve);
+    mo.observe(root, observeOpts);
+    observers.push(mo);
+  }
+
+  // Observe iframe document (edit mode — HMR updates happen inside iframe)
+  try {
+    const host = document.getElementById("local-canvas-host");
+    const iframe = host?.shadowRoot?.querySelector("iframe") as HTMLIFrameElement | null;
+    const iframeBody = iframe?.contentDocument?.body;
+    if (iframeBody) {
+      const mo = new MutationObserver(resolve);
+      mo.observe(iframeBody, observeOpts);
+      observers.push(mo);
+    }
+  } catch { /* cross-origin */ }
+
+  // Fallback if no observers or HMR doesn't fire
+  const fallback = setTimeout(resolve, observers.length > 0 ? 2000 : 300);
+}
+
+/** Flash the selected element yellow briefly to confirm undo/redo. */
+function flashElement(el: HTMLElement | null | undefined) {
+  if (!el?.isConnected) return;
+  const prev = el.style.outline;
+  const prevTransition = el.style.transition;
+  el.style.transition = "outline 0.15s ease-out";
+  el.style.outline = "2px solid rgba(250, 204, 21, 0.8)";
+  setTimeout(() => {
+    el.style.outline = "2px solid rgba(250, 204, 21, 0)";
+    setTimeout(() => {
+      el.style.outline = prev;
+      el.style.transition = prevTransition;
+    }, 200);
+  }, 300);
 }
 
 /** Build a human-readable description from a mutation. */
@@ -181,14 +206,16 @@ export function useWebSocket() {
 
   const undo = useCallback(() => {
     send({ type: "undo" });
-    // Remove the most recent change entry so save modal shows correct count
     const { changes, removeChange } = useChangesStore.getState();
     if (changes.length > 0) removeChange(changes[changes.length - 1].id);
+    // Flash the selected element to confirm the undo
+    flashElement(useEditorStore.getState().selectedElement?.element);
     waitForDomUpdate(refreshSelection);
   }, [send, refreshSelection]);
 
   const redo = useCallback(() => {
     send({ type: "redo" });
+    flashElement(useEditorStore.getState().selectedElement?.element);
     waitForDomUpdate(refreshSelection);
   }, [send, refreshSelection]);
 

@@ -71,7 +71,7 @@ function printBabelInstructions(framework: string) {
 
   ${chalk.cyan("Option 2:")} Use proxy-only mode (no build plugin needed):
 
-    ${chalk.white("npx local-canvas dev --target 3000")}
+    ${chalk.white("npx local-canvas dev --target 5173")}
 
     Source mapping falls back to React DevTools fiber data.
     Works out of the box with any dev server.
@@ -84,7 +84,7 @@ function printProxyInstructions() {
 
   Start your dev server on any port, then run:
 
-    ${chalk.white("npx local-canvas dev --target 3000")}
+    ${chalk.white("npx local-canvas dev --target 5173")}
 
   The editor proxy starts on port ${chalk.cyan("3001")} and injects the
   overlay into your app. No build plugin needed — source mapping

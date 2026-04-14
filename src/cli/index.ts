@@ -14,7 +14,7 @@ program
 program
   .command("dev")
   .description("Start the canvas editor overlay on your dev server")
-  .option("-t, --target <port>", "Target dev server port", "3000")
+  .option("-t, --target <port>", "Target dev server port", "5173")
   .option("-p, --port <port>", "Canvas editor server port", "3001")
   .option("--host <host>", "Target dev server host", "localhost")
   .option("-r, --root <path>", "Target project root directory", process.cwd())

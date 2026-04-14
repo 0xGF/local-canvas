@@ -46,7 +46,7 @@ export function useKeyboard() {
       if (isTyping(e)) return;
       if (e.key === "n" && !isMeta) { s.setMode("navigate"); return; }
       if (e.key === "v" && !isMeta) { s.setMode("edit"); return; }
-      // C key reserved for future component view
+      if (e.key === "c" && !isMeta) { const vm = s.getViewMode(); s.setViewMode(vm === "page" ? "component" : "page"); return; }
     }
 
     return attachToDocumentAndIframe([{ event: "keydown", handler: handleKeyDown }]);

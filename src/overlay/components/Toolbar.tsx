@@ -377,11 +377,13 @@ export const Toolbar = React.memo(function Toolbar() {
     setMode("navigate");
     selectElement(null);
     vpReset();
-  }, [setMode, selectElement, vpReset]);
+    if (viewMode === "component") setViewMode("page");
+  }, [setMode, selectElement, vpReset, viewMode, setViewMode]);
 
   const setEditMode = useCallback(() => {
     setMode("edit");
-  }, [setMode]);
+    if (viewMode === "component") setViewMode("page");
+  }, [setMode, viewMode, setViewMode]);
 
   const toggleViewMode = useCallback(() => setViewMode(viewMode === "page" ? "component" : "page"), [viewMode, setViewMode]);
 

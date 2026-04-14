@@ -1,5 +1,5 @@
 import type { BadgeHit, TagBadgeHit, SpacingBox } from "./constants.js";
-import { COL, BADGE_FONT, SIDE_PREFIX } from "./constants.js";
+import { COL, BADGE_FONT, FONT, SIDE_PREFIX } from "./constants.js";
 import { roundRect, drawDashedLine, drawDashedEdges, drawLabelBadge, drawValueBadge, drawHatchedRect, drawEdgeHandle, drawZeroNotch, drawResizeGrip } from "./draw-helpers.js";
 import type { SourceLocation } from "../../core/source-map/types.js";
 import type { ScannedComponent } from "../../core/scanner/types.js";
@@ -333,10 +333,19 @@ export function paintFrame(
       let label = selectedElement.tagName;
       const cssW = parseFloat(cs.width) || r.width;
       const cssH = parseFloat(cs.height) || r.height;
-      const dimsTxt = `${Math.round(cssW)} × ${Math.round(cssH)}`;
-      const combined = `${label}  ${dimsTxt}`;
-      const tagBw = drawLabelBadge(ctx, combined, r.left, r.top - 22, COL.blue);
+      // Tag badge — small pill with element name
+      const tagBw = drawLabelBadge(ctx, label, r.left, r.top - 22, COL.blue);
       tagHit = { x: r.left, y: r.top - 22, w: tagBw, h: 18 };
+
+      // Dimensions — subtle text next to badge (not in a pill)
+      const dimsTxt = `${Math.round(cssW)} × ${Math.round(cssH)}`;
+      ctx.save();
+      ctx.font = `400 9px ${FONT}`;
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "left";
+      ctx.fillText(dimsTxt, r.left + tagBw + 6, r.top - 13);
+      ctx.restore();
 
       // ── Component badge — show component name if element is inside a component file ──
       if (paintCtx?.components?.length && selectedElement.source) {

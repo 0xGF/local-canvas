@@ -40,6 +40,10 @@ interface EditorState {
   contextMenu: { x: number; y: number; element: HTMLElement; source: SourceLocation | null } | null;
   setContextMenu: (menu: { x: number; y: number; element: HTMLElement; source: SourceLocation | null } | null) => void;
 
+  // Inline text editing
+  editingText: boolean;
+  setEditingText: (editing: boolean) => void;
+
   // Canvas feedback (undo/redo flash on element)
   toast: { message: string; id: number } | null;
   showToast: (message: string) => void;
@@ -100,6 +104,9 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   contextMenu: null,
   setContextMenu: (menu) => set({ contextMenu: menu }),
+
+  editingText: false,
+  setEditingText: (editing) => set({ editingText: editing }),
 
   toast: null,
   showToast: (message) => {

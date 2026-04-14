@@ -35,7 +35,7 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
 
   const resizeHandlesRef = useRef<ResizeHandle[]>([]);
   const { dragTooltip, reorderRef, commitSpacing, spacingDragRef } = useSpacingDrag(badgeHitsRef, tagBadgeHitRef);
-  const { editState: textEditState, editRef: textEditRef, closeEdit: closeTextEdit } = useTextEdit();
+  useTextEdit();
   const { resizeTooltip } = useResizeHandles(resizeHandlesRef);
 
   // ── Commit badge text edit ──
@@ -297,51 +297,7 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
         </div>
       )}
 
-      {/* Inline text editing overlay */}
-      {textEditState && (
-        <div
-          data-canvas-overlay="true"
-          style={{
-            position: "fixed",
-            left: textEditState.rect.left - 2,
-            top: textEditState.rect.top - 2,
-            minWidth: textEditState.rect.width + 4,
-            minHeight: textEditState.rect.height + 4,
-            zIndex: 2147483647,
-            pointerEvents: "auto",
-          }}
-        >
-          <div
-            ref={textEditRef}
-            contentEditable
-            suppressContentEditableWarning
-            onBlur={closeTextEdit}
-            onKeyDown={e => {
-              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); closeTextEdit(); }
-              if (e.key === "Escape") { closeTextEdit(); }
-            }}
-            style={{
-              minWidth: textEditState.rect.width,
-              minHeight: textEditState.rect.height,
-              padding: 2,
-              fontSize: getComputedStyle(textEditState.element).fontSize,
-              fontFamily: getComputedStyle(textEditState.element).fontFamily,
-              fontWeight: getComputedStyle(textEditState.element).fontWeight,
-              lineHeight: getComputedStyle(textEditState.element).lineHeight,
-              color: getComputedStyle(textEditState.element).color,
-              background: "rgba(12,140,233,0.08)",
-              border: "2px solid rgba(12,140,233,0.6)",
-              borderRadius: 2,
-              outline: "none",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              boxShadow: "0 2px 12px rgba(0,0,0,0.2)",
-            }}
-          >
-            {textEditState.originalText}
-          </div>
-        </div>
-      )}
+      {/* Text editing is now inline (contentEditable on the actual element) */}
       {/* Canvas action feedback (undo/redo) */}
       <CanvasToast />
     </>

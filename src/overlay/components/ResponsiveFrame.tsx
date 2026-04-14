@@ -189,10 +189,35 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
         document.dispatchEvent(new MouseEvent("mouseup", { clientX: c.clientX, clientY: c.clientY, bubbles: true }));
       };
 
+      // Right-click context menu
+      const onContextMenu = (e: MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const target = deepElementFromPoint(e.clientX, e.clientY, doc);
+        if (!target) return;
+        const source = resolveSource(target);
+        selectElement({
+          element: target,
+          source,
+          rect: target.getBoundingClientRect(),
+          className: typeof target.className === "string" ? target.className : "",
+          tagName: target.tagName.toLowerCase(),
+          iframeRef: iframe!,
+        });
+        const c = toScreen(e);
+        useEditorStore.getState().setContextMenu({
+          x: c.clientX,
+          y: c.clientY,
+          element: target,
+          source,
+        });
+      };
+
       // Prevent native drag on links/images
       const blockDrag = (e: Event) => e.preventDefault();
 
       doc.addEventListener("click", onClick, true);
+      doc.addEventListener("contextmenu", onContextMenu, true);
       doc.addEventListener("mousemove", onMouseMove, true);
       doc.addEventListener("mousedown", forwardMouseDown, true);
       doc.addEventListener("mousemove", forwardMouseMove, true);
@@ -202,6 +227,7 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
       cleanupListeners = () => {
         doc.removeEventListener("wheel", onWheel, true);
         doc.removeEventListener("click", onClick, true);
+        doc.removeEventListener("contextmenu", onContextMenu, true);
         doc.removeEventListener("mousemove", onMouseMove, true);
         doc.removeEventListener("mousedown", forwardMouseDown, true);
         doc.removeEventListener("mousemove", forwardMouseMove, true);

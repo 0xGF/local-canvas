@@ -1,6 +1,6 @@
 import { defineConfig } from "tsup";
 
-export default defineConfig([
+export default defineConfig((options) => [
   {
     entry: {
       "cli/index": "src/cli/index.ts",
@@ -14,6 +14,6 @@ export default defineConfig([
     target: "node18",
     platform: "node",
     external: ["vite", "react", "react-dom"],
-    clean: true,
+    clean: !options.watch,
   },
 ]);

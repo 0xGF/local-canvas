@@ -153,6 +153,12 @@ export class MutationWriter {
           break;
         }
 
+        case "duplicate-element": {
+          const { duplicateElement } = await import("./jsx-modifier.js");
+          duplicateElement(sourceFile, mutation.source.line, mutation.source.column);
+          break;
+        }
+
         case "modify-text": {
           const { modifyText } = await import("./jsx-modifier.js");
           modifyText(

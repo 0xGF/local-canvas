@@ -1,56 +1,44 @@
-import { useEffect, useCallback, useState, useRef } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useWebSocket } from "./useWebSocket.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
 import { deepElementFromPoint } from "../utils/element-picker.js";
 import { attachToDocumentAndIframe } from "../utils/iframe-events.js";
 
-interface TextEditState {
-  element: HTMLElement;
-  originalText: string;
-  rect: DOMRect;
-}
-
 /**
- * Double-click on text elements to enter inline editing mode.
- * Shows a contenteditable overlay, commits text changes via modify-text mutation.
+ * Double-click on text elements to edit them inline.
+ * Makes the actual element contenteditable inside the iframe —
+ * no floating overlay, the text edits in place.
  */
 export function useTextEdit() {
-  const [editState, setEditState] = useState<TextEditState | null>(null);
-  const editRef = useRef<HTMLDivElement>(null);
   const { sendMutation } = useWebSocket();
   const incrementPending = useEditorStore((s) => s.incrementPending);
+  const activeRef = useRef<{ element: HTMLElement; originalText: string } | null>(null);
 
-  const commitText = useCallback(async (el: HTMLElement, newText: string, originalText: string) => {
+  const commitAndClose = useCallback(() => {
+    const active = activeRef.current;
+    if (!active) return;
+    const { element, originalText } = active;
+
+    const newText = (element.textContent || "").trim();
+    element.contentEditable = "false";
+    element.style.outline = "";
+    element.style.outlineOffset = "";
+    element.style.borderRadius = "";
+    activeRef.current = null;
+
     if (newText === originalText) return;
-    const source = resolveSource(el);
+    const source = resolveSource(element);
     if (!source) return;
-    await sendMutation({
-      type: "modify-text",
-      source,
-      newText,
-    });
+    sendMutation({ type: "modify-text", source, newText });
     incrementPending();
   }, [sendMutation, incrementPending]);
-
-  const closeEdit = useCallback(() => {
-    if (!editState || !editRef.current) {
-      setEditState(null);
-      return;
-    }
-    const newText = editRef.current.textContent || "";
-    commitText(editState.element, newText.trim(), editState.originalText);
-    setEditState(null);
-  }, [editState, commitText]);
 
   // Listen for double-click to start text editing
   useEffect(() => {
     function isTextElement(el: HTMLElement): boolean {
-      // Check if element is a leaf node with direct text content
       const childEls = el.children.length;
       if (childEls > 0) {
-        // Has child elements — only allow if the element itself has meaningful text
-        // e.g. <p>Hello <span>world</span></p> — double-clicking "Hello" should work
         for (const node of el.childNodes) {
           if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) {
             return true;
@@ -58,7 +46,6 @@ export function useTextEdit() {
         }
         return false;
       }
-      // Leaf element — check for text content
       const text = el.textContent?.trim();
       return Boolean(text && text.length > 0);
     }
@@ -76,7 +63,7 @@ export function useTextEdit() {
         }
       }
 
-      // Find target in iframe document (elements are inside iframe in edit mode)
+      // Find target in iframe document
       const host = document.getElementById("local-canvas-host");
       const shadow = host?.shadowRoot;
       const iframe = shadow?.querySelector("iframe") as HTMLIFrameElement | null;
@@ -91,39 +78,97 @@ export function useTextEdit() {
       const target = deepElementFromPoint(e.clientX - offsetX, e.clientY - offsetY, targetDoc);
       if (!target || !isTextElement(target)) return;
 
-      // Only edit elements with source location
       const source = resolveSource(target);
       if (!source) return;
 
       e.preventDefault();
       e.stopPropagation();
 
-      const rect = target.getBoundingClientRect();
-      const textContent = target.textContent?.trim() || "";
+      // Close any existing edit first
+      if (activeRef.current && activeRef.current.element !== target) {
+        commitAndClose();
+      }
 
-      setEditState({
-        element: target,
-        originalText: textContent,
-        rect,
-      });
+      // Make the actual element editable in place
+      activeRef.current = { element: target, originalText: target.textContent?.trim() || "" };
+      target.contentEditable = "true";
+      target.style.outline = "2px solid rgba(12,140,233,0.6)";
+      target.style.outlineOffset = "2px";
+      target.style.borderRadius = "2px";
+      target.focus();
+
+      // Select all text inside the element
+      const iframeWin = iframe?.contentWindow ?? window;
+      const sel = iframeWin.getSelection();
+      if (sel) {
+        const range = (iframe?.contentDocument ?? document).createRange();
+        range.selectNodeContents(target);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
     }
 
-    return attachToDocumentAndIframe([{ event: "dblclick", handler: onDblClick }]);
-  }, []);
+    return attachToDocumentAndIframe(
+      [{ event: "dblclick", handler: onDblClick }],
+      { translateCoords: true },
+    );
+  }, [commitAndClose]);
 
-  // Focus the editable div when it appears
+  // Blur and keyboard handlers for the active editable element
   useEffect(() => {
-    if (editState && editRef.current) {
-      const el = editRef.current;
-      el.focus();
-      // Select all text
-      const range = document.createRange();
-      range.selectNodeContents(el);
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(range);
+    function onBlur(e: FocusEvent) {
+      if (!activeRef.current) return;
+      if (e.target === activeRef.current.element) {
+        commitAndClose();
+      }
     }
-  }, [editState]);
 
-  return { editState, editRef, closeEdit };
+    function onKeyDown(e: KeyboardEvent) {
+      if (!activeRef.current) return;
+      if (e.target !== activeRef.current.element) return;
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        commitAndClose();
+      }
+      if (e.key === "Escape") {
+        // Revert text
+        activeRef.current.element.textContent = activeRef.current.originalText;
+        commitAndClose();
+      }
+    }
+
+    // Attach to both parent and iframe
+    document.addEventListener("blur", onBlur, true);
+    document.addEventListener("keydown", onKeyDown, true);
+
+    // Also attach to iframe document if available
+    let iframeDoc: Document | null = null;
+    function attachIframe() {
+      const host = document.getElementById("local-canvas-host");
+      const shadow = host?.shadowRoot;
+      const iframe = shadow?.querySelector("iframe") as HTMLIFrameElement | null;
+      const doc = iframe?.contentDocument ?? null;
+      if (doc && doc !== iframeDoc) {
+        if (iframeDoc) {
+          iframeDoc.removeEventListener("blur", onBlur, true);
+          iframeDoc.removeEventListener("keydown", onKeyDown, true);
+        }
+        iframeDoc = doc;
+        iframeDoc.addEventListener("blur", onBlur, true);
+        iframeDoc.addEventListener("keydown", onKeyDown, true);
+      }
+    }
+    attachIframe();
+    const poll = setInterval(attachIframe, 1000);
+
+    return () => {
+      clearInterval(poll);
+      document.removeEventListener("blur", onBlur, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+      if (iframeDoc) {
+        iframeDoc.removeEventListener("blur", onBlur, true);
+        iframeDoc.removeEventListener("keydown", onKeyDown, true);
+      }
+    };
+  }, [commitAndClose]);
 }

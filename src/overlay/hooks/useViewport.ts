@@ -154,26 +154,31 @@ export function useViewport() {
   useEffect(() => {
     function isInsideOverlayUI(e: Event): boolean {
       const path = e.composedPath();
-      let insideHost = false;
       for (const node of path) {
         if (!(node instanceof HTMLElement)) continue;
-        if (node.id === "local-canvas-host") { insideHost = true; continue; }
+        // Overlay controls (toolbar, panels, inputs) opt-in with this flag.
+        // The host/iframe itself should still allow viewport wheel handling.
+        if (node.getAttribute?.("data-canvas-overlay") === "true") return true;
       }
-      return insideHost;
+      return false;
     }
 
     function onWheel(e: WheelEvent) {
-      if (isInsideOverlayUI(e)) return;
+      const isEditMode = useEditorStore.getState().mode === "edit";
+      if (!isEditMode) return;
 
       const { zoom, panX, panY } = useViewportStore.getState();
 
       if (e.metaKey || e.ctrlKey) {
+        // Prevent browser/page zoom so Ctrl/Cmd+wheel always zooms the canvas.
         e.preventDefault();
         const sensitivity = Math.abs(e.deltaY) < 10 ? 0.02 : 0.08;
         const delta = e.deltaY > 0 ? -sensitivity : sensitivity;
         useViewportStore.getState().setZoom(zoom + delta * zoom, e.clientX, e.clientY);
         return;
       }
+
+      if (isInsideOverlayUI(e)) return;
 
       if (zoom !== 1) {
         e.preventDefault();

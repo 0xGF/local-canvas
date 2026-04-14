@@ -84,6 +84,28 @@ export function modifyText(
   }
 }
 
+export function duplicateElement(
+  sourceFile: SourceFile,
+  line: number,
+  column?: number
+): void {
+  const target = findElementAtLine(sourceFile, line, column);
+  if (!target) {
+    throw new Error(`No JSX element found at line ${line}`);
+  }
+
+  const toDuplicate = target.isKind(SyntaxKind.JsxOpeningElement)
+    ? target.getParentIfKind(SyntaxKind.JsxElement) || target
+    : target;
+
+  const elementText = toDuplicate.getFullText();
+  const fullText = sourceFile.getFullText();
+  const end = toDuplicate.getEnd();
+
+  const newText = fullText.substring(0, end) + "\n" + elementText.trimStart() + fullText.substring(end);
+  sourceFile.replaceWithText(newText);
+}
+
 function findElementAtLine(
   sourceFile: SourceFile,
   line: number,

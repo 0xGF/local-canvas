@@ -31,6 +31,10 @@ export type Mutation =
       source: SourceLocation;
     }
   | {
+      type: "duplicate-element";
+      source: SourceLocation;
+    }
+  | {
       type: "modify-text";
       source: SourceLocation;
       newText: string;

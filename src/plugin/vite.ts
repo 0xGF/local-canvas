@@ -2,7 +2,7 @@ import type { Plugin } from "vite";
 import { transformSync } from "@babel/core";
 import canvasEditorBabelPlugin from "./babel-transform.js";
 
-export function canvasEditorPlugin(): Plugin {
+export function localCanvasPlugin(): Plugin {
   return {
     name: "local-canvas-source-map",
     enforce: "pre",
@@ -34,4 +34,5 @@ export function canvasEditorPlugin(): Plugin {
   };
 }
 
-export default canvasEditorPlugin;
+export { localCanvasPlugin as canvasEditorPlugin }; // backward compat
+export default localCanvasPlugin;

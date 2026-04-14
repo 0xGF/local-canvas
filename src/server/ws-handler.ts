@@ -19,18 +19,16 @@ export function createWSHandler(projectRoot: string) {
       { mutations: { id: string; mutation: Mutation }[]; timer: ReturnType<typeof setTimeout> }
     > = new Map();
 
-    function flushBuffer(fileKey: string) {
+    function flushBuffer(fileKey: string): Promise<void> {
       const entry = mutationBuffer.get(fileKey);
-      if (!entry || entry.mutations.length === 0) return;
+      if (!entry || entry.mutations.length === 0) return Promise.resolve();
       mutationBuffer.delete(fileKey);
 
       const mutations = entry.mutations;
 
-      // Apply all buffered mutations as a batch
-      (async () => {
+      return (async () => {
         try {
           const result = await writer.batchApply(mutations.map((m) => m.mutation));
-          // Send a single result for the last mutation ID (the "final" one)
           const lastId = mutations[mutations.length - 1].id;
           send(ws, { type: "mutation-result", id: lastId, result });
         } catch (error) {
@@ -73,7 +71,7 @@ export function createWSHandler(projectRoot: string) {
 
         case "undo": {
           // Flush all pending mutations before undo
-          for (const [key] of mutationBuffer) flushBuffer(key);
+          { const fp: Promise<void>[] = []; for (const [key] of mutationBuffer) fp.push(flushBuffer(key)); await Promise.all(fp); }
 
           try {
             const result = await writer.undo();
@@ -89,7 +87,7 @@ export function createWSHandler(projectRoot: string) {
         }
 
         case "redo": {
-          for (const [key] of mutationBuffer) flushBuffer(key);
+          { const fp: Promise<void>[] = []; for (const [key] of mutationBuffer) fp.push(flushBuffer(key)); await Promise.all(fp); }
 
           try {
             const result = await writer.redo();
@@ -186,8 +184,10 @@ export function createWSHandler(projectRoot: string) {
         }
 
         case "save": {
-          // Flush any pending mutations first
-          for (const [key] of mutationBuffer) flushBuffer(key);
+          // Flush any pending mutations and wait for them to complete
+          const flushPromises: Promise<void>[] = [];
+          for (const [key] of mutationBuffer) flushPromises.push(flushBuffer(key));
+          await Promise.all(flushPromises);
           send(ws, { type: "mutation-result" as any, id: "save", result: { success: true, filesModified: [] } });
           break;
         }

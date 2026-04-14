@@ -134,20 +134,15 @@ export function drawEdgeHandle(
   zoom = 1,
 ): void {
   ctx.save();
-  const s = Math.max(0.4, Math.min(1, zoom));
+  const s = Math.min(1, zoom);
 
-  // When zoomed out far, collapse to a dot
-  if (zoom < 0.4) {
-    ctx.fillStyle = color;
-    ctx.globalAlpha = 0.6;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 2, 0, Math.PI * 2);
-    ctx.fill();
+  // When zoomed out very far, just hide completely
+  if (zoom < 0.25) {
     ctx.restore();
     return;
   }
 
-  // Always show value inside a colored pill badge
+  // Show value inside a colored pill badge
   if (value > 0) {
     const text = String(Math.round(value));
     const fontSize = Math.round((hovered ? 10 : 9) * s);
@@ -248,7 +243,7 @@ export function drawZeroNotch(
     ctx.stroke();
   } else {
     // Default: small colored dash at midpoint
-    const s = Math.max(0.4, Math.min(1, zoom));
+    const s = Math.min(1, zoom);
     const len = 10 * s;
     ctx.strokeStyle = color;
     ctx.lineWidth = 2 * s;

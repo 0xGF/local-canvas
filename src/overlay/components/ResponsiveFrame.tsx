@@ -109,18 +109,45 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
         if (wasDragRecent(300)) return;
         const target = deepElementFromPoint(e.clientX, e.clientY, doc);
         if (!target) return;
+
+        const source = resolveSource(target);
+
+        // Ctrl+Click or Meta+Click — open context menu
+        if (e.ctrlKey || e.metaKey) {
+          // Select the element first
+          selectElement({
+            element: target,
+            source,
+            rect: target.getBoundingClientRect(),
+            className: typeof target.className === "string" ? target.className : "",
+            tagName: target.tagName.toLowerCase(),
+            iframeRef: iframe!,
+          });
+          // Translate click coords to screen space for menu positioning
+          const ir = iframe!.getBoundingClientRect();
+          const naturalW = parseInt(iframe!.style.width) || ir.width;
+          const scale = ir.width / naturalW;
+          useEditorStore.getState().setContextMenu({
+            x: e.clientX * scale + ir.left,
+            y: e.clientY * scale + ir.top,
+            element: target,
+            source,
+          });
+          return;
+        }
+
         // If clicking an ancestor of the current selection, only keep the child
         // selected if the click is near the child's edges (margin/padding zone).
-        // Clicking far away on the parent should select the parent normally.
         const sel = useEditorStore.getState().selectedElement;
         if (sel?.element && target !== sel.element && target.contains(sel.element)) {
           const cr = sel.element.getBoundingClientRect();
           const pad = 30;
           const nearChild = e.clientX >= cr.left - pad && e.clientX <= cr.right + pad &&
                             e.clientY >= cr.top - pad && e.clientY <= cr.bottom + pad;
-          if (nearChild) return; // Keep child — user is in its spacing zone
+          if (nearChild) return;
         }
-        const source = resolveSource(target);
+        // Close any open context menu on regular click
+        useEditorStore.getState().setContextMenu(null);
         selectElement({
           element: target,
           source,

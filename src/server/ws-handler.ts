@@ -30,8 +30,14 @@ export function createWSHandler(projectRoot: string) {
         try {
           const result = await writer.batchApply(mutations.map((m) => m.mutation));
           const lastId = mutations[mutations.length - 1].id;
+          if (result.success) {
+            console.log(`[local-canvas] ✓ Applied ${mutations.length} mutation(s) to ${mutations[0].mutation.source.filePath}:${mutations[0].mutation.source.line}${result.diff ? ` — ${result.diff.split('\n')[0]}` : ''}`);
+          } else {
+            console.error(`[local-canvas] ✗ Mutation failed: ${result.error}`);
+          }
           send(ws, { type: "mutation-result", id: lastId, result });
         } catch (error) {
+          console.error(`[local-canvas] ✗ Mutation error: ${error}`);
           const lastId = mutations[mutations.length - 1].id;
           send(ws, {
             type: "mutation-result",
@@ -75,6 +81,7 @@ export function createWSHandler(projectRoot: string) {
 
           try {
             const result = await writer.undo();
+            console.log(`[local-canvas] ↩ Undo: ${result.success ? 'ok' : result.error}`);
             send(ws, {
               type: "mutation-result",
               id: "undo",
@@ -91,6 +98,7 @@ export function createWSHandler(projectRoot: string) {
 
           try {
             const result = await writer.redo();
+            console.log(`[local-canvas] ↪ Redo: ${result.success ? 'ok' : result.error}`);
             send(ws, {
               type: "mutation-result",
               id: "redo",
@@ -188,6 +196,7 @@ export function createWSHandler(projectRoot: string) {
           const flushPromises: Promise<void>[] = [];
           for (const [key] of mutationBuffer) flushPromises.push(flushBuffer(key));
           await Promise.all(flushPromises);
+          console.log(`[local-canvas] 💾 Save (flushed ${flushPromises.length} pending buffers)`);
           send(ws, { type: "mutation-result" as any, id: "save", result: { success: true, filesModified: [] } });
           break;
         }

@@ -68,7 +68,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className="pt-12 2xl:pb-[30px]">
         <Link to="/overview" className="flex items-center gap-2">
-          <img src="/logo.svg" alt="Local Canvas" className="h-[22px] w-auto 2xl:mb-[23px] md:mb-[19px]" />
+          <img src="/logo.svg" alt="Local Canvas" className="h-[22px] 2xl:mb-[23px] md:mb-[19px]" />
         </Link>
         <span className="text-[11px] text-[#a8a29e] mt-0.5 block">v0.1.0</span>
       </div>

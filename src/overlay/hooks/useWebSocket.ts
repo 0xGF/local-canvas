@@ -53,21 +53,6 @@ function waitForDomUpdate(onUpdate: () => void) {
   const fallback = setTimeout(resolve, observers.length > 0 ? 2000 : 300);
 }
 
-/** Flash the selected element yellow briefly to confirm undo/redo. */
-function flashElement(el: HTMLElement | null | undefined) {
-  if (!el?.isConnected) return;
-  const prev = el.style.outline;
-  const prevTransition = el.style.transition;
-  el.style.transition = "outline 0.15s ease-out";
-  el.style.outline = "2px solid rgba(250, 204, 21, 0.8)";
-  setTimeout(() => {
-    el.style.outline = "2px solid rgba(250, 204, 21, 0)";
-    setTimeout(() => {
-      el.style.outline = prev;
-      el.style.transition = prevTransition;
-    }, 200);
-  }, 300);
-}
 
 /** Build a human-readable description from a mutation. */
 function describeMutation(m: Mutation): string {
@@ -208,15 +193,18 @@ export function useWebSocket() {
     send({ type: "undo" });
     const { changes, removeChange } = useChangesStore.getState();
     if (changes.length > 0) removeChange(changes[changes.length - 1].id);
-    // Flash the selected element to confirm the undo
-    flashElement(useEditorStore.getState().selectedElement?.element);
-    waitForDomUpdate(refreshSelection);
+    waitForDomUpdate(() => {
+      refreshSelection();
+      useEditorStore.getState().triggerElementFlash();
+    });
   }, [send, refreshSelection]);
 
   const redo = useCallback(() => {
     send({ type: "redo" });
-    flashElement(useEditorStore.getState().selectedElement?.element);
-    waitForDomUpdate(refreshSelection);
+    waitForDomUpdate(() => {
+      refreshSelection();
+      useEditorStore.getState().triggerElementFlash();
+    });
   }, [send, refreshSelection]);
 
   const onMessage = useCallback((handler: MessageHandler) => {

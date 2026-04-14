@@ -24,6 +24,7 @@ export function ChangesPanel() {
   return (
     <div
       style={{ pointerEvents: "auto" }}
+      data-canvas-overlay="true"
       className="fixed bottom-16 right-4 w-80 max-h-96 bg-canvas-bg/95 backdrop-blur-md border border-canvas-border rounded-xl shadow-2xl overflow-hidden flex flex-col"
     >
       {/* Header */}

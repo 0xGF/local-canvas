@@ -1,12 +1,19 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useViewportStore } from "../hooks/useViewport.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
 import { deepElementFromPoint } from "../utils/element-picker.js";
 import { wasDragRecent } from "../utils/drag-state.js";
+import { BREAKPOINT_PRESETS } from "../../shared/breakpoints.js";
 import { THEME } from "../theme.js";
 
 const C = THEME;
+
+function getBreakpointLabel(width: number): string {
+  const preset = BREAKPOINT_PRESETS.find(bp => bp.width === width);
+  if (!preset || !preset.prefix) return "Editing base styles";
+  return `Editing ${preset.prefix}: styles (${width}px+)`;
+}
 
 /**
  * Always renders a single iframe at the current breakpoint width.
@@ -29,8 +36,10 @@ export const ResponsiveFrame = React.memo(function ResponsiveFrame() {
 
   if (mode !== "edit") return null;
 
-  // key forces full remount on breakpoint change so iframe reloads at new width
-  return <BreakpointIframe key={breakpoint} width={breakpoint} />;
+  // key forces full remount on breakpoint change
+  const iframeKey = `page-${breakpoint}`;
+
+  return <BreakpointIframe key={iframeKey} width={breakpoint} />;
 });
 
 // ── Iframe for breakpoint preview ──────────────────────────────────────────
@@ -261,9 +270,12 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
     >
       {/* Label */}
       <div style={{
-        display: "flex", alignItems: "baseline", gap: 8,
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
         marginBottom: 12, userSelect: "none",
       }}>
+        <span style={{ fontSize: 10, color: "#874EFF", fontFamily: C.mono, fontWeight: 500 }}>
+          {getBreakpointLabel(width)}
+        </span>
         <span style={{ fontSize: 11, color: "#666", fontFamily: C.mono }}>
           {width}px
         </span>

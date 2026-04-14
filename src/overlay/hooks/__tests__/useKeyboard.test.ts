@@ -13,18 +13,6 @@ vi.mock("../useWebSocket.js", () => ({
   }),
 }));
 
-// Mock component view store
-vi.mock("../../stores/component-view-store.js", () => ({
-  useComponentViewStore: Object.assign(
-    (selector: any) => selector({ mode: "page", setMode: vi.fn() }),
-    {
-      getState: () => ({ mode: "page", setMode: vi.fn() }),
-      setState: vi.fn(),
-      subscribe: vi.fn(() => vi.fn()),
-    }
-  ),
-}));
-
 describe("useKeyboard shortcuts", () => {
   beforeEach(() => {
     useEditorStore.setState({

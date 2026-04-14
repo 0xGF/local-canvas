@@ -2,7 +2,6 @@ import type { BadgeHit, TagBadgeHit, SpacingBox } from "./constants.js";
 import { COL, BADGE_FONT, FONT, SIDE_PREFIX } from "./constants.js";
 import { roundRect, drawDashedLine, drawDashedEdges, drawLabelBadge, drawValueBadge, drawHatchedRect, drawEdgeHandle, drawZeroNotch, drawResizeGrip } from "./draw-helpers.js";
 import type { SourceLocation } from "../../core/source-map/types.js";
-import type { ScannedComponent } from "../../core/scanner/types.js";
 import { getCachedStyle } from "../utils/style-cache.js";
 
 interface EditorSnapshot {
@@ -17,7 +16,6 @@ interface EditorSnapshot {
 
 /** Extra context for drawing component badges and change indicators */
 export interface PaintContext {
-  components?: ScannedComponent[];
   changedFiles?: Set<string>; // "filePath:line" keys
 }
 
@@ -303,7 +301,7 @@ export function paintFrame(
                   ctx.save(); ctx.fillStyle = COL.purpleBg; ctx.fillRect(gL, gT, gW, gB - gT);
                   drawDashedLine(ctx, gL, gT, gL, gB, COL.purple); drawDashedLine(ctx, gL + gW, gT, gL + gW, gB, COL.purple); ctx.restore();
                   // BUG FIX: gW is screen-space, divide by zoom to show CSS value
-                  drawValueBadge(ctx, Math.round(gW / zoomScale), COL.purple, gL + gW / 2, (gT + gB) / 2);
+                  if (zoomScale >= 0.8) drawValueBadge(ctx, Math.round(gW / zoomScale), COL.purple, gL + gW / 2, (gT + gB) / 2);
                 }
               }
               if (rg > 0 && b.top > a.bottom - 1 && a.right > b.left + 1 && a.left < b.right - 1) {
@@ -312,7 +310,7 @@ export function paintFrame(
                   ctx.save(); ctx.fillStyle = COL.purpleBg; ctx.fillRect(gL, gT, gR - gL, gH);
                   drawDashedLine(ctx, gL, gT, gR, gT, COL.purple); drawDashedLine(ctx, gL, gT + gH, gR, gT + gH, COL.purple); ctx.restore();
                   // BUG FIX: gH is screen-space, divide by zoom to show CSS value
-                  drawValueBadge(ctx, Math.round(gH / zoomScale), COL.purple, (gL + gR) / 2, gT + gH / 2);
+                  if (zoomScale >= 0.8) drawValueBadge(ctx, Math.round(gH / zoomScale), COL.purple, (gL + gR) / 2, gT + gH / 2);
                 }
               }
             }
@@ -333,11 +331,24 @@ export function paintFrame(
       let label = selectedElement.tagName;
       const cssW = parseFloat(cs.width) || r.width;
       const cssH = parseFloat(cs.height) || r.height;
-      // Tag badge + dimensions — only when zoomed in enough to read
+      // Tag badge + component badge + dimensions — only when zoomed in enough to read
       let tagBw = 0;
       if (zoomScale >= 0.35) {
         tagBw = drawLabelBadge(ctx, label, r.left, r.top - 22, COL.blue);
         tagHit = { x: r.left, y: r.top - 22, w: tagBw, h: 18 };
+
+        // Purple component badge — show which component file the element is from
+        let componentBadgeEnd = r.left + tagBw;
+        if (selectedElement.source?.filePath && zoomScale >= 0.5) {
+          const fp = selectedElement.source.filePath;
+          // Extract component name from file path (e.g. "src/components/Sidebar.tsx" → "Sidebar")
+          const fileName = fp.split("/").pop()?.replace(/\.[jt]sx?$/, "") || "";
+          if (fileName) {
+            const compLabel = `${fileName}:${selectedElement.source.line}`;
+            const cw = drawLabelBadge(ctx, compLabel, r.left + tagBw + 4, r.top - 22, COL.purple);
+            componentBadgeEnd = r.left + tagBw + 4 + cw;
+          }
+        }
 
         if (zoomScale >= 0.5) {
           const dimsTxt = `${Math.round(cssW)} × ${Math.round(cssH)}`;
@@ -346,18 +357,8 @@ export function paintFrame(
           ctx.fillStyle = "rgba(255,255,255,0.5)";
           ctx.textBaseline = "middle";
           ctx.textAlign = "left";
-          ctx.fillText(dimsTxt, r.left + tagBw + 6, r.top - 13);
+          ctx.fillText(dimsTxt, componentBadgeEnd + 6, r.top - 13);
           ctx.restore();
-        }
-      }
-
-      // ── Component badge — show component name if element is inside a component file ──
-      if (paintCtx?.components?.length && selectedElement.source) {
-        const srcFile = selectedElement.source.filePath;
-        const comp = paintCtx.components.find(c => srcFile.endsWith(c.filePath) || c.filePath.endsWith(srcFile));
-        if (comp) {
-          const compLabel = `⚡ ${comp.name}`;
-          drawLabelBadge(ctx, compLabel, r.left + tagBw + 4, r.top - 22, COL.purple);
         }
       }
 
@@ -389,7 +390,7 @@ export function paintFrame(
         const hitSize = Math.max(14, screenVal);
         badges.push({ x: x - hitSize / 2, y: y - 7, w: hitSize, h: 14, type, side, value: cssVal, prefix });
         // Text badge — only when zoomed in enough to be readable and not overlap notches
-        if (screenVal >= 24 && zoomScale >= 0.5) {
+        if (screenVal >= 24 && zoomScale >= 0.8) {
           drawValueBadge(ctx, Math.round(cssVal), color, x, y);
         }
       };

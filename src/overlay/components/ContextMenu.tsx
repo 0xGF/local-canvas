@@ -22,6 +22,49 @@ interface MenuItem {
 
 let copiedClasses: string[] = [];
 
+// ── Agentation MCP bridge ──
+const AGENTATION_PORT = 4747;
+let _agentationSessionId: string | null = null;
+
+async function getOrCreateSession(): Promise<string> {
+  if (_agentationSessionId) return _agentationSessionId;
+  const res = await fetch(`http://localhost:${AGENTATION_PORT}/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: window.location.href }),
+  });
+  if (!res.ok) throw new Error(`agentation: ${res.status}`);
+  const session = await res.json();
+  _agentationSessionId = session.id;
+  return session.id;
+}
+
+async function postAnnotation(opts: {
+  comment: string;
+  element: string;
+  elementPath: string;
+  cssClasses?: string;
+  intent?: "fix" | "change" | "question";
+}) {
+  const sessionId = await getOrCreateSession();
+  const res = await fetch(`http://localhost:${AGENTATION_PORT}/sessions/${sessionId}/annotations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      comment: opts.comment,
+      element: opts.element,
+      elementPath: opts.elementPath,
+      cssClasses: opts.cssClasses,
+      intent: opts.intent || "change",
+      severity: "important",
+      url: window.location.href,
+      timestamp: Date.now(),
+    }),
+  });
+  if (!res.ok) throw new Error(`agentation: ${res.status}`);
+  return res.json();
+}
+
 export const ContextMenu = React.memo(function ContextMenu() {
   const menu = useEditorStore((s) => s.contextMenu);
   const setContextMenu = useEditorStore((s) => s.setContextMenu);
@@ -39,7 +82,8 @@ export const ContextMenu = React.memo(function ContextMenu() {
       if (e.key === "Escape") { setContextMenu(null); setAiPromptOpen(false); }
     }
     function onClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const path = e.composedPath();
+      if (menuRef.current && !path.includes(menuRef.current)) {
         setContextMenu(null); setAiPromptOpen(false);
       }
     }
@@ -81,8 +125,11 @@ export const ContextMenu = React.memo(function ContextMenu() {
       disabled: !hasText || !hasSource,
       action: () => {
         if (!hasSource) return;
-        useEditorStore.getState().setEditingText(true);
         close();
+        // Dispatch custom event for useTextEdit to start inline editing
+        setTimeout(() => {
+          el.dispatchEvent(new CustomEvent("canvas:start-text-edit", { bubbles: true }));
+        }, 0);
       },
     },
     {
@@ -101,6 +148,7 @@ export const ContextMenu = React.memo(function ContextMenu() {
           tagName: parent.tagName.toLowerCase(),
           iframeRef: sel?.iframeRef,
         });
+        useEditorStore.getState().showToast(`Selected <${parent.tagName.toLowerCase()}>`);
         close();
       },
       dividerAfter: true,
@@ -112,6 +160,7 @@ export const ContextMenu = React.memo(function ContextMenu() {
       disabled: !hasSource,
       action: () => {
         if (!source) return;
+        useEditorStore.getState().showToast("Duplicated");
         tracked({ type: "duplicate-element", source });
       },
     },
@@ -122,6 +171,7 @@ export const ContextMenu = React.memo(function ContextMenu() {
       disabled: !hasSource,
       action: () => {
         if (!source) return;
+        useEditorStore.getState().showToast("Deleted");
         tracked({ type: "delete", source });
         selectElement(null);
       },
@@ -204,27 +254,36 @@ export const ContextMenu = React.memo(function ContextMenu() {
 
       {aiPromptOpen ? (
         <div style={{ padding: 4 }}>
-          <div style={{ fontSize: 10, color: C.fgMuted, marginBottom: 4, fontWeight: 600 }}>AI Prompt</div>
+          <div style={{ fontSize: 10, color: C.fgMuted, marginBottom: 4, fontWeight: 600 }}>Ask AI Agent</div>
           <input
             ref={aiInputRef}
             value={aiPrompt}
             onChange={e => setAiPrompt(e.target.value)}
             onKeyDown={e => {
-              if (e.key === "Enter" && aiPrompt.trim() && source) {
-                send({ type: "ai-command", prompt: aiPrompt.trim(), elementContext: {
-                  filePath: source.filePath, line: source.line, column: source.column,
-                  tagName: tag, className: classes.join(" "),
-                  innerHTML: el.innerHTML?.substring(0, 200),
-                  parentTag: el.parentElement?.tagName.toLowerCase(),
-                }});
-                incrementPending(); setAiPrompt(""); close();
+              if (e.key === "Enter" && aiPrompt.trim()) {
+                const prompt = aiPrompt.trim();
+                const elementPath = source
+                  ? `${source.filePath}:${source.line}`
+                  : tag;
+                postAnnotation({
+                  comment: prompt,
+                  element: `<${tag}>${classes.length ? "." + classes.join(".") : ""}`,
+                  elementPath,
+                  cssClasses: classes.join(" "),
+                  intent: "change",
+                }).then(() => {
+                  useEditorStore.getState().showToast("Sent to agent");
+                }).catch(() => {
+                  useEditorStore.getState().showToast("Agent not connected");
+                });
+                setAiPrompt(""); close();
               }
               if (e.key === "Escape") setAiPromptOpen(false);
             }}
             placeholder="e.g. make this a 3-column grid..."
             style={{ width: "100%", height: 32, background: C.bgAlt, border: `1px solid ${C.accent}`, borderRadius: 6, color: C.fg, fontSize: 11, fontFamily: C.mono, padding: "0 8px", outline: "none", boxSizing: "border-box" }}
           />
-          <div style={{ fontSize: 9, color: C.fgMuted, marginTop: 4 }}>Enter to send, Escape to cancel</div>
+          <div style={{ fontSize: 9, color: C.fgMuted, marginTop: 4 }}>Enter to send to agent, Escape to cancel</div>
         </div>
       ) : (
         items.map((item, i) => (
@@ -232,7 +291,7 @@ export const ContextMenu = React.memo(function ContextMenu() {
             <div
               onClick={item.disabled ? undefined : item.action}
               style={{
-                display: "flex", alignItems: "center", gap: 8,
+                display: "flex", alignItems: "center", gap: 10,
                 padding: "6px 8px", borderRadius: 4,
                 cursor: item.disabled ? "default" : "pointer",
                 color: item.danger ? C.danger : item.disabled ? C.fgMuted : C.fg,

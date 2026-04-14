@@ -229,18 +229,16 @@ export function drawZeroNotch(
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Plus icon at center to indicate "add spacing"
+    // Small dot at center to indicate "add spacing"
     ctx.globalAlpha = 1;
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+    ctx.fill();
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 4, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(cx - 3, cy); ctx.lineTo(cx + 3, cy);
-    ctx.moveTo(cx, cy - 3); ctx.lineTo(cx, cy + 3);
-    ctx.stroke();
   } else {
     // Default: small colored dash at midpoint
     const s = Math.min(1, zoom);

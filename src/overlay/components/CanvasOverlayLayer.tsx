@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useViewportStore } from "../hooks/useViewport.js";
-import { useComponentViewStore } from "../stores/component-view-store.js";
 import { useChangesStore } from "../stores/changes-store.js";
 import { HAS_DRAW_ELEMENT, COL, FONT, BADGE_CSS, LABEL_CSS } from "../canvas/constants.js";
 import type { BadgeHit, TagBadgeHit } from "../canvas/constants.js";
@@ -75,11 +74,10 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
         return;
       }
 
-      // Build paint context for component badges + change indicators
-      const components = useComponentViewStore.getState().components;
+      // Build paint context for change indicators
       const changes = useChangesStore.getState().changes;
       const changedFiles = new Set(changes.map(c => `${c.filePath}:${c.line}`));
-      const paintCtx: PaintContext = { components, changedFiles };
+      const paintCtx: PaintContext = { changedFiles };
 
       // Compute iframe offset from shadow DOM — works for hover (no selection) too.
       let iframeOffset = { x: 0, y: 0, scale: 1 };

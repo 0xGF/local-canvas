@@ -47,10 +47,11 @@ You can also put these in a `.local-canvas.json` file in your project root:
 - **Drag spacing handles** — margin and padding notches on every edge, drag to adjust values
 - **Drag from zero** — elements with no spacing show grab notches to start adding margin/padding
 - **Resize handles** — drag corners/edges to adjust width and height
-- **Ctrl+click context menu** — duplicate, delete, move up/down, wrap in div, copy/paste classes, AI prompt
+- **Ctrl+click context menu** — edit text, select parent, duplicate, delete, move up/down, copy/paste classes, Ask AI
+- **Escape to select parent** — step up the DOM tree (like Figma)
 - **Double-click text** — inline text editing with live preview
 - **Breakpoint previews** — switch between mobile, tablet, desktop viewports
-- **Undo/Redo** — Cmd+Z / Cmd+Shift+Z with full history tracking
+- **Undo/Redo** — Cmd+Z / Cmd+Shift+Z with full history tracking and canvas flash feedback
 - **CSS variable suggestions** — scans your stylesheets for `--custom-properties`
 - **HMR aware** — automatically re-selects elements after hot reload
 
@@ -63,7 +64,7 @@ You can also put these in a `.local-canvas.json` file in your project root:
 | `Cmd+Z` | Undo |
 | `Cmd+Shift+Z` | Redo |
 | `Cmd+S` | Save changes |
-| `Escape` | Deselect / exit edit mode |
+| `Escape` | Select parent (or deselect / exit edit mode at top level) |
 | `Ctrl+Click` | Context menu |
 | `Double-click` | Edit text inline |
 
@@ -95,21 +96,32 @@ Local Canvas has three parts:
 **HTTP Proxy** sits between your browser and dev server. It forwards all requests and injects the overlay script into HTML responses. Your app runs normally — the proxy just adds the editing layer on top.
 
 **Shadow DOM Overlay** renders inside an isolated Shadow DOM (z-index 2147483647) so your app's styles never conflict. Inside it:
-- A **canvas layer** draws selection highlights, spacing badges, resize handles, and drag indicators using the HTML-in-Canvas API (`drawElementImage`) with manual fallback. Text measurement uses [@chenglou/pretext](https://github.com/chenglou/pretext) for DOM-free layout without triggering reflows
+- A **canvas layer** draws selection highlights, spacing badges, resize handles, and drag indicators
 - A **React app** renders the toolbar, properties panel, context menu, and floating inputs
 - An **iframe** shows your page at different breakpoint widths for responsive editing
 
 **WebSocket + ts-morph** handles the actual code changes. When you drag a spacing handle or change a property, a mutation is sent over WebSocket. The server uses ts-morph to find the exact JSX element in your source file and modify its className. The file is saved to disk, your dev server's HMR picks it up, and the page updates live.
 
-## MCP Server
+## Built on
 
-Local Canvas includes an MCP server for AI-assisted editing:
+Local Canvas is glued together from three third-party libraries that do the heavy lifting:
+
+- **[HTML-in-Canvas (`drawElementImage`)](https://developer.chrome.com/blog/html-in-canvas)** — Chrome's experimental Canvas API for rendering HTML elements directly into a 2D canvas context. Used for all overlay badges, spacing indicators, and labels. Falls back to manual canvas drawing when unavailable.
+- **[@chenglou/pretext](https://github.com/chenglou/pretext)** — DOM-free text measurement. Measures text width without touching the DOM (no reflows). Used everywhere text is drawn on the canvas overlay.
+- **[agentation-mcp](https://github.com/benjitaylor/agentation)** — MCP bridge for the Ask AI context menu. Routes overlay AI requests to your connected AI agent instead of a direct LLM API call.
+
+## Ask AI (agentation bridge)
+
+The context menu's **Ask AI** option sends element context + your prompt to an AI agent via [agentation-mcp](https://github.com/benjitaylor/agentation). Instead of calling an LLM API directly (needs keys, limited context), requests flow to whatever MCP-compatible agent you have connected — Claude Code, Cursor, etc. — which has full repo context and can make real code changes, not just class swaps.
+
+**Setup:**
 
 ```bash
-npx local-canvas mcp
+# Add agentation-mcp to your MCP-compatible agent (e.g. Claude Code)
+claude mcp add agentation -- npx agentation-mcp server
 ```
 
-Exposes tools: `modify-class`, `add-element`, `delete-element`, `edit-text`, `wrap-element` — any AI agent can call these to make visual changes to your app.
+The agentation HTTP server starts on `:4747` alongside Local Canvas (via `bin/start.sh`). When you ctrl-click an element → Ask AI → type a prompt, the overlay POSTs an annotation with the element's file path, line, tag, and classes. Your agent picks it up via MCP tools (`agentation_get_pending`, `agentation_resolve`, etc.) and makes the changes.
 
 ## License
 

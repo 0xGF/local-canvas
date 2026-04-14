@@ -63,15 +63,13 @@ export type WSClientMessage =
       elementContext: ElementContext;
     }
   | { type: "get-completions"; filePath: string; prefix: string }
-  | { type: "scan-components" }
   | { type: "save" };
 
 export type WSServerMessage =
   | { type: "mutation-result"; id: string; result: MutationResult }
   | { type: "ai-stream"; chunk: string; done: boolean }
   | { type: "completions"; items: string[] }
-  | { type: "error"; message: string }
-  | { type: "components-scanned"; components: import("../core/scanner/types.js").ScannedComponent[]; fileCount: number };
+  | { type: "error"; message: string };
 
 export interface ElementContext {
   filePath: string;

@@ -50,6 +50,7 @@ function isClickInsideOverlay(e: MouseEvent): boolean {
   const shadow = host?.shadowRoot;
   if (!shadow) return false;
 
+  if (!isFinite(e.clientX) || !isFinite(e.clientY)) return false;
   const el = shadow.elementFromPoint(e.clientX, e.clientY);
   if (!el) return false;
   // Canvas and mount container are non-interactive — clicks pass through

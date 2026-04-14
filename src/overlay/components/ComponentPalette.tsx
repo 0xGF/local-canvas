@@ -118,6 +118,7 @@ export function ComponentPalette() {
   return (
     <div
       style={{ pointerEvents: "auto" }}
+      data-canvas-overlay="true"
       className="fixed top-4 left-4 w-56 max-h-[calc(100vh-8rem)] bg-canvas-bg/95 backdrop-blur-md border border-canvas-border rounded-xl shadow-2xl overflow-hidden flex flex-col"
     >
       {/* Header */}

@@ -96,15 +96,17 @@ export function ColorPicker({ label, prefix, classes, onApply }: ColorPickerProp
     return true;
   });
   const display = current ? current.replace(`${prefix}-`, "") : "none";
+  // Strip breakpoint prefix + property prefix for color lookups
+  const currentBare = current ? current.replace(/^(sm|md|lg|xl|2xl):/, "").replace(`${prefix}-`, "") : "";
 
   let swatchBg = "transparent";
-  if (current) {
-    const parts = current.replace(`${prefix}-`, "").split("-");
+  if (currentBare) {
+    const parts = currentBare.split("-");
     if (parts.length === 2) swatchBg = getSwatchColor(parts[0], parts[1]);
     else if (parts[0] === "white") swatchBg = "#fff";
     else if (parts[0] === "black") swatchBg = "#000";
     // Arbitrary value
-    const arbMatch = current.match(/\[(.+)\]/);
+    const arbMatch = currentBare.match(/\[(.+)\]/);
     if (arbMatch) swatchBg = arbMatch[1].replace("var(", "").replace(")", "");
   }
 
@@ -178,7 +180,7 @@ export function ColorPicker({ label, prefix, classes, onApply }: ColorPickerProp
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(11, 1fr)", gap: 2 }}>
                         {SHADES.map(shade => (
-                          <button key={shade} onClick={() => applyColor(`${prefix}-${selectedColor}-${shade}`)} title={`${selectedColor}-${shade}`} style={{ width: "100%", aspectRatio: "1", borderRadius: 3, border: current === `${prefix}-${selectedColor}-${shade}` ? "2px solid #fff" : "1px solid rgba(255,255,255,0.08)", background: getSwatchColor(selectedColor, shade), cursor: "pointer", padding: 0 }} />
+                          <button key={shade} onClick={() => applyColor(`${prefix}-${selectedColor}-${shade}`)} title={`${selectedColor}-${shade}`} style={{ width: "100%", aspectRatio: "1", borderRadius: 3, border: currentBare === `${selectedColor}-${shade}` ? "2px solid #fff" : "1px solid rgba(255,255,255,0.08)", background: getSwatchColor(selectedColor, shade), cursor: "pointer", padding: 0 }} />
                         ))}
                       </div>
                     </div>

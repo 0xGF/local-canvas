@@ -1,7 +1,6 @@
 import type { WebSocket } from "ws";
 import type { WSClientMessage, WSServerMessage, Mutation } from "./types.js";
 import { MutationWriter } from "../core/writer/index.js";
-import { ComponentScanner } from "../core/scanner/component-scanner.js";
 import { AIManager } from "../ai/manager.js";
 import { SYSTEM_PROMPT, buildElementContext } from "../ai/prompts/system.js";
 
@@ -9,7 +8,6 @@ const BATCH_WINDOW_MS = 150;
 
 export function createWSHandler(projectRoot: string) {
   const writer = new MutationWriter(projectRoot);
-  const scanner = new ComponentScanner(projectRoot);
   const aiManager = new AIManager(projectRoot);
 
   return function handleConnection(ws: WebSocket) {
@@ -174,20 +172,6 @@ export function createWSHandler(projectRoot: string) {
 
         case "get-completions": {
           send(ws, { type: "completions", items: [] });
-          break;
-        }
-
-        case "scan-components": {
-          try {
-            const result = scanner.scan();
-            send(ws, {
-              type: "components-scanned",
-              components: result.components,
-              fileCount: result.fileCount,
-            });
-          } catch (error) {
-            send(ws, { type: "error", message: `Scan failed: ${String(error)}` });
-          }
           break;
         }
 

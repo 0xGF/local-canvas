@@ -27,7 +27,6 @@ export function createProxy(options: ProxyOptions) {
 
     const url = req.url || "";
     const isNoOverlay = url.includes("__canvas_no_overlay");
-    const isComponentPreview = url.includes("__canvas_component_preview");
 
     if (!isHtml || isNoOverlay) {
       proxyRes.pipe(res);
@@ -38,11 +37,7 @@ export function createProxy(options: ProxyOptions) {
     proxyRes.on("data", (chunk) => chunks.push(chunk));
     proxyRes.on("end", () => {
       let body = Buffer.concat(chunks).toString("utf-8");
-      if (isComponentPreview) {
-        body = injectComponentPreview(body);
-      } else {
-        body = injectOverlayScript(body);
-      }
+      body = injectOverlayScript(body);
       res.end(body);
     });
   });
@@ -60,50 +55,6 @@ export function createProxy(options: ProxyOptions) {
   });
 
   return proxy;
-}
-
-/**
- * For component preview: replace the app's entry script with a component renderer.
- * Since this goes through Vite's pipeline, bare imports (react, react-dom/client) resolve.
- */
-function injectComponentPreview(html: string): string {
-  // Use dynamic import() so Vite's module resolver handles bare specifiers.
-  // Static imports fail because the browser tries to resolve them before
-  // Vite's client-side import map is ready.
-  const script = `<script type="module">
-const React = await import("/node_modules/.vite/deps/react.js").then(m => m.default || m);
-const { createRoot } = await import("/node_modules/.vite/deps/react-dom_client.js");
-
-const el = document.getElementById("root") || document.body;
-el.innerHTML = '<p style="color:#888;font-size:13px;text-align:center;padding:24px">Ready</p>';
-
-let reactRoot;
-window.parent.postMessage({ type: "preview-ready" }, "*");
-
-window.addEventListener("message", async (e) => {
-  if (e.data?.type !== "render") return;
-  const { componentPath, componentName, props } = e.data;
-  try {
-    el.innerHTML = '<p style="color:#888;font-size:13px;text-align:center;padding:24px">Loading...</p>';
-    const mod = await import("/" + componentPath);
-    const Component = mod[componentName] || mod.default;
-    if (!Component) { el.innerHTML = '<p style="color:#888">Export not found: ' + componentName + '</p>'; return; }
-    if (!reactRoot) { el.innerHTML = ""; reactRoot = createRoot(el); }
-    reactRoot.render(React.createElement(Component, props || {}));
-    requestAnimationFrame(() => {
-      window.parent.postMessage({ type: "rendered", width: el.offsetWidth, height: el.offsetHeight }, "*");
-    });
-  } catch (err) {
-    el.innerHTML = '<p style="color:#f24822;font-size:12px;font-family:monospace;padding:16px">' + err.message + '</p>';
-  }
-});
-<\/script>`;
-
-  // Replace the app's main entry script
-  const mainScript = /<script\s+type="module"\s+src="\/src\/main\.[jt]sx?"[^>]*><\/script>/;
-  if (mainScript.test(html)) return html.replace(mainScript, script);
-  if (html.includes("</body>")) return html.replace("</body>", `${script}\n</body>`);
-  return html + `\n${script}`;
 }
 
 function injectOverlayScript(html: string): string {

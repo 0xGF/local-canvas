@@ -2,14 +2,13 @@ import React, { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useHistoryStore } from "../stores/history-store.js";
-import { useComponentViewStore } from "../stores/component-view-store.js";
 import { useChangesStore, type ChangeEntry } from "../stores/changes-store.js";
 import { useViewportStore } from "../hooks/useViewport.js";
 import { useWebSocket } from "../hooks/useWebSocket.js";
 import { BREAKPOINT_PRESETS } from "../../shared/breakpoints.js";
 import {
   Pointer, Pencil, Undo, Redo, Save, Reset,
-  Layers, ChevronDown, ChevronUp, X, Check,
+  ChevronDown, ChevronUp, X, Check,
 } from "./icons.js";
 
 import { THEME } from "../theme.js";
@@ -338,8 +337,6 @@ export const Toolbar = React.memo(function Toolbar() {
   const clearPending = useEditorStore((s) => s.clearPending);
   const canUndo = useHistoryStore((s) => s.canUndo);
   const canRedo = useHistoryStore((s) => s.canRedo);
-  const viewMode = useComponentViewStore((s) => s.viewMode);
-  const setViewMode = useComponentViewStore((s) => s.setViewMode);
   const vpReset = useViewportStore((s) => s.reset);
   const { undo: rawUndo, redo: rawRedo, send } = useWebSocket();
   const didUndo = useHistoryStore((s) => s.didUndo);
@@ -377,15 +374,11 @@ export const Toolbar = React.memo(function Toolbar() {
     setMode("navigate");
     selectElement(null);
     vpReset();
-    if (viewMode === "component") setViewMode("page");
-  }, [setMode, selectElement, vpReset, viewMode, setViewMode]);
+  }, [setMode, selectElement, vpReset]);
 
   const setEditMode = useCallback(() => {
     setMode("edit");
-    if (viewMode === "component") setViewMode("page");
-  }, [setMode, viewMode, setViewMode]);
-
-  const toggleViewMode = useCallback(() => setViewMode(viewMode === "page" ? "component" : "page"), [viewMode, setViewMode]);
+  }, [setMode]);
 
   if (!toolbarVisible) return null;
 
@@ -433,17 +426,8 @@ export const Toolbar = React.memo(function Toolbar() {
       animate={{ y: 0, opacity: 1 }}
       transition={{ type: "spring", stiffness: 400, damping: 30, mass: 0.8 }}
       style={{ ...barBase, left: 0, right: 0, margin: "0 auto", width: "fit-content", gap: 2 }}
+      data-canvas-overlay="true"
     >
-      <ToolBtn
-        icon={<Layers size={15} />}
-        active={viewMode === "component"}
-        onClick={toggleViewMode}
-        title="Components (C)"
-        shortcut="C"
-      />
-
-      <Sep />
-
       <ToolBtn icon={<Pointer size={15} />} active={false} onClick={setNavigateMode} title="Navigate (N)" shortcut="N" />
       <ToolBtn icon={<Pencil size={15} />} active={true} onClick={setEditMode} title="Edit (V)" shortcut="V" />
 

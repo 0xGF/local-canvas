@@ -15,5 +15,6 @@
       "port": 4400,
       "autoPort": false
     }
-  ]
+  ],
+  "autoVerify": false
 }

@@ -2,18 +2,15 @@ import React, { useEffect } from "react";
 import { CanvasOverlayLayer } from "./components/CanvasOverlayLayer.js";
 import { Toolbar } from "./components/Toolbar.js";
 import { PropertiesPanel } from "./components/PropertiesPanel.js";
-import { ComponentView } from "./components/ComponentView.js";
 import { ResponsiveFrame } from "./components/ResponsiveFrame.js";
 import { ContextMenu } from "./components/ContextMenu.js";
 import { useSelection } from "./hooks/useSelection.js";
 import { useKeyboard } from "./hooks/useKeyboard.js";
 import { useViewport, restoreViewport } from "./hooks/useViewport.js";
-import { useComponentViewStore } from "./stores/component-view-store.js";
 import { useEditorStore } from "./stores/editor-store.js";
 import { readFromStorage } from "./utils/persist-state.js";
 
 export function App() {
-  const viewMode = useComponentViewStore((s) => s.viewMode);
   const mode = useEditorStore((s) => s.mode);
 
   useSelection();
@@ -41,16 +38,11 @@ export function App() {
 
   return (
     <>
-      {viewMode === "component" ? (
-        <ComponentView />
-      ) : (
-        <>
-          <ResponsiveFrame />
-          {mode === "edit" && <CanvasOverlayLayer />}
-          {mode === "edit" && <PropertiesPanel />}
-          {mode === "edit" && <ContextMenu />}
-        </>
-      )}
+      <ResponsiveFrame />
+      {mode === "edit" && <CanvasOverlayLayer />}
+      {mode === "edit" && <PropertiesPanel />}
+      {mode === "edit" && <ContextMenu />}
+
       <Toolbar />
     </>
   );

@@ -153,7 +153,7 @@ export const PropertiesPanel = React.memo(function PropertiesPanel() {
   if (!open || !sel) return null;
 
   return (
-    <div style={panelStyle}>
+    <div style={panelStyle} data-canvas-overlay="true">
       {/* Header */}
       <div style={headerStyle}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
@@ -826,7 +826,7 @@ const panelStyle: React.CSSProperties = {
   borderRadius: 10, boxShadow: "0 8px 40px rgba(0,0,0,0.45)",
   overflow: "visible", display: "flex", flexDirection: "column",
   pointerEvents: "auto", fontFamily: C.font, fontSize: 11,
-  color: C.fg, WebkitFontSmoothing: "antialiased",
+  color: C.fg, WebkitFontSmoothing: "antialiased", userSelect: "none",
   zIndex: 2147483647,
 };
 

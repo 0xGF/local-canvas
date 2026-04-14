@@ -67,9 +67,12 @@ export function createProxy(options: ProxyOptions) {
  * Since this goes through Vite's pipeline, bare imports (react, react-dom/client) resolve.
  */
 function injectComponentPreview(html: string): string {
+  // Use dynamic import() so Vite's module resolver handles bare specifiers.
+  // Static imports fail because the browser tries to resolve them before
+  // Vite's client-side import map is ready.
   const script = `<script type="module">
-import React from "react";
-import { createRoot } from "react-dom/client";
+const React = await import("/node_modules/.vite/deps/react.js?v=preview").then(m => m.default || m).catch(() => import("react").then(m => m.default || m));
+const { createRoot } = await import("/node_modules/.vite/deps/react-dom_client.js?v=preview").then(m => m).catch(() => import("react-dom/client"));
 
 const el = document.getElementById("root") || document.body;
 el.innerHTML = '<p style="color:#888;font-size:13px;text-align:center;padding:24px">Ready</p>';

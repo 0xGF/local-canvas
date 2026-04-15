@@ -80,7 +80,13 @@ export async function postAnnotation(opts: PostAnnotationOpts): Promise<Annotati
     }),
   });
   if (!res.ok) throw new Error(`agentation: ${res.status}`);
-  return res.json();
+  const annotation = await res.json() as Annotation;
+  // Let the pin layer and history popover know so they can refresh immediately
+  // instead of waiting for their next poll tick (up to 3s delay otherwise).
+  window.dispatchEvent(new CustomEvent("canvas:annotation-posted", {
+    detail: { annotation },
+  }));
+  return annotation;
 }
 
 /** List annotations for the current session. */

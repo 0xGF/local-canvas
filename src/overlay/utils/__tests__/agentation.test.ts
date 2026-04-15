@@ -155,3 +155,44 @@ describe("dispatchToggleAIHistory", () => {
     }
   });
 });
+
+describe("postAnnotation", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("dispatches canvas:annotation-posted after a successful post", async () => {
+    const { postAnnotation } = await import("../agentation.js");
+
+    const fakeSessionId = "sess-xyz";
+    const fakeAnnotation = { id: "ann-1", comment: "hi", elementPath: "f:1" };
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/sessions") && init?.method === "POST") {
+        return new Response(JSON.stringify({ id: fakeSessionId }), { status: 200 });
+      }
+      if (u.includes(`/sessions/${fakeSessionId}/annotations`) && init?.method === "POST") {
+        return new Response(JSON.stringify(fakeAnnotation), { status: 200 });
+      }
+      throw new Error("unexpected fetch: " + u);
+    }) as typeof fetch;
+
+    const listener = vi.fn();
+    window.addEventListener("canvas:annotation-posted", listener as EventListener);
+    try {
+      const result = await postAnnotation({
+        comment: "hi",
+        element: "<div>",
+        elementPath: "f:1",
+      });
+      expect(result).toMatchObject(fakeAnnotation);
+      expect(listener).toHaveBeenCalledTimes(1);
+      const ev = listener.mock.calls[0][0] as CustomEvent<{ annotation: { id: string } }>;
+      expect(ev.detail?.annotation?.id).toBe("ann-1");
+    } finally {
+      window.removeEventListener("canvas:annotation-posted", listener as EventListener);
+    }
+  });
+});

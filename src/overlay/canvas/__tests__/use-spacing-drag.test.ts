@@ -4,6 +4,7 @@ import { useSpacingDrag } from "../use-spacing-drag.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useViewportStore } from "../../hooks/useViewport.js";
 import type { BadgeHit, TagBadgeHit } from "../constants.js";
+import { DEFAULT_BREAKPOINT } from "../../../shared/breakpoints.js";
 
 // Mock useWebSocket
 vi.mock("../../hooks/useWebSocket.js", () => ({
@@ -41,7 +42,7 @@ describe("useSpacingDrag", () => {
       commandBarOpen: false,
       connected: false,
       toolbarVisible: true,
-      breakpoint: null,
+      breakpoint: DEFAULT_BREAKPOINT,
       pendingCount: 0,
     });
     useViewportStore.setState({ zoom: 1, panX: 0, panY: 0 });

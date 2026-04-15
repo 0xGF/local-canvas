@@ -42,7 +42,7 @@ export default function CLI() {
           <TableBody>
             {[
               ["-t, --target <port>", "3000", "Port your dev server is running on"],
-              ["-p, --port <port>", "3001", "Port the editor proxy listens on"],
+              ["-p, --port <port>", "6966", "Port the editor proxy listens on"],
               ["--host <host>", "localhost", "Hostname of your dev server"],
               ["-r, --root <path>", "cwd", "Project root for source file resolution"],
             ].map(([flag, def, desc]) => (
@@ -91,7 +91,7 @@ npx local-canvas dev --target 8080`} />
           </TabsContent>
 
           <TabsContent value="custom">
-            <CodeBlock code={`# Editor on port 8080 instead of 3001
+            <CodeBlock code={`# Editor on port 8080 instead of 6966
 npx local-canvas dev --port 8080
 
 # Custom host

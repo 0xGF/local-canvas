@@ -345,8 +345,8 @@ export function paintFrame(
           const fileName = fp.split("/").pop()?.replace(/\.[jt]sx?$/, "") || "";
           if (fileName) {
             const compLabel = `${fileName}:${selectedElement.source.line}`;
-            const cw = drawLabelBadge(ctx, compLabel, r.left + tagBw + 4, r.top - 22, COL.purple);
-            componentBadgeEnd = r.left + tagBw + 4 + cw;
+            const cw = drawLabelBadge(ctx, compLabel, r.left + tagBw + 3, r.top - 22, COL.purple);
+            componentBadgeEnd = r.left + tagBw + 3 + cw;
           }
         }
 

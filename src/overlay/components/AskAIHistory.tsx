@@ -48,8 +48,7 @@ const HistoryRow = React.memo(function HistoryRow({ a, onOpen, onHide }: History
   const fileTail = a.elementPath?.split("/").pop() || a.elementPath;
   const tag = a.element?.match(/^<(\w+)>/)?.[1] || "?";
   // Last agent reply, if any (agentation server stores them in `thread`)
-  const thread = (a as any).thread as Array<{ role: string; content: string }> | undefined;
-  const lastReply = thread?.filter(t => t.role === "agent").slice(-1)[0]?.content;
+  const lastReply = a.thread?.filter(t => t.role === "agent").slice(-1)[0]?.content;
   const onCurrentPage = a.url === window.location.href;
 
   return (

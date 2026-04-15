@@ -9,7 +9,7 @@ import type { PaintContext } from "../canvas/paint-frame.js";
 import { useSpacingDrag } from "../canvas/use-spacing-drag.js";
 import { useTextEdit } from "../hooks/useTextEdit.js";
 import { computeHandles, paintHandles, useResizeHandles } from "../canvas/use-resize-handles.js";
-import { attachToDocumentAndIframe } from "../utils/iframe-events.js";
+import { attachToDocumentAndIframe, bind, getEditorIframe } from "../utils/iframe-events.js";
 import type { ResizeHandle } from "../canvas/use-resize-handles.js";
 
 const SPACING_KEYS = ["margin-top","margin-right","margin-bottom","margin-left","padding-top","padding-right","padding-bottom","padding-left"];
@@ -33,7 +33,7 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
   const prevMousePosRef = useRef<{ x: number; y: number } | null>(null);
 
   const resizeHandlesRef = useRef<ResizeHandle[]>([]);
-  const { dragTooltip, reorderRef, commitSpacing, spacingDragRef } = useSpacingDrag(badgeHitsRef, tagBadgeHitRef);
+  const { reorderRef, commitSpacing, spacingDragRef } = useSpacingDrag(badgeHitsRef, tagBadgeHitRef);
   useTextEdit();
   const { resizeTooltip } = useResizeHandles(resizeHandlesRef);
 
@@ -81,9 +81,7 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
 
       // Compute iframe offset from shadow DOM — works for hover (no selection) too.
       let iframeOffset = { x: 0, y: 0, scale: 1 };
-      const host = document.getElementById("local-canvas-host");
-      const shadow = host?.shadowRoot;
-      const iframeEl = shadow?.querySelector("#responsive-frame-container iframe") as HTMLIFrameElement | null;
+      const iframeEl = getEditorIframe();
       if (iframeEl) {
         const ir = iframeEl.getBoundingClientRect();
         const naturalW = parseInt(iframeEl.style.width) || ir.width;
@@ -276,7 +274,7 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
     }
 
     return attachToDocumentAndIframe(
-      [{ event: "dblclick", handler: onDblClick }],
+      [bind("dblclick", onDblClick)],
       { translateCoords: true },
     );
   }, []);
@@ -314,13 +312,7 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
         </div>
       )}
 
-      {/* Drag tooltip */}
       {/* Drag tooltip removed — the notch pill already shows the live value */}
-      {false && dragTooltip && (
-        <div style={{ position: "fixed", left: dragTooltip.x + 12, top: dragTooltip.y - 10, zIndex: 2147483647, pointerEvents: "none", background: dragTooltip.color, color: "#fff", fontSize: 10, fontWeight: 600, fontFamily: FONT, padding: "2px 6px", borderRadius: 4, boxShadow: "0 2px 8px rgba(0,0,0,0.3)" }}>
-          {dragTooltip.value}px
-        </div>
-      )}
 
       {/* Resize tooltip */}
       {resizeTooltip && (

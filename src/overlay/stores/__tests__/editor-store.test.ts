@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useEditorStore } from "../editor-store.js";
+import { DEFAULT_BREAKPOINT } from "../../../shared/breakpoints.js";
 
 describe("useEditorStore", () => {
   beforeEach(() => {
@@ -13,7 +14,7 @@ describe("useEditorStore", () => {
       commandBarOpen: false,
       connected: false,
       toolbarVisible: true,
-      breakpoint: null,
+      breakpoint: DEFAULT_BREAKPOINT,
       pendingCount: 0,
     });
   });
@@ -22,7 +23,7 @@ describe("useEditorStore", () => {
     const state = useEditorStore.getState();
     expect(state.mode).toBe("navigate");
     expect(state.selectedElement).toBeNull();
-    expect(state.breakpoint).toBeNull();
+    expect(state.breakpoint).toBe(DEFAULT_BREAKPOINT);
     expect(state.pendingCount).toBe(0);
   });
 
@@ -72,11 +73,11 @@ describe("useEditorStore", () => {
     expect(state.selectedElement).not.toBeNull();
   });
 
-  it("setBreakpoint(null) clears breakpoint", () => {
+  it("setBreakpoint resets to default", () => {
     useEditorStore.getState().setBreakpoint(768);
     expect(useEditorStore.getState().breakpoint).toBe(768);
-    useEditorStore.getState().setBreakpoint(null);
-    expect(useEditorStore.getState().breakpoint).toBeNull();
+    useEditorStore.getState().setBreakpoint(DEFAULT_BREAKPOINT);
+    expect(useEditorStore.getState().breakpoint).toBe(DEFAULT_BREAKPOINT);
   });
 
   it("incrementPending and clearPending", () => {

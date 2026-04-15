@@ -64,11 +64,11 @@ export function Sidebar() {
   const { pathname } = useLocation();
 
   return (
-    <aside className="hidden md:flex flex-col w-[180px] shrink-0 overflow-y-auto border-r border-neutral-100 pr-4">
+    <aside className="hidden md:flex flex-col w-[180px] shrink-0 overflow-y-auto border-r border-neutral-100">
       {/* Logo */}
       <div className="pt-12 2xl:pb-[30px]">
         <Link to="/overview" className="flex items-center gap-2">
-          <img src="/logo.svg" alt="Local Canvas" className="2xl:mb-5 md:mb-[19px] 2xl:w-[110px] 2xl:h-[38px]" />
+          <img src="/logo.svg" alt="Local Canvas" className="2xl:mb-[29px] md:mb-[19px] 2xl:w-[152px] 2xl:h-[53px] md:w-[141px] md:h-[39px]" />
         </Link>
         <span className="text-[11px] text-[#a8a29e] mt-0.5 block">v0.1.0</span>
       </div>

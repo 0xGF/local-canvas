@@ -4,7 +4,7 @@ import { useViewportStore } from "../hooks/useViewport.js";
 import { useWebSocket } from "../hooks/useWebSocket.js";
 import { getBreakpointPrefix } from "../../shared/breakpoints.js";
 import { TW_PX, TW_NAMES } from "./constants.js";
-import { attachToDocumentAndIframe } from "../utils/iframe-events.js";
+import { attachToDocumentAndIframe, bind } from "../utils/iframe-events.js";
 import { markDragEnd } from "../utils/drag-state.js";
 
 export type HandlePosition = "top" | "right" | "bottom" | "left" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
@@ -279,9 +279,9 @@ export function useResizeHandles(handlesRef: React.MutableRefObject<ResizeHandle
     }
 
     return attachToDocumentAndIframe([
-      { event: "mousedown", handler: onMouseDown },
-      { event: "mousemove", handler: onMouseMove },
-      { event: "mouseup", handler: onMouseUp },
+      bind("mousedown", onMouseDown),
+      bind("mousemove", onMouseMove),
+      bind("mouseup", onMouseUp),
     ], { translateCoords: true });
   }, [commitSize, handlesRef]);
 

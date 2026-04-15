@@ -54,10 +54,10 @@ export const SIDE_PREFIX: Record<string, Record<string, string>> = {
 // ── Badge CSS for drawElementImage ──
 export const BADGE_CSS: React.CSSProperties = {
   display: "inline-block", fontSize: 9, fontWeight: 600, fontFamily: FONT,
-  color: "#fff", padding: "1px 5px", borderRadius: 4, whiteSpace: "nowrap", lineHeight: "14px",
+  color: "#fff", padding: "0 4px", borderRadius: 3, whiteSpace: "nowrap", lineHeight: "14px",
 };
 export const LABEL_CSS: React.CSSProperties = {
   display: "inline-block", fontSize: 10, fontWeight: 500, fontFamily: FONT,
-  color: "#fff", padding: "2px 8px", borderRadius: 10, whiteSpace: "nowrap",
-  lineHeight: "16px", letterSpacing: "0.2px",
+  color: "#fff", padding: "0 5px", borderRadius: 3, whiteSpace: "nowrap",
+  lineHeight: "14px", letterSpacing: "0.2px",
 };

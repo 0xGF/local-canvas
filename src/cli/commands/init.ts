@@ -86,7 +86,7 @@ function printProxyInstructions() {
 
     ${chalk.white("npx local-canvas dev --target 3000")}
 
-  The editor proxy starts on port ${chalk.cyan("3001")} and injects the
+  The editor proxy starts on port ${chalk.cyan("6966")} and injects the
   overlay into your app. No build plugin needed — source mapping
   uses React DevTools fiber data automatically.
 `);

@@ -3,7 +3,7 @@ import { useEditorStore } from "../stores/editor-store.js";
 import { useWebSocket } from "./useWebSocket.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
 import { deepElementFromPoint } from "../utils/element-picker.js";
-import { attachToDocumentAndIframe } from "../utils/iframe-events.js";
+import { attachToDocumentAndIframe, bind, getEditorIframe, getIframeDocument } from "../utils/iframe-events.js";
 
 /**
  * Double-click on text elements to edit them inline.
@@ -57,12 +57,6 @@ export function useTextEdit() {
       return Boolean(text && text.length > 0);
     }
 
-    function getIframe(): HTMLIFrameElement | null {
-      const host = document.getElementById("local-canvas-host");
-      const shadow = host?.shadowRoot;
-      return shadow?.querySelector("iframe") as HTMLIFrameElement | null;
-    }
-
     /** Start inline editing on the given element. Used by both dblclick and context menu. */
     function startEditing(target: HTMLElement) {
       const source = resolveSource(target);
@@ -84,7 +78,7 @@ export function useTextEdit() {
       target.style.borderRadius = "2px";
 
       // Focus: iframe window first, then the element
-      const iframe = getIframe();
+      const iframe = getEditorIframe();
       if (iframe?.contentWindow) {
         iframe.contentWindow.focus();
       }
@@ -120,7 +114,7 @@ export function useTextEdit() {
       // The previous version subtracted iframe offset but FORGOT to divide by
       // the iframe's CSS transform scale, so at breakpoint widths the cursor
       // picked an element above/below the actual target.
-      const iframe = getIframe();
+      const iframe = getEditorIframe();
       let target: HTMLElement | null = null;
 
       if (iframe?.contentDocument) {
@@ -182,7 +176,7 @@ export function useTextEdit() {
 
     // dblclick via shared iframe helper (translates coords from iframe to parent)
     const cleanupDblClick = attachToDocumentAndIframe(
-      [{ event: "dblclick", handler: onDblClick }],
+      [bind("dblclick", onDblClick)],
       { translateCoords: true },
     );
 
@@ -190,25 +184,22 @@ export function useTextEdit() {
     document.addEventListener("blur", onBlur, true);
     document.addEventListener("keydown", onKeyDown, true);
     // Custom event for context menu "Edit Text"
-    document.addEventListener("canvas:start-text-edit" as any, onStartTextEdit, true);
+    document.addEventListener("canvas:start-text-edit", onStartTextEdit, true);
 
     // Also attach blur/keydown/start-text-edit to iframe doc (polls for iframe remounts)
     let iframeDoc: Document | null = null;
     function attachIframe() {
-      const host = document.getElementById("local-canvas-host");
-      const shadow = host?.shadowRoot;
-      const iframe = shadow?.querySelector("iframe") as HTMLIFrameElement | null;
-      const doc = iframe?.contentDocument ?? null;
+      const doc = getIframeDocument();
       if (doc && doc !== iframeDoc) {
         if (iframeDoc) {
           iframeDoc.removeEventListener("blur", onBlur, true);
           iframeDoc.removeEventListener("keydown", onKeyDown, true);
-          iframeDoc.removeEventListener("canvas:start-text-edit" as any, onStartTextEdit, true);
+          iframeDoc.removeEventListener("canvas:start-text-edit", onStartTextEdit, true);
         }
         iframeDoc = doc;
         iframeDoc.addEventListener("blur", onBlur, true);
         iframeDoc.addEventListener("keydown", onKeyDown, true);
-        iframeDoc.addEventListener("canvas:start-text-edit" as any, onStartTextEdit, true);
+        iframeDoc.addEventListener("canvas:start-text-edit", onStartTextEdit, true);
       }
     }
     attachIframe();
@@ -221,11 +212,11 @@ export function useTextEdit() {
       clearInterval(poll);
       document.removeEventListener("blur", onBlur, true);
       document.removeEventListener("keydown", onKeyDown, true);
-      document.removeEventListener("canvas:start-text-edit" as any, onStartTextEdit, true);
+      document.removeEventListener("canvas:start-text-edit", onStartTextEdit, true);
       if (iframeDoc) {
         iframeDoc.removeEventListener("blur", onBlur, true);
         iframeDoc.removeEventListener("keydown", onKeyDown, true);
-        iframeDoc.removeEventListener("canvas:start-text-edit" as any, onStartTextEdit, true);
+        iframeDoc.removeEventListener("canvas:start-text-edit", onStartTextEdit, true);
       }
     };
   }, []); // stable — reads everything from refs / getState()

@@ -134,7 +134,7 @@ export const InlineTextEditor = React.memo(function InlineTextEditor() {
           lineHeight: cs.lineHeight,
           letterSpacing: cs.letterSpacing,
           color: cs.color,
-          textAlign: cs.textAlign as any,
+          textAlign: cs.textAlign as React.CSSProperties["textAlign"],
           background: "rgba(0,0,0,0.8)",
           border: `2px solid ${C.accent}`,
           borderRadius: 4,

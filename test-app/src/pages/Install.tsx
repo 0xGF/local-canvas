@@ -75,9 +75,9 @@ export default defineConfig({
         </p>
         <CodeBlock code="npx local-canvas dev" />
         <p className="text-[14px] text-neutral-600 leading-relaxed">
-          The proxy starts on port <strong className="text-neutral-800">3001</strong>.
+          The proxy starts on port <strong className="text-neutral-800">6966</strong>.
           Open{" "}
-          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">localhost:3001</code>{" "}
+          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">localhost:6966</code>{" "}
           to see your app with the toolbar. Port 3000 still works without the overlay.
         </p>
       </div>

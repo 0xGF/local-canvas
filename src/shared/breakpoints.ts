@@ -27,6 +27,19 @@ export const DEFAULT_BREAKPOINTS: Record<string, number> = {
 /** All recognized responsive prefixes (order matters — smallest first) */
 export const RESPONSIVE_PREFIXES = ["sm", "md", "lg", "xl", "2xl"] as const;
 
+/** Matches a leading `sm:` / `md:` / `lg:` / `xl:` / `2xl:` prefix on a Tailwind class. */
+export const RESPONSIVE_PREFIX_RE = /^(sm|md|lg|xl|2xl):/;
+
+/** True if `cls` already carries a responsive prefix. */
+export function hasResponsivePrefix(cls: string): boolean {
+  return RESPONSIVE_PREFIX_RE.test(cls);
+}
+
+/** Strip any leading responsive prefix from a class name. */
+export function stripResponsivePrefix(cls: string): string {
+  return cls.replace(RESPONSIVE_PREFIX_RE, "");
+}
+
 /** Preset list for the Toolbar breakpoint selector */
 export const BREAKPOINT_PRESETS: BreakpointDef[] = [
   { label: "Mobile S", width: 320, prefix: "" },
@@ -64,9 +77,3 @@ export function getBreakpointPrefix(width: number | null): string {
   return best;
 }
 
-/** Pixel-width → prefix lookup (reverse of DEFAULT_BREAKPOINTS) */
-const WIDTH_TO_PREFIX: Record<number, string> = {};
-for (const [prefix, px] of Object.entries(DEFAULT_BREAKPOINTS)) {
-  WIDTH_TO_PREFIX[px] = prefix;
-}
-export { WIDTH_TO_PREFIX };

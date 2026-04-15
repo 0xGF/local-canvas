@@ -2,11 +2,12 @@ import { create } from "zustand";
 import type { SourceLocation } from "../../core/source-map/types.js";
 import { DEFAULT_BREAKPOINT } from "../../shared/breakpoints.js";
 import { syncToStorage } from "../utils/persist-state.js";
+import { getIframeDocument } from "../utils/iframe-events.js";
 
 export type EditorMode = "navigate" | "edit";
 export type PanelSide = "left" | "right" | "none";
 
-interface SelectedElement {
+export interface SelectedElement {
   element: HTMLElement;
   source: SourceLocation | null;
   rect: DOMRect;
@@ -169,10 +170,8 @@ export const useEditorStore = create<EditorState>((set) => ({
       // Search in both the main document and any iframe document (breakpoint mode)
       const getTargetDocuments = (): Document[] => {
         const docs: Document[] = [document];
-        const host = document.getElementById("local-canvas-host");
-        const shadow = host?.shadowRoot;
-        const iframe = shadow?.querySelector("iframe") as HTMLIFrameElement | null;
-        if (iframe?.contentDocument) docs.push(iframe.contentDocument);
+        const iframeDoc = getIframeDocument();
+        if (iframeDoc) docs.push(iframeDoc);
         return docs;
       };
 

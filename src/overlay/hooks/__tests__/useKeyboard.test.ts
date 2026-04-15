@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useEditorStore } from "../../stores/editor-store.js";
+import { DEFAULT_BREAKPOINT } from "../../../shared/breakpoints.js";
 
 // Mock useWebSocket
 const mockSend = vi.fn().mockResolvedValue({});
@@ -24,7 +25,7 @@ describe("useKeyboard shortcuts", () => {
       commandBarOpen: false,
       connected: false,
       toolbarVisible: true,
-      breakpoint: null,
+      breakpoint: DEFAULT_BREAKPOINT,
       pendingCount: 0,
     });
     mockSend.mockClear();

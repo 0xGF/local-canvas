@@ -31,7 +31,27 @@ export function getIframeDocument(): Document | null {
 }
 
 type EventName = keyof DocumentEventMap;
-type Listener = (e: any) => void;
+type Listener<E extends EventName = EventName> = (e: DocumentEventMap[E]) => void;
+
+/** A listener bound to a specific event name. */
+export interface EventBinding<E extends EventName = EventName> {
+  event: E;
+  handler: Listener<E>;
+}
+
+/** Discriminated union over every possible (event, handler) pair — lets a
+ *  heterogeneous array hold bindings for different events while keeping each
+ *  handler's event type narrowed at the call site. */
+export type AnyEventBinding = { [E in EventName]: EventBinding<E> }[EventName];
+
+/**
+ * Construct an event binding with the handler's event type inferred from the
+ * event name. Use this in `attachToDocumentAndIframe` calls so each entry
+ * carries its own narrowed handler type without `as any`.
+ */
+export function bind<E extends EventName>(event: E, handler: Listener<E>): EventBinding<E> {
+  return { event, handler };
+}
 
 interface AttachOptions {
   /** Translate iframe-local mouse coordinates to parent viewport coords. */
@@ -50,17 +70,18 @@ interface AttachOptions {
  * Returns a cleanup function.
  */
 export function attachToDocumentAndIframe(
-  events: Array<{ event: EventName; handler: Listener }>,
+  events: ReadonlyArray<AnyEventBinding>,
   opts: AttachOptions = {},
 ): () => void {
   const { translateCoords = false, capture = true } = opts;
   let iframeDoc: Document | null = null;
 
   // --- Parent document handlers (guarded) ---
-  const parentHandlers: Array<{ event: EventName; handler: Listener }> = [];
+  const parentHandlers: AnyEventBinding[] = [];
 
-  for (const { event, handler } of events) {
-    const guarded = (e: Event) => {
+  for (const binding of events) {
+    const { event, handler } = binding as EventBinding<EventName>;
+    const guarded: Listener = (e) => {
       // Skip mouse events when cursor is over the iframe — iframe handler covers those
       if (e instanceof MouseEvent && e.isTrusted) {
         const iframe = getEditorIframe();
@@ -75,15 +96,16 @@ export function attachToDocumentAndIframe(
       handler(e);
     };
     document.addEventListener(event, guarded, capture);
-    parentHandlers.push({ event, handler: guarded });
+    parentHandlers.push({ event, handler: guarded } as AnyEventBinding);
   }
 
   // --- Iframe handlers (coordinate translation) ---
-  const iframeHandlers: Array<{ event: EventName; handler: Listener }> = [];
+  const iframeHandlers: AnyEventBinding[] = [];
 
   function wrapHandler(handler: Listener): Listener {
     if (!translateCoords) return handler;
-    return (e: MouseEvent) => {
+    return (e) => {
+      if (!(e instanceof MouseEvent)) { handler(e); return; }
       const iframe = getEditorIframe();
       if (!iframe) return;
       const ir = iframe.getBoundingClientRect();
@@ -107,13 +129,15 @@ export function attachToDocumentAndIframe(
     };
   }
 
-  for (const { event, handler } of events) {
-    iframeHandlers.push({ event, handler: wrapHandler(handler) });
+  for (const binding of events) {
+    const { event, handler } = binding as EventBinding<EventName>;
+    iframeHandlers.push({ event, handler: wrapHandler(handler) } as AnyEventBinding);
   }
 
   function detachIframe() {
     if (!iframeDoc) return;
-    for (const { event, handler } of iframeHandlers) {
+    for (const binding of iframeHandlers) {
+      const { event, handler } = binding as EventBinding<EventName>;
       try { iframeDoc.removeEventListener(event, handler, capture); } catch { /* ignore */ }
     }
   }
@@ -123,7 +147,8 @@ export function attachToDocumentAndIframe(
     if (doc && doc !== iframeDoc) {
       detachIframe();
       iframeDoc = doc;
-      for (const { event, handler } of iframeHandlers) {
+      for (const binding of iframeHandlers) {
+        const { event, handler } = binding as EventBinding<EventName>;
         try { iframeDoc.addEventListener(event, handler, capture); } catch { /* cross-origin */ }
       }
     }
@@ -134,7 +159,8 @@ export function attachToDocumentAndIframe(
 
   return () => {
     clearInterval(poll);
-    for (const { event, handler } of parentHandlers) {
+    for (const binding of parentHandlers) {
+      const { event, handler } = binding as EventBinding<EventName>;
       document.removeEventListener(event, handler, capture);
     }
     detachIframe();

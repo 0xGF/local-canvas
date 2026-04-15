@@ -5,7 +5,7 @@ DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$DIR"
 
 # Kill stale processes
-for port in 3000 3001 4747; do
+for port in 3000 6966 6967; do
   pid=$(lsof -ti:$port 2>/dev/null || true)
   if [ -n "$pid" ]; then
     kill -9 $pid 2>/dev/null || true
@@ -18,9 +18,9 @@ sleep 1
 echo "Building..."
 npm run build
 
-# Start agentation-mcp HTTP server (agent bridge on :4747)
-echo "Starting agentation server on :4747..."
-npx agentation-mcp server --port 4747 &
+# Start agentation-mcp HTTP server (agent bridge on :6967)
+echo "Starting agentation server on :6967..."
+npx agentation-mcp server --port 6967 &
 
 # Start test app
 echo "Starting test app on :3000..."
@@ -38,6 +38,6 @@ for i in $(seq 1 30); do
 done
 
 # Start proxy (foreground — Ctrl+C kills everything)
-echo "Starting editor on :3001..."
+echo "Starting editor on :6966..."
 trap 'kill $(jobs -p) 2>/dev/null' EXIT
 node dist/cli/index.js dev --root test-app

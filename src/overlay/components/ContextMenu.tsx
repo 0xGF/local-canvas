@@ -1,6 +1,7 @@
 import React, { useEffect, useCallback, useState, useRef } from "react";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useWebSocket } from "../hooks/useWebSocket.js";
+import type { Mutation } from "../../server/types.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
 import {
   Type, Copy, ClipboardPaste, Trash2,
@@ -111,7 +112,7 @@ export const ContextMenu = React.memo(function ContextMenu() {
 
   const close = useCallback(() => { setContextMenu(null); setAiPromptOpen(false); }, [setContextMenu]);
 
-  const tracked = useCallback(async (mutation: any) => {
+  const tracked = useCallback(async (mutation: Mutation) => {
     await sendMutation(mutation);
     incrementPending();
     close();
@@ -201,7 +202,7 @@ export const ContextMenu = React.memo(function ContextMenu() {
         const children = Array.from(parent.children);
         const idx = children.indexOf(el);
         if (idx <= 0) return close();
-        sendMutation({ type: "reorder", source: parentSource, fromIndex: idx, toIndex: idx - 1 } as any).then(() => incrementPending());
+        sendMutation({ type: "reorder", source: parentSource, fromIndex: idx, toIndex: idx - 1 }).then(() => incrementPending());
         close();
       },
     },
@@ -216,7 +217,7 @@ export const ContextMenu = React.memo(function ContextMenu() {
         const children = Array.from(parent.children);
         const idx = children.indexOf(el);
         if (idx >= children.length - 1) return close();
-        sendMutation({ type: "reorder", source: parentSource, fromIndex: idx, toIndex: idx + 1 } as any).then(() => incrementPending());
+        sendMutation({ type: "reorder", source: parentSource, fromIndex: idx, toIndex: idx + 1 }).then(() => incrementPending());
         close();
       },
       dividerAfter: true,

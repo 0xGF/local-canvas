@@ -3,7 +3,7 @@ import { useEditorStore } from "../stores/editor-store.js";
 import { useHistoryStore } from "../stores/history-store.js";
 import { useChangesStore } from "../stores/changes-store.js";
 import { useWebSocket } from "./useWebSocket.js";
-import { attachToDocumentAndIframe } from "../utils/iframe-events.js";
+import { attachToDocumentAndIframe, bind } from "../utils/iframe-events.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
 import { dispatchNavigatePin, dispatchToggleAIHistory } from "../utils/agentation.js";
 
@@ -54,7 +54,7 @@ export function useKeyboard() {
       const isMeta = e.metaKey || e.ctrlKey;
 
       // Global shortcuts (work even while typing)
-      if (isMeta && e.key === "s") { e.preventDefault(); e.stopPropagation(); s.send({ type: "save" as any }); s.clearPending(); s.clearChanges(); return; }
+      if (isMeta && e.key === "s") { e.preventDefault(); e.stopPropagation(); s.send({ type: "save" }); s.clearPending(); s.clearChanges(); return; }
       if (isMeta && e.key === "z" && !e.shiftKey) { e.preventDefault(); if (useEditorStore.getState().pendingCount <= 0) return; s.undo(); s.didUndo(); s.decrementPending(); useEditorStore.getState().showToast("↩ Undo"); return; }
       if (isMeta && e.key === "z" && e.shiftKey) { e.preventDefault(); s.redo(); s.didRedo(); s.incrementPending(); useEditorStore.getState().showToast("↪ Redo"); return; }
 
@@ -142,7 +142,7 @@ export function useKeyboard() {
       }
     }
 
-    return attachToDocumentAndIframe([{ event: "keydown", handler: handleKeyDown }]);
+    return attachToDocumentAndIframe([bind("keydown", handleKeyDown)]);
   }, []);
 }
 

@@ -2,6 +2,8 @@ import React, { useState, useCallback } from "react";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useClassHelpers } from "../hooks/useClassHelpers.js";
 import { getCachedStyle } from "../utils/style-cache.js";
+import { setStyleProp } from "../utils/dom-style.js";
+import { useCSSVariables, filterVariables } from "../hooks/useCSSVariables.js";
 import { Section, PropRow, SubLabel } from "./ui/section.js";
 import { CustomSelect } from "./ui/custom-select.js";
 import { NumberInput } from "./ui/number-input.js";
@@ -9,6 +11,17 @@ import { SliderInput } from "./ui/slider-input.js";
 import { ToggleGroup } from "./ui/toggle-group.js";
 import { ColorPicker } from "./ui/color-picker.js";
 import { Slider } from "./ui/slider.js";
+import { VariableSuggest } from "./ui/variable-suggest.js";
+import { THEME } from "../theme.js";
+import { PREFIX_TO_CSS } from "../canvas/constants.js";
+import {
+  DISPLAY_OPTS, FLEX_DIR_OPTS,
+  OPACITY_MAP, OPACITY_VALUES,
+  JUSTIFY_OPTIONS, ALIGN_OPTIONS,
+  SHADOW_OPTIONS, POSITION_OPTIONS, OVERFLOW_OPTIONS, Z_INDEX_OPTIONS, SIZE_OPTIONS,
+  INSET_OPTIONS, LEADING_OPTIONS, TRACKING_OPTIONS, GRID_COLS_OPTIONS, FLEX_ITEM_OPTIONS,
+  pxToTwScale, twValueToPx,
+} from "./PropertiesPanel.constants.js";
 import {
   X,
   AlignLeft, AlignCenter, AlignRight,
@@ -17,125 +30,7 @@ import {
   Square, Columns3, Grid3x3, EyeOff,
 } from "./icons.js";
 
-// ── Tailwind value maps ──
-const SPACING = ["0","0.5","1","1.5","2","2.5","3","3.5","4","5","6","7","8","9","10","11","12","14","16","20","24","28","32","36","40","44","48","52","56","60","64","72","80","96"];
-const FONT_SIZES = ["xs","sm","base","lg","xl","2xl","3xl","4xl","5xl","6xl","7xl","8xl","9xl"];
-const FONT_WEIGHTS = [{v:"thin",l:"100"},{v:"extralight",l:"200"},{v:"light",l:"300"},{v:"normal",l:"400"},{v:"medium",l:"500"},{v:"semibold",l:"600"},{v:"bold",l:"700"},{v:"extrabold",l:"800"},{v:"black",l:"900"}];
-const RADIUS = ["none","sm","","md","lg","xl","2xl","3xl","full"];
-const DISPLAY_OPTS = ["block","inline-block","inline","flex","inline-flex","grid","hidden"];
-const JUSTIFY_OPTS = ["start","center","end","between","around","evenly"];
-const ALIGN_OPTS = ["start","center","end","stretch","baseline"];
-const FLEX_DIR_OPTS = ["row","row-reverse","col","col-reverse"];
-const OPACITY_MAP: Record<string, number> = {
-  "0":0,"5":5,"10":10,"20":20,"25":25,"30":30,"40":40,"50":50,
-  "60":60,"70":70,"75":75,"80":80,"90":90,"95":95,"100":100
-};
-const OPACITY_VALUES = ["0","5","10","20","25","30","40","50","60","70","75","80","90","95","100"];
-
-// Pre-computed option arrays
-const JUSTIFY_OPTIONS = JUSTIFY_OPTS.map(v => ({ value: v, label: v.charAt(0).toUpperCase() + v.slice(1) }));
-const ALIGN_OPTIONS = ALIGN_OPTS.map(v => ({ value: v, label: v.charAt(0).toUpperCase() + v.slice(1) }));
-const FONT_SIZE_OPTIONS = FONT_SIZES.map(v => ({ value: v, label: v.toUpperCase() }));
-const FONT_WEIGHT_OPTIONS = FONT_WEIGHTS.map(f => ({ value: f.v, label: `${f.v} (${f.l})` }));
-const RADIUS_OPTIONS = RADIUS.map((v, i) => ({
-  value: v,
-  label: ["None","Small","Default","Medium","Large","XL","2XL","3XL","Full"][i],
-}));
-const SHADOW_OPTIONS = [
-  { value: "none", label: "None" },
-  { value: "sm", label: "Small" },
-  { value: "", label: "Default" },
-  { value: "md", label: "Medium" },
-  { value: "lg", label: "Large" },
-  { value: "xl", label: "XL" },
-  { value: "2xl", label: "2XL" },
-];
-const POSITION_OPTIONS = [
-  { value: "", label: "Static" },
-  { value: "relative", label: "Relative" },
-  { value: "absolute", label: "Absolute" },
-  { value: "fixed", label: "Fixed" },
-  { value: "sticky", label: "Sticky" },
-];
-const OVERFLOW_OPTIONS = [
-  { value: "", label: "Visible" },
-  { value: "hidden", label: "Hidden" },
-  { value: "auto", label: "Auto" },
-  { value: "scroll", label: "Scroll" },
-];
-const Z_INDEX_OPTIONS = [
-  { value: "", label: "Auto" },
-  { value: "0", label: "0" }, { value: "10", label: "10" },
-  { value: "20", label: "20" }, { value: "30", label: "30" },
-  { value: "40", label: "40" }, { value: "50", label: "50" },
-];
-const SIZE_OPTIONS = [
-  { value: "", label: "Auto" },
-  { value: "full", label: "100%" }, { value: "screen", label: "100vw/vh" },
-  { value: "min", label: "Min" }, { value: "max", label: "Max" }, { value: "fit", label: "Fit" },
-  { value: "1/2", label: "50%" }, { value: "1/3", label: "33%" }, { value: "2/3", label: "67%" },
-  { value: "1/4", label: "25%" }, { value: "3/4", label: "75%" },
-];
-const INSET_OPTIONS = [
-  { value: "", label: "Auto" }, { value: "0", label: "0" },
-  { value: "1", label: "4px" }, { value: "2", label: "8px" }, { value: "4", label: "16px" },
-  { value: "8", label: "32px" }, { value: "16", label: "64px" },
-  { value: "px", label: "1px" }, { value: "full", label: "100%" }, { value: "1/2", label: "50%" },
-];
-const LEADING_OPTIONS = [
-  { value: "", label: "Normal" },
-  { value: "none", label: "None (1)" }, { value: "tight", label: "Tight (1.25)" },
-  { value: "snug", label: "Snug (1.375)" }, { value: "normal", label: "Normal (1.5)" },
-  { value: "relaxed", label: "Relaxed (1.625)" }, { value: "loose", label: "Loose (2)" },
-];
-const TRACKING_OPTIONS = [
-  { value: "", label: "Normal" },
-  { value: "tighter", label: "Tighter" }, { value: "tight", label: "Tight" },
-  { value: "normal", label: "Normal" }, { value: "wide", label: "Wide" },
-  { value: "wider", label: "Wider" }, { value: "widest", label: "Widest" },
-];
-const GRID_COLS_OPTIONS = [
-  { value: "", label: "None" },
-  { value: "1", label: "1" }, { value: "2", label: "2" }, { value: "3", label: "3" },
-  { value: "4", label: "4" }, { value: "5", label: "5" }, { value: "6", label: "6" },
-  { value: "12", label: "12" },
-];
-const FLEX_ITEM_OPTIONS = [
-  { value: "", label: "Default" },
-  { value: "flex-1", label: "1 (fill)" }, { value: "flex-auto", label: "Auto" },
-  { value: "flex-initial", label: "Initial" }, { value: "flex-none", label: "None" },
-];
-
-import { useCSSVariables, filterVariables } from "../hooks/useCSSVariables.js";
-import { VariableSuggest } from "./ui/variable-suggest.js";
-import { THEME } from "../theme.js";
 const C = THEME;
-
-// Tailwind spacing scale → px
-const TW_PX_VALUES = [0,2,4,6,8,10,12,14,16,20,24,28,32,36,40,44,48,56,64,80,96,112,128,144,160,176,192,224,256,288,320,384];
-const TW_SCALE_KEYS = ["0","0.5","1","1.5","2","2.5","3","3.5","4","5","6","7","8","9","10","11","12","14","16","20","24","28","32","36","40","44","48","56","64","72","80","96"];
-const TW_SCALE_PX: Record<string, number> = {};
-TW_SCALE_KEYS.forEach((k, i) => { TW_SCALE_PX[k] = TW_PX_VALUES[i] ?? 0; });
-
-function pxToTwScale(px: number): string {
-  if (px <= 0) return "0";
-  const rounded = Math.round(px);
-  const idx = TW_PX_VALUES.indexOf(rounded);
-  if (idx >= 0) return TW_SCALE_KEYS[idx];
-  return `[${rounded}px]`;
-}
-
-function twValueToPx(val: string): number {
-  if (TW_SCALE_PX[val] !== undefined) return TW_SCALE_PX[val];
-  const match = val.match(/^\[(\d+)px\]$/);
-  if (match) return parseInt(match[1]);
-  return 0;
-}
-
-const PREFIX_TO_CSS: Record<string, string> = {
-  mt: "marginTop", mr: "marginRight", mb: "marginBottom", ml: "marginLeft",
-  pt: "paddingTop", pr: "paddingRight", pb: "paddingBottom", pl: "paddingLeft",
-};
 
 // ── Type for shared helpers ──
 type ClassHelpers = ReturnType<typeof useClassHelpers>;
@@ -408,7 +303,7 @@ const PaddingSection = React.memo(function PaddingSection({ h, sel }: { h: Class
 
   const livePreview = useCallback((prefix: string, v: number) => {
     const cssProp = PREFIX_TO_CSS[prefix];
-    if (el && cssProp) (el.style as any)[cssProp] = v + "px";
+    if (el && cssProp) setStyleProp(el, cssProp, v + "px");
   }, [el]);
 
   const commit = useCallback((prefix: string, v: number) => {
@@ -417,12 +312,12 @@ const PaddingSection = React.memo(function PaddingSection({ h, sel }: { h: Class
     const cssProp = PREFIX_TO_CSS[prefix];
     if (el && cssProp) {
       const observer = new MutationObserver(() => {
-        (el.style as any)[cssProp] = "";
+        setStyleProp(el, cssProp, "");
         observer.disconnect();
         clearTimeout(fallback);
       });
       observer.observe(el, { attributes: true, attributeFilter: ["class"] });
-      const fallback = setTimeout(() => { (el.style as any)[cssProp] = ""; observer.disconnect(); }, 5000);
+      const fallback = setTimeout(() => { setStyleProp(el, cssProp, ""); observer.disconnect(); }, 5000);
     }
   }, [el, h]);
 
@@ -446,7 +341,7 @@ const MarginSection = React.memo(function MarginSection({ h, sel }: { h: ClassHe
 
   const livePreview = useCallback((prefix: string, v: number) => {
     const cssProp = PREFIX_TO_CSS[prefix];
-    if (el && cssProp) (el.style as any)[cssProp] = v + "px";
+    if (el && cssProp) setStyleProp(el, cssProp, v + "px");
   }, [el]);
 
   const commit = useCallback((prefix: string, v: number) => {
@@ -454,12 +349,12 @@ const MarginSection = React.memo(function MarginSection({ h, sel }: { h: ClassHe
     const cssProp = PREFIX_TO_CSS[prefix];
     if (el && cssProp) {
       const observer = new MutationObserver(() => {
-        (el.style as any)[cssProp] = "";
+        setStyleProp(el, cssProp, "");
         observer.disconnect();
         clearTimeout(fallback);
       });
       observer.observe(el, { attributes: true, attributeFilter: ["class"] });
-      const fallback = setTimeout(() => { (el.style as any)[cssProp] = ""; observer.disconnect(); }, 5000);
+      const fallback = setTimeout(() => { setStyleProp(el, cssProp, ""); observer.disconnect(); }, 5000);
     }
   }, [el, h]);
 
@@ -734,7 +629,7 @@ const ClassesSection = React.memo(function ClassesSection({ h, sel }: { h: Class
           {h.classes.map((c: string) => (
             <span
               key={c}
-              onClick={() => h.trackedSendMutation({ type: "modify-class", source: sel.source, remove: [c] })}
+              onClick={() => sel.source && h.trackedSendMutation({ type: "modify-class", source: sel.source, remove: [c] })}
               title={`Click to remove: ${c}`}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 4,
@@ -766,7 +661,7 @@ const ClassesSection = React.memo(function ClassesSection({ h, sel }: { h: Class
             onFocus={e => (e.currentTarget.style.borderColor = C.accent)}
             onBlur={e => (e.currentTarget.style.borderColor = "transparent")}
             onKeyDown={e => {
-              if (e.key === "Enter" && newCls.trim()) {
+              if (e.key === "Enter" && newCls.trim() && sel.source) {
                 h.trackedSendMutation({ type: "modify-class", source: sel.source, add: [newCls.trim()] });
                 setNewCls("");
               }
@@ -774,7 +669,7 @@ const ClassesSection = React.memo(function ClassesSection({ h, sel }: { h: Class
           />
           <button
             onClick={() => {
-              if (newCls.trim()) {
+              if (newCls.trim() && sel.source) {
                 h.trackedSendMutation({ type: "modify-class", source: sel.source, add: [newCls.trim()] });
                 setNewCls("");
               }

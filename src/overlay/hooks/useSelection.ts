@@ -224,6 +224,7 @@ export function useSelection() {
       // Ask AI prompt directly. Doesn't touch Ctrl/Cmd-click or right-click.
       if (useEditorStore.getState().annotateMode) {
         const { target, fromIframe, iframe } = elementAtPoint(e.clientX, e.clientY);
+        useEditorStore.getState().showToast(`annotate-click target=${target?.tagName || "null"} iframe=${fromIframe}`);
         if (!target) return;
         e.preventDefault();
         e.stopPropagation();

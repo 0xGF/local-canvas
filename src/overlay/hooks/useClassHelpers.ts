@@ -1,7 +1,12 @@
 import { useMemo, useCallback, useRef } from "react";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useWebSocket } from "./useWebSocket.js";
-import { getBreakpointPrefix } from "../../shared/breakpoints.js";
+import {
+  getBreakpointPrefix,
+  hasResponsivePrefix,
+  RESPONSIVE_PREFIX_RE,
+} from "../../shared/breakpoints.js";
+import type { Mutation } from "../../server/types.js";
 
 /**
  * Shared class manipulation helpers for PropertiesPanel sections.
@@ -15,7 +20,7 @@ export function useClassHelpers() {
   const { sendMutation } = useWebSocket();
 
   const trackedSendMutation = useCallback(
-    async (mutation: any) => {
+    async (mutation: Mutation) => {
       const result = await sendMutation(mutation);
       incrementPending();
       return result;
@@ -26,7 +31,7 @@ export function useClassHelpers() {
   // Debounced mutation sender — prevents 30 mutations when scrolling dropdowns
   const debounceTimerRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const debouncedMutation = useCallback(
-    (key: string, mutation: any, delay = 300) => {
+    (key: string, mutation: Mutation, delay = 300) => {
       if (debounceTimerRef.current[key]) {
         clearTimeout(debounceTimerRef.current[key]);
       }
@@ -51,11 +56,11 @@ export function useClassHelpers() {
 
   const prefixCls = useCallback((cls: string) => {
     if (!cls || !bpPrefix) return cls;
-    if (/^(sm|md|lg|xl|2xl):/.test(cls)) return cls;
+    if (hasResponsivePrefix(cls)) return cls;
     return `${bpPrefix}:${cls}`;
   }, [bpPrefix]);
 
-  const stripBpPrefix = useCallback((cls: string) => cls.replace(/^(sm|md|lg|xl|2xl):/, ""), []);
+  const stripBpPrefix = useCallback((cls: string) => cls.replace(RESPONSIVE_PREFIX_RE, ""), []);
 
   const resolveClass = useCallback((bare: string): string | undefined => {
     if (bpPrefix) {
@@ -134,10 +139,10 @@ export function useClassHelpers() {
     return classes.includes(bare) ? bare : undefined;
   }, [classes, bpPrefix]);
 
-  const sendPrefixed = useCallback((mutation: any) => {
-    const prefixedAdd = mutation.add?.map((c: string) => prefixCls(c));
-    const resolvedRemove = mutation.remove?.map((c: string) => {
-      if (/^(sm|md|lg|xl|2xl):/.test(c)) return c;
+  const sendPrefixed = useCallback((mutation: Extract<Mutation, { type: "modify-class" }>) => {
+    const prefixedAdd = mutation.add?.map((c) => prefixCls(c));
+    const resolvedRemove = mutation.remove?.map((c) => {
+      if (hasResponsivePrefix(c)) return c;
       return actual(c) || c;
     });
     return trackedSendMutation({

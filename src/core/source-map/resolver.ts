@@ -1,4 +1,4 @@
-import type { SourceLocation, MappedElement } from "./types.js";
+import type { SourceLocation } from "./types.js";
 
 export function resolveSource(element: HTMLElement): SourceLocation | null {
   let current: HTMLElement | null = element;
@@ -24,28 +24,21 @@ export function resolveSource(element: HTMLElement): SourceLocation | null {
   return resolveFromFiber(element);
 }
 
-export function resolveElement(element: HTMLElement): MappedElement | null {
-  const source = resolveSource(element);
-  if (!source) return null;
-
-  return {
-    domElement: element,
-    source,
-    tagName: element.tagName.toLowerCase(),
-    className: element.className || "",
-    isComponent: false, // Will be determined by the tag name in source
-  };
+interface ReactFiber {
+  _debugSource?: { fileName: string; lineNumber: number; columnNumber?: number };
+  return?: ReactFiber;
 }
 
 function resolveFromFiber(element: HTMLElement): SourceLocation | null {
-  // Access React's internal fiber node for _debugSource
+  // Access React's internal fiber node for _debugSource. The key is hashed
+  // (`__reactFiber$abc123`) so we can't statically declare the property.
   const fiberKey = Object.keys(element).find((key) =>
     key.startsWith("__reactFiber$")
   );
 
   if (!fiberKey) return null;
 
-  let fiber = (element as any)[fiberKey];
+  let fiber: ReactFiber | undefined = (element as unknown as Record<string, ReactFiber>)[fiberKey];
 
   while (fiber) {
     if (fiber._debugSource) {
@@ -62,27 +55,3 @@ function resolveFromFiber(element: HTMLElement): SourceLocation | null {
   return null;
 }
 
-export function getElementPath(element: HTMLElement, maxDepth = 5): string {
-  const parts: string[] = [];
-  let current: HTMLElement | null = element;
-  let depth = 0;
-
-  while (current && depth < maxDepth) {
-    let part = current.tagName.toLowerCase();
-
-    if (current.id) {
-      part += `#${current.id}`;
-    } else if (current.className && typeof current.className === "string") {
-      const firstClass = current.className.split(/\s+/)[0];
-      if (firstClass) {
-        part += `.${firstClass}`;
-      }
-    }
-
-    parts.unshift(part);
-    current = current.parentElement;
-    depth++;
-  }
-
-  return parts.join(" > ");
-}

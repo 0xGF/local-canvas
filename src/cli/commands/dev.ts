@@ -34,7 +34,7 @@ export async function devCommand(options: DevOptions) {
 
   // CLI flags > config file > defaults
   const targetPort = parseInt(options.target || String(config.target || 3000), 10);
-  const serverPort = parseInt(options.port || String(config.port || 3001), 10);
+  const serverPort = parseInt(options.port || String(config.port || 6966), 10);
   const targetHost = options.host || config.host || "localhost";
   const projectRoot = config.root ? resolve(root, config.root) : root;
 

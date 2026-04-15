@@ -17,6 +17,13 @@ export function createWSHandler(projectRoot: string) {
       { mutations: { id: string; mutation: Mutation }[]; timer: ReturnType<typeof setTimeout> }
     > = new Map();
 
+    /** Flush every pending file buffer and wait for all writes to settle. */
+    function flushAllBuffers(): Promise<void[]> {
+      const pending: Promise<void>[] = [];
+      for (const [key] of mutationBuffer) pending.push(flushBuffer(key));
+      return Promise.all(pending);
+    }
+
     function flushBuffer(fileKey: string): Promise<void> {
       const entry = mutationBuffer.get(fileKey);
       if (!entry || entry.mutations.length === 0) return Promise.resolve();
@@ -75,7 +82,7 @@ export function createWSHandler(projectRoot: string) {
 
         case "undo": {
           // Flush all pending mutations before undo
-          { const fp: Promise<void>[] = []; for (const [key] of mutationBuffer) fp.push(flushBuffer(key)); await Promise.all(fp); }
+          await flushAllBuffers();
 
           try {
             const result = await writer.undo();
@@ -92,7 +99,7 @@ export function createWSHandler(projectRoot: string) {
         }
 
         case "redo": {
-          { const fp: Promise<void>[] = []; for (const [key] of mutationBuffer) fp.push(flushBuffer(key)); await Promise.all(fp); }
+          await flushAllBuffers();
 
           try {
             const result = await writer.redo();
@@ -177,11 +184,9 @@ export function createWSHandler(projectRoot: string) {
 
         case "save": {
           // Flush any pending mutations and wait for them to complete
-          const flushPromises: Promise<void>[] = [];
-          for (const [key] of mutationBuffer) flushPromises.push(flushBuffer(key));
-          await Promise.all(flushPromises);
-          console.log(`[local-canvas] 💾 Save (flushed ${flushPromises.length} pending buffers)`);
-          send(ws, { type: "mutation-result" as any, id: "save", result: { success: true, filesModified: [] } });
+          const flushed = await flushAllBuffers();
+          console.log(`[local-canvas] 💾 Save (flushed ${flushed.length} pending buffers)`);
+          send(ws, { type: "mutation-result", id: "save", result: { success: true, filesModified: [] } });
           break;
         }
       }

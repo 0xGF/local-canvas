@@ -7,6 +7,7 @@ import type {
   WSServerMessage,
   Mutation,
 } from "../../server/types.js";
+import { getIframeDocument } from "../utils/iframe-events.js";
 
 /**
  * Wait for HMR to update the DOM, then call `onUpdate`.
@@ -38,16 +39,12 @@ function waitForDomUpdate(onUpdate: () => void) {
   }
 
   // Observe iframe document (edit mode — HMR updates happen inside iframe)
-  try {
-    const host = document.getElementById("local-canvas-host");
-    const iframe = host?.shadowRoot?.querySelector("iframe") as HTMLIFrameElement | null;
-    const iframeBody = iframe?.contentDocument?.body;
-    if (iframeBody) {
-      const mo = new MutationObserver(resolve);
-      mo.observe(iframeBody, observeOpts);
-      observers.push(mo);
-    }
-  } catch { /* cross-origin */ }
+  const iframeBody = getIframeDocument()?.body;
+  if (iframeBody) {
+    const mo = new MutationObserver(resolve);
+    mo.observe(iframeBody, observeOpts);
+    observers.push(mo);
+  }
 
   // Fallback if no observers or HMR doesn't fire
   const fallback = setTimeout(resolve, observers.length > 0 ? 2000 : 300);
@@ -137,13 +134,13 @@ export function useWebSocket() {
   }, []);
 
   const sendMutation = useCallback(
-    (mutation: Mutation): Promise<WSServerMessage> => {
+    (mutation: Mutation): Promise<WSServerMessage | void> => {
       // Skip no-op class mutations (adding and removing the same class, or both empty)
       if (mutation.type === "modify-class") {
         const adds = mutation.add?.filter(Boolean) || [];
         const removes = mutation.remove?.filter(Boolean) || [];
-        if (adds.length === 0 && removes.length === 0) return Promise.resolve({} as any);
-        if (adds.length === 1 && removes.length === 1 && adds[0] === removes[0]) return Promise.resolve({} as any);
+        if (adds.length === 0 && removes.length === 0) return Promise.resolve();
+        if (adds.length === 1 && removes.length === 1 && adds[0] === removes[0]) return Promise.resolve();
       }
 
       // Log the change before sending

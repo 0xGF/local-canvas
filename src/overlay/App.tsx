@@ -4,6 +4,7 @@ import { Toolbar } from "./components/Toolbar.js";
 import { PropertiesPanel } from "./components/PropertiesPanel.js";
 import { ResponsiveFrame } from "./components/ResponsiveFrame.js";
 import { ContextMenu } from "./components/ContextMenu.js";
+import { AnnotationPins } from "./components/AnnotationPins.js";
 import { useSelection } from "./hooks/useSelection.js";
 import { useKeyboard } from "./hooks/useKeyboard.js";
 import { useViewport, restoreViewport } from "./hooks/useViewport.js";
@@ -42,6 +43,7 @@ export function App() {
       {mode === "edit" && <CanvasOverlayLayer />}
       {mode === "edit" && <PropertiesPanel />}
       {mode === "edit" && <ContextMenu />}
+      {mode === "edit" && <AnnotationPins />}
 
       <Toolbar />
     </>

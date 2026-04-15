@@ -5,8 +5,15 @@
  * overlay so both use the same session and stay in sync.
  */
 
+import { getEditorIframe } from "./iframe-events.js";
+
 const AGENTATION_PORT = 6967;
 const BASE = `http://localhost:${AGENTATION_PORT}`;
+
+export interface AnnotationThreadEntry {
+  role: string;
+  content: string;
+}
 
 export interface Annotation {
   id: string;
@@ -23,6 +30,8 @@ export interface Annotation {
   y?: number;
   boundingBox?: { x: number; y: number; width: number; height: number };
   resolvedSummary?: string;
+  /** Conversation history with the agent — populated by the agentation server. */
+  thread?: AnnotationThreadEntry[];
 }
 
 export interface PostAnnotationOpts {
@@ -145,13 +154,6 @@ export function dispatchOpenAnnotationPin(annotationId: string) {
 
 // ── DOM helpers shared across annotation surfaces ──
 
-function getAnnotationIframe(): HTMLIFrameElement | null {
-  const host = document.getElementById("local-canvas-host");
-  const shadow = host?.shadowRoot;
-  return (shadow?.querySelector("#responsive-frame-container iframe") ??
-    shadow?.querySelector("iframe")) as HTMLIFrameElement | null;
-}
-
 /**
  * Resolve an annotation's elementPath ("src/foo.tsx:23") to a live DOM
  * element. Searches both the test-app iframe (if present) and the host
@@ -165,7 +167,7 @@ export function findElementForAnnotation(a: Pick<Annotation, "elementPath">): HT
   const line = a.elementPath.slice(lastColon + 1);
   const sel = `[data-source-file="${CSS.escape(file)}"][data-source-line="${CSS.escape(line)}"]`;
 
-  const iframe = getAnnotationIframe();
+  const iframe = getEditorIframe();
   const docs: Document[] = [];
   if (iframe?.contentDocument) docs.push(iframe.contentDocument);
   docs.push(document);

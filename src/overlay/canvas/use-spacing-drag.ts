@@ -7,8 +7,9 @@ import { useViewportStore } from "../hooks/useViewport.js";
 import { useWebSocket } from "../hooks/useWebSocket.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
 import { getBreakpointPrefix } from "../../shared/breakpoints.js";
-import { attachToDocumentAndIframe, getIframeDocument } from "../utils/iframe-events.js";
+import { attachToDocumentAndIframe, bind, getIframeDocument } from "../utils/iframe-events.js";
 import { markDragEnd } from "../utils/drag-state.js";
+import { setStyleProp } from "../utils/dom-style.js";
 
 /**
  * After a reorder mutation + HMR, re-select the moved element by finding the
@@ -142,7 +143,7 @@ export function useSpacingDrag(
         spacingDragRef.current = { badge, startX: e.clientX, startY: e.clientY, startValue: badge.value, moved: false, lastPx: badge.value, isTrusted: e.isTrusted };
         document.body.style.cursor = isHoriz ? "ew-resize" : "ns-resize";
         document.body.style.userSelect = "none";
-        (document.body.style as any).webkitUserSelect = "none";
+        setStyleProp(document.body, "webkitUserSelect", "none");
         return;
       }
 
@@ -204,7 +205,7 @@ export function useSpacingDrag(
         const sel = useEditorStore.getState().selectedElement;
         if (sel?.element) {
           const cssProp = PREFIX_TO_CSS[sd.badge.prefix];
-          if (cssProp) (sel.element.style as any)[cssProp] = newPx + "px";
+          if (cssProp) setStyleProp(sel.element, cssProp, newPx + "px");
         }
         // Throttle tooltip React state updates to one per animation frame
         cancelAnimationFrame(tooltipRafRef.current);
@@ -355,7 +356,7 @@ export function useSpacingDrag(
 
               // Strategy 1: Old element gets its class mutated in place
               const observer = new MutationObserver(() => {
-                (oldEl.style as any)[cssProp] = "";
+                setStyleProp(oldEl, cssProp, "");
                 cleanup();
                 useEditorStore.getState().refreshSelection();
               });
@@ -371,20 +372,20 @@ export function useSpacingDrag(
                 // Clear inline style on the NEW element (old one is dead)
                 const newSel = useEditorStore.getState().selectedElement;
                 if (newSel?.element && newSel.element !== oldEl) {
-                  (newSel.element.style as any)[cssProp] = "";
+                  setStyleProp(newSel.element, cssProp, "");
                 }
               }, 100);
 
               // Fallback: clear everything after 5s
               const fallback = setTimeout(() => {
-                (oldEl.style as any)[cssProp] = "";
+                setStyleProp(oldEl, cssProp, "");
                 observer.disconnect();
                 clearInterval(disconnectCheck);
                 // Also try refreshing in case the element was silently replaced
                 useEditorStore.getState().refreshSelection();
                 const newSel = useEditorStore.getState().selectedElement;
                 if (newSel?.element && newSel.element !== oldEl) {
-                  (newSel.element.style as any)[cssProp] = "";
+                  setStyleProp(newSel.element, cssProp, "");
                 }
               }, 5000);
             }
@@ -398,7 +399,7 @@ export function useSpacingDrag(
         setDragTooltip(null);
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
-        (document.body.style as any).webkitUserSelect = "";
+        setStyleProp(document.body, "webkitUserSelect", "");
         return;
       }
 
@@ -425,7 +426,7 @@ export function useSpacingDrag(
                 const sel = useEditorStore.getState().selectedElement;
                 const iframeRef = sel?.iframeRef;
 
-                sendMutation({ type: "reorder", source: parentSource, fromIndex, toIndex } as any).then(() => {
+                sendMutation({ type: "reorder", source: parentSource, fromIndex, toIndex }).then(() => {
                   incrementPending();
                   // After HMR, sendMutation's internal refreshSelection would
                   // look up by OLD source line, which now contains a DIFFERENT
@@ -446,9 +447,9 @@ export function useSpacingDrag(
     }
 
     return attachToDocumentAndIframe([
-      { event: "mousedown", handler: onMouseDown },
-      { event: "mousemove", handler: onMouseMove },
-      { event: "mouseup", handler: onMouseUp },
+      bind("mousedown", onMouseDown),
+      bind("mousemove", onMouseMove),
+      bind("mouseup", onMouseUp),
     ], { translateCoords: true });
   }, [commitSpacing, sendMutation, incrementPending, badgeHitsRef, tagBadgeHitRef]);
 

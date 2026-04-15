@@ -24,7 +24,7 @@ export default function MCP() {
         </p>
         <p className="text-[14px] text-neutral-600 leading-relaxed">
           Each tool call creates a WebSocket connection to{" "}
-          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">localhost:3001</code>{" "}
+          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">localhost:6966</code>{" "}
           (or your configured proxy port), sends the mutation, and waits up to
           10 seconds for a{" "}
           <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">mutation-result</code>{" "}

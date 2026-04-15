@@ -58,31 +58,28 @@ export function drawLabelBadge(ctx: CanvasRenderingContext2D, text: string, x: n
   ctx.save();
   ctx.font = LABEL_FONT;
   const tw = measureText(text, LABEL_FONT);
-  const gripW = withGrip ? 10 : 0;
-  const pw = 8, bw = tw + pw * 2 + gripW, bh = 18;
+  const gripW = withGrip ? 6 : 0;
+  const pw = 5, bw = tw + pw * 2 + gripW, bh = 14;
   const bx = centered ? x - bw / 2 : x;
   ctx.fillStyle = bg;
-  roundRect(ctx, bx, y, bw, bh, 10);
+  roundRect(ctx, bx, y, bw, bh, 3);
   ctx.fill();
-  ctx.shadowColor = "rgba(0,0,0,0.3)"; ctx.shadowBlur = 4;
   ctx.fillStyle = "#fff"; ctx.textBaseline = "middle"; ctx.textAlign = "left";
 
-  // Grip dots (6 circles in 2 columns, drag-handle affordance)
+  // Grip dots (6 circles in 2 columns, drag-handle affordance) — discreet
   if (withGrip) {
-    const gripX = bx + 5;
+    const gripX = bx + 3;
     const cy = y + bh / 2;
-    const dotR = 1.2;
-    ctx.shadowBlur = 0;
-    ctx.globalAlpha = 0.85;
+    const dotR = 0.7;
+    ctx.globalAlpha = 0.6;
     for (let col = 0; col < 2; col++) {
       for (let row = -1; row <= 1; row++) {
         ctx.beginPath();
-        ctx.arc(gripX + col * 3, cy + row * 3.5, dotR, 0, Math.PI * 2);
+        ctx.arc(gripX + col * 2, cy + row * 2.5, dotR, 0, Math.PI * 2);
         ctx.fill();
       }
     }
     ctx.globalAlpha = 1;
-    ctx.shadowColor = "rgba(0,0,0,0.3)"; ctx.shadowBlur = 4;
   }
 
   ctx.fillText(text, bx + pw + gripW, y + bh / 2);
@@ -95,10 +92,10 @@ export function drawDimsBadge(ctx: CanvasRenderingContext2D, text: string, right
   ctx.save();
   ctx.font = DIMS_FONT;
   const tw = measureText(text, DIMS_FONT);
-  const pw = 6, bw = tw + pw * 2, bh = 18;
+  const pw = 4, bw = tw + pw * 2, bh = 14;
   const bx = rightX - bw;
   ctx.fillStyle = "rgba(6, 182, 255, 0.75)";
-  roundRect(ctx, bx, y, bw, bh, 10);
+  roundRect(ctx, bx, y, bw, bh, 3);
   ctx.fill();
   ctx.fillStyle = "#fff"; ctx.textBaseline = "middle"; ctx.textAlign = "left";
   ctx.fillText(text, bx + pw, y + bh / 2);
@@ -295,5 +292,3 @@ export function drawResizeGrip(ctx: CanvasRenderingContext2D, x: number, y: numb
   ctx.fill();
   ctx.restore();
 }
-
-const FONT = "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace";

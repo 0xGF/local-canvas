@@ -54,18 +54,38 @@ export function drawDashedEdges(ctx: CanvasRenderingContext2D, x: number, y: num
 }
 
 /** Draw tag label badge. Returns badge width for hit testing. */
-export function drawLabelBadge(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, bg: string, centered = false): number {
+export function drawLabelBadge(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, bg: string, centered = false, withGrip = false): number {
   ctx.save();
   ctx.font = LABEL_FONT;
   const tw = measureText(text, LABEL_FONT);
-  const pw = 8, bw = tw + pw * 2, bh = 18;
+  const gripW = withGrip ? 10 : 0;
+  const pw = 8, bw = tw + pw * 2 + gripW, bh = 18;
   const bx = centered ? x - bw / 2 : x;
   ctx.fillStyle = bg;
   roundRect(ctx, bx, y, bw, bh, 10);
   ctx.fill();
   ctx.shadowColor = "rgba(0,0,0,0.3)"; ctx.shadowBlur = 4;
   ctx.fillStyle = "#fff"; ctx.textBaseline = "middle"; ctx.textAlign = "left";
-  ctx.fillText(text, bx + pw, y + bh / 2);
+
+  // Grip dots (6 circles in 2 columns, drag-handle affordance)
+  if (withGrip) {
+    const gripX = bx + 5;
+    const cy = y + bh / 2;
+    const dotR = 1.2;
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 0.85;
+    for (let col = 0; col < 2; col++) {
+      for (let row = -1; row <= 1; row++) {
+        ctx.beginPath();
+        ctx.arc(gripX + col * 3, cy + row * 3.5, dotR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.shadowColor = "rgba(0,0,0,0.3)"; ctx.shadowBlur = 4;
+  }
+
+  ctx.fillText(text, bx + pw + gripW, y + bh / 2);
   ctx.restore();
   return bw;
 }

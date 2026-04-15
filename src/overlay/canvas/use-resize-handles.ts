@@ -191,21 +191,33 @@ export function useResizeHandles(handlesRef: React.MutableRefObject<ResizeHandle
         newH = Math.max(0, drag.startHeight - dy);
       }
 
+      // Shift: preserve aspect ratio (corners only — edges only change one axis)
+      const isCorner = pos.includes("-");
+      if (e.shiftKey && isCorner && drag.startWidth > 0 && drag.startHeight > 0) {
+        const aspect = drag.startWidth / drag.startHeight;
+        // Pick the axis that moved the most (in absolute terms) as the driver
+        const wDelta = Math.abs(newW - drag.startWidth);
+        const hDelta = Math.abs(newH - drag.startHeight);
+        if (wDelta / drag.startWidth > hDelta / drag.startHeight) {
+          newH = newW / aspect;
+        } else {
+          newW = newH * aspect;
+        }
+      }
+
       newW = Math.round(newW);
       newH = Math.round(newH);
 
       // Inline style preview
-      if (pos.includes("left") || pos.includes("right") || pos === "top-right" || pos === "bottom-right" || pos === "top-left" || pos === "bottom-left") {
-        sel.element.style.width = newW + "px";
-      }
-      if (pos.includes("top") || pos.includes("bottom")) {
-        sel.element.style.height = newH + "px";
-      }
+      const affectsW = pos.includes("left") || pos.includes("right") || (e.shiftKey && isCorner);
+      const affectsH = pos.includes("top") || pos.includes("bottom") || (e.shiftKey && isCorner);
+      if (affectsW) sel.element.style.width = newW + "px";
+      if (affectsH) sel.element.style.height = newH + "px";
 
       // Throttled tooltip
       cancelAnimationFrame(tooltipRafRef.current);
       const cx = e.clientX, cy = e.clientY;
-      const text = `${newW} × ${newH}`;
+      const text = e.shiftKey && isCorner ? `${newW} × ${newH} (locked)` : `${newW} × ${newH}`;
       tooltipRafRef.current = requestAnimationFrame(() => {
         setResizeTooltip({ x: cx, y: cy, text });
       });
@@ -228,17 +240,31 @@ export function useResizeHandles(handlesRef: React.MutableRefObject<ResizeHandle
         if (sel?.element) {
           const cs = getComputedStyle(sel.element);
           const pos = drag.handle.position;
+          const el = sel.element;
+          const didW = pos.includes("left") || pos.includes("right");
+          const didH = pos.includes("top") || pos.includes("bottom");
 
-          if (pos.includes("left") || pos.includes("right") || pos === "top-right" || pos === "bottom-right" || pos === "top-left" || pos === "bottom-left") {
+          if (didW) {
             const finalW = Math.round(parseFloat(cs.width) || 0);
             commitSize("w", finalW);
-            // Clear inline style after commit
-            sel.element.style.width = "";
           }
-          if (pos.includes("top") || pos.includes("bottom")) {
+          if (didH) {
             const finalH = Math.round(parseFloat(cs.height) || 0);
             commitSize("h", finalH);
-            sel.element.style.height = "";
+          }
+
+          // Keep inline-style preview until HMR actually applies the new
+          // class, then clear. Without this you get a flash back to the old
+          // size while the mutation is written to disk + HMR reloads.
+          if (didW || didH) {
+            const observer = new MutationObserver(() => {
+              if (didW) el.style.width = "";
+              if (didH) el.style.height = "";
+              observer.disconnect();
+            });
+            observer.observe(el, { attributes: true, attributeFilter: ["class"] });
+            // Safety fallback: if no class change observed within 2s, clear anyway
+            setTimeout(() => { observer.disconnect(); if (didW) el.style.width = ""; if (didH) el.style.height = ""; }, 2000);
           }
         }
 

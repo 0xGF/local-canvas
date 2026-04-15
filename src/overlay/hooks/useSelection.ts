@@ -78,13 +78,55 @@ function getIframe(): HTMLIFrameElement | null {
 }
 
 /**
+ * When the cursor lands on an ancestor (because it's inside a child's margin
+ * zone rather than the child itself), snap to the child whose margin box
+ * contains the point. Returns the original target if no child matches.
+ *
+ * Docs are the document relevant to this check (iframe doc or main doc) —
+ * coords are in that document's own viewport (iframe-local if in iframe).
+ */
+function snapToChildMargin(target: HTMLElement, docX: number, docY: number): HTMLElement {
+  let best: HTMLElement = target;
+  let bestDist = Infinity;
+  for (const child of Array.from(target.children)) {
+    if (!(child instanceof HTMLElement)) continue;
+    const r = child.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) continue;
+    const cs = getCachedStyle(child);
+    const ml = parseFloat(cs.marginLeft) || 0;
+    const mr = parseFloat(cs.marginRight) || 0;
+    const mt = parseFloat(cs.marginTop) || 0;
+    const mb = parseFloat(cs.marginBottom) || 0;
+    const left = r.left - ml;
+    const right = r.right + mr;
+    const top = r.top - mt;
+    const bottom = r.bottom + mb;
+    if (docX >= left && docX <= right && docY >= top && docY <= bottom) {
+      // Score: prefer the child whose box-edge is closest to the cursor
+      // so overlapping siblings pick the one you're "pointing at"
+      const dx = Math.max(0, Math.max(r.left - docX, docX - r.right));
+      const dy = Math.max(0, Math.max(r.top - docY, docY - r.bottom));
+      const dist = dx + dy;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = child;
+      }
+    }
+  }
+  return best;
+}
+
+/**
  * Find element at viewport coordinates. Checks both main document and iframe.
  * Returns the element and whether it was found inside the iframe.
  */
 function elementAtPoint(clientX: number, clientY: number): { target: HTMLElement | null; fromIframe: boolean; iframe: HTMLIFrameElement | null } {
   // Try main document first
   const mainTarget = deepElementFromPoint(clientX, clientY, document);
-  if (mainTarget) return { target: mainTarget, fromIframe: false, iframe: null };
+  if (mainTarget) {
+    const snapped = snapToChildMargin(mainTarget, clientX, clientY);
+    return { target: snapped, fromIframe: false, iframe: null };
+  }
 
   // Try iframe document (translate coords)
   const iframe = getIframe();
@@ -96,8 +138,13 @@ function elementAtPoint(clientX: number, clientY: number): { target: HTMLElement
       // Account for zoom: the iframe is scaled via CSS transform
       const naturalW = parseInt(iframe.style.width) || ir.width;
       const scale = ir.width / naturalW;
-      const target = deepElementFromPoint(iframeX / scale, iframeY / scale, iframe.contentDocument);
-      if (target) return { target, fromIframe: true, iframe };
+      const localX = iframeX / scale;
+      const localY = iframeY / scale;
+      const target = deepElementFromPoint(localX, localY, iframe.contentDocument);
+      if (target) {
+        const snapped = snapToChildMargin(target, localX, localY);
+        return { target: snapped, fromIframe: true, iframe };
+      }
     }
   }
 
@@ -159,14 +206,26 @@ export function useSelection() {
         e.preventDefault();
         e.stopPropagation();
         const source = resolveSource(target);
+        const rect = target.getBoundingClientRect();
         selectElement({
           element: target, source,
-          rect: target.getBoundingClientRect(),
+          rect,
           className: typeof target.className === "string" ? target.className : "",
           tagName: target.tagName.toLowerCase(),
           iframeRef: fromIframe && iframe ? iframe : undefined,
         });
-        setContextMenu({ x: e.clientX, y: e.clientY, element: target, source });
+        // Anchor menu to the top of the element (not cursor). Translate to
+        // screen space when the element lives in the iframe.
+        let menuX = rect.left, menuY = rect.top;
+        if (fromIframe && iframe) {
+          const ir = iframe.getBoundingClientRect();
+          const naturalW = parseInt(iframe.style.width) || ir.width;
+          const scale = ir.width / naturalW;
+          menuX = rect.left * scale + ir.left;
+          menuY = rect.top * scale + ir.top;
+        }
+        // Offset slightly above the element so it doesn't cover the top edge
+        setContextMenu({ x: menuX, y: menuY - 6, element: target, source });
         return;
       }
 
@@ -261,16 +320,16 @@ export function useSelection() {
         iframeRef: fromIframe && iframe ? iframe : undefined,
       });
 
-      // Translate iframe-local coords to screen space for menu positioning
-      let menuX = e.clientX, menuY = e.clientY;
+      // Anchor to the top of the element (screen space — translate if in iframe)
+      let menuX = rect.left, menuY = rect.top;
       if (fromIframe && iframe) {
         const ir = iframe.getBoundingClientRect();
         const naturalW = parseInt(iframe.style.width) || ir.width;
         const scale = ir.width / naturalW;
-        menuX = e.clientX * scale + ir.left;
-        menuY = e.clientY * scale + ir.top;
+        menuX = rect.left * scale + ir.left;
+        menuY = rect.top * scale + ir.top;
       }
-      setContextMenu({ x: menuX, y: menuY, element: target, source });
+      setContextMenu({ x: menuX, y: menuY - 6, element: target, source });
     },
     [mode, selectElement, setContextMenu]
   );

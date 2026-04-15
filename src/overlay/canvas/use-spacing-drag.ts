@@ -10,6 +10,54 @@ import { getBreakpointPrefix } from "../../shared/breakpoints.js";
 import { attachToDocumentAndIframe, getIframeDocument } from "../utils/iframe-events.js";
 import { markDragEnd } from "../utils/drag-state.js";
 
+/**
+ * After a reorder mutation + HMR, re-select the moved element by finding the
+ * parent via its data-source attributes, then grabbing parent.children[toIndex].
+ * Polls for up to 2s because HMR timing varies.
+ */
+function reselectAfterReorder(
+  parentSource: { filePath: string; line: number },
+  toIndex: number,
+  iframeRef: HTMLIFrameElement | undefined,
+) {
+  const start = performance.now();
+  const attempt = () => {
+    const docs: Document[] = [document];
+    if (iframeRef?.contentDocument) docs.push(iframeRef.contentDocument);
+    for (const doc of docs) {
+      const parents = doc.querySelectorAll(
+        `[data-source-file="${parentSource.filePath}"][data-source-line="${parentSource.line}"]`
+      );
+      for (const p of parents) {
+        const newParent = p as HTMLElement;
+        if (!newParent.isConnected) continue;
+        const newChild = newParent.children[toIndex] as HTMLElement | undefined;
+        if (newChild) {
+          const childSource = resolveSource(newChild);
+          useEditorStore.getState().selectElement({
+            element: newChild,
+            source: childSource,
+            rect: newChild.getBoundingClientRect(),
+            className: typeof newChild.className === "string" ? newChild.className : "",
+            tagName: newChild.tagName.toLowerCase(),
+            iframeRef,
+          });
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+  // Try a few times as HMR rolls in
+  const poll = () => {
+    if (attempt()) return;
+    if (performance.now() - start > 2000) return;
+    setTimeout(poll, 80);
+  };
+  // First attempt after a tiny delay to let the initial HMR cycle fire
+  setTimeout(poll, 150);
+}
+
 export function useSpacingDrag(
   badgeHitsRef: React.MutableRefObject<BadgeHit[]>,
   tagBadgeHitRef: React.MutableRefObject<TagBadgeHit | null>,
@@ -18,7 +66,20 @@ export function useSpacingDrag(
   const incrementPending = useEditorStore((s) => s.incrementPending);
 
   const spacingDragRef = useRef<{ badge: BadgeHit; startX: number; startY: number; startValue: number; moved: boolean; lastPx: number; isTrusted?: boolean } | null>(null);
-  const reorderRef = useRef<{ el: HTMLElement; startY: number; insertionIndex: number | null; insertionRect: DOMRect | null } | null>(null);
+  const reorderRef = useRef<{
+    el: HTMLElement;
+    startX: number; startY: number;
+    moved: boolean;
+    insertionIndex: number | null;
+    // Insertion line in SCREEN coords (iframe-translated)
+    insertionLine: { x: number; y: number; width: number } | null;
+    // Drop target sibling rect in SCREEN coords (for highlighting)
+    targetRect: { x: number; y: number; width: number; height: number } | null;
+    // Cursor position for ghost preview
+    cursorX: number; cursorY: number;
+    // Size of the dragged element in screen px
+    ghostW: number; ghostH: number;
+  } | null>(null);
   const [dragTooltip, setDragTooltip] = useState<{ x: number; y: number; value: number; color: string } | null>(null);
   const tooltipRafRef = useRef(0);
   const [reorderLine, setReorderLine] = useState<{ left: number; top: number; width: number } | null>(null);
@@ -90,11 +151,27 @@ export function useSpacingDrag(
         if (sel?.element) {
           e.preventDefault();
           e.stopPropagation();
-          reorderRef.current = { el: sel.element, startY: e.clientY, insertionIndex: null, insertionRect: null };
+          // Compute ghost dimensions in SCREEN space
+          const iframeEl = sel.iframeRef as HTMLIFrameElement | undefined;
+          let ifs = 1;
+          if (iframeEl) {
+            const ir = iframeEl.getBoundingClientRect();
+            const naturalW = parseInt(iframeEl.style.width) || ir.width;
+            ifs = ir.width / naturalW;
+          }
+          const er = sel.element.getBoundingClientRect();
+          reorderRef.current = {
+            el: sel.element,
+            startX: e.clientX, startY: e.clientY,
+            moved: false,
+            insertionIndex: null,
+            insertionLine: null,
+            targetRect: null,
+            cursorX: e.clientX, cursorY: e.clientY,
+            ghostW: er.width * ifs, ghostH: er.height * ifs,
+          };
           document.body.style.cursor = "grabbing";
-          // Ghost effect — fade the element being dragged
-          sel.element.style.opacity = "0.4";
-          sel.element.style.transition = "opacity 0.15s";
+          document.body.style.userSelect = "none";
         }
       }
     }
@@ -143,26 +220,76 @@ export function useSpacingDrag(
       if (ro) {
         const parent = ro.el.parentElement;
         if (!parent) return;
+
+        // Track move threshold so a click doesn't trigger a ghost
+        const dx = e.clientX - ro.startX;
+        const dy = e.clientY - ro.startY;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+          if (!ro.moved) {
+            ro.moved = true;
+            ro.el.style.opacity = "0.3";
+            ro.el.style.transition = "opacity 0.15s";
+          }
+        }
+        ro.cursorX = e.clientX;
+        ro.cursorY = e.clientY;
+
         // Translate iframe-local rects to screen space
         const sel = useEditorStore.getState().selectedElement;
         const iframeEl = sel?.iframeRef as HTMLIFrameElement | undefined;
-        let oy = 0, ifs = 1;
+        let ox = 0, oy = 0, ifs = 1;
         if (iframeEl) {
           const ir = iframeEl.getBoundingClientRect();
           const naturalW = parseInt(iframeEl.style.width) || ir.width;
           ifs = ir.width / naturalW;
+          ox = ir.left;
           oy = ir.top;
         }
+
         const children = Array.from(parent.children).filter(c => c !== ro.el);
-        let closestIdx = 0, closestDist = Infinity, closestRect: DOMRect | null = null;
-        children.forEach((child, idx) => {
-          const cr = child.getBoundingClientRect();
-          const screenMid = cr.top * ifs + oy + (cr.height * ifs) / 2;
-          const dist = Math.abs(e.clientY - screenMid);
-          if (dist < closestDist) { closestDist = dist; closestIdx = e.clientY > screenMid ? idx + 1 : idx; closestRect = cr; }
-        });
-        ro.insertionIndex = closestIdx;
-        ro.insertionRect = closestRect;
+
+        // Walk children top-to-bottom; insert BEFORE the first sibling whose
+        // midpoint is below the cursor. If no such sibling, insert at end.
+        let insertIdx = children.length;
+        let insertY = 0, insertLeft = 0, insertWidth = 0;
+        let targetRect: { x: number; y: number; width: number; height: number } | null = null;
+
+        for (let i = 0; i < children.length; i++) {
+          const cr = children[i].getBoundingClientRect();
+          const topS = cr.top * ifs + oy;
+          const leftS = cr.left * ifs + ox;
+          const widS = cr.width * ifs;
+          const heiS = cr.height * ifs;
+          const midS = topS + heiS / 2;
+          if (e.clientY < midS) {
+            insertIdx = i;
+            insertY = topS; // line above this child
+            insertLeft = leftS;
+            insertWidth = widS;
+            targetRect = { x: leftS, y: topS, width: widS, height: heiS };
+            break;
+          }
+        }
+
+        if (insertIdx === children.length && children.length > 0) {
+          // Below all — line at bottom of last sibling
+          const last = children[children.length - 1].getBoundingClientRect();
+          insertY = (last.top + last.height) * ifs + oy;
+          insertLeft = last.left * ifs + ox;
+          insertWidth = last.width * ifs;
+          targetRect = {
+            x: last.left * ifs + ox,
+            y: last.top * ifs + oy,
+            width: last.width * ifs,
+            height: last.height * ifs,
+          };
+        }
+
+        ro.insertionIndex = insertIdx;
+        ro.insertionLine = children.length > 0
+          ? { x: insertLeft, y: insertY, width: insertWidth }
+          : null;
+        ro.targetRect = targetRect;
         return;
       }
 
@@ -281,16 +408,32 @@ export function useSpacingDrag(
         ro.el.style.opacity = "";
         ro.el.style.transition = "";
 
-        if (ro.insertionIndex !== null) {
+        if (ro.moved && ro.insertionIndex !== null) {
           const parent = ro.el.parentElement;
           if (parent) {
             const parentSource = resolveSource(parent);
             if (parentSource) {
               const children = Array.from(parent.children);
               const fromIndex = children.indexOf(ro.el);
-              if (fromIndex !== -1 && fromIndex !== ro.insertionIndex) {
+              const toIndex = ro.insertionIndex;
+              if (fromIndex !== -1 && fromIndex !== toIndex) {
                 markDragEnd();
-                sendMutation({ type: "reorder", source: parentSource, fromIndex, toIndex: ro.insertionIndex } as any).then(() => incrementPending());
+                addClickSuppression();
+                setTimeout(removeClickSuppression, 200);
+
+                // Capture iframeRef before HMR potentially replaces nodes
+                const sel = useEditorStore.getState().selectedElement;
+                const iframeRef = sel?.iframeRef;
+
+                sendMutation({ type: "reorder", source: parentSource, fromIndex, toIndex } as any).then(() => {
+                  incrementPending();
+                  // After HMR, sendMutation's internal refreshSelection would
+                  // look up by OLD source line, which now contains a DIFFERENT
+                  // element (the one that shifted into that slot). Override
+                  // by finding the parent via its source attrs, then selecting
+                  // parent.children[toIndex].
+                  reselectAfterReorder(parentSource, toIndex, iframeRef);
+                });
               }
             }
           }
@@ -299,6 +442,7 @@ export function useSpacingDrag(
       reorderRef.current = null;
       setReorderLine(null);
       document.body.style.cursor = "";
+      document.body.style.userSelect = "";
     }
 
     return attachToDocumentAndIframe([

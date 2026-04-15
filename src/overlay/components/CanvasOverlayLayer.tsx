@@ -141,34 +141,68 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
         ctx!.restore();
       }
 
-      // Reorder insertion line — blue line with circle endpoints
+      // Reorder drop-zone visuals
       const ro = reorderRef.current;
-      if (ro && ro.insertionRect) {
-        const ir = ro.insertionRect;
-        // Translate iframe-local coords to screen space
-        const ifs3 = iframeOffset.scale ?? 1;
-        const ox3 = iframeOffset.x, oy3 = iframeOffset.y;
-        const lineY = ir.top * ifs3 + oy3 - 1;
-        const lineLeft = ir.left * ifs3 + ox3;
-        const lineRight = (ir.left + ir.width) * ifs3 + ox3;
-
+      if (ro?.moved) {
         ctx!.save();
-        // Main line
-        ctx!.strokeStyle = COL.blue;
-        ctx!.lineWidth = 2;
-        ctx!.beginPath();
-        ctx!.moveTo(lineLeft, lineY);
-        ctx!.lineTo(lineRight, lineY);
-        ctx!.stroke();
 
-        // Dot endpoints
-        ctx!.fillStyle = COL.blue;
-        ctx!.beginPath();
-        ctx!.arc(lineLeft, lineY, 4, 0, Math.PI * 2);
-        ctx!.fill();
-        ctx!.beginPath();
-        ctx!.arc(lineRight, lineY, 4, 0, Math.PI * 2);
-        ctx!.fill();
+        // 1) Highlight the drop-target sibling with a tinted overlay
+        if (ro.targetRect) {
+          const tr = ro.targetRect;
+          ctx!.fillStyle = "rgba(6, 182, 255, 0.08)";
+          ctx!.fillRect(tr.x, tr.y, tr.width, tr.height);
+          ctx!.strokeStyle = "rgba(6, 182, 255, 0.3)";
+          ctx!.lineWidth = 1;
+          ctx!.setLineDash([4, 4]);
+          ctx!.strokeRect(tr.x, tr.y, tr.width, tr.height);
+          ctx!.setLineDash([]);
+        }
+
+        // 2) Thick insertion line where the element will land
+        if (ro.insertionLine) {
+          const l = ro.insertionLine;
+          // Outer glow
+          ctx!.strokeStyle = "rgba(6, 182, 255, 0.25)";
+          ctx!.lineWidth = 8;
+          ctx!.beginPath();
+          ctx!.moveTo(l.x, l.y);
+          ctx!.lineTo(l.x + l.width, l.y);
+          ctx!.stroke();
+          // Main line
+          ctx!.strokeStyle = COL.blue;
+          ctx!.lineWidth = 3;
+          ctx!.beginPath();
+          ctx!.moveTo(l.x, l.y);
+          ctx!.lineTo(l.x + l.width, l.y);
+          ctx!.stroke();
+          // Filled circle endpoints
+          ctx!.fillStyle = COL.blue;
+          ctx!.beginPath(); ctx!.arc(l.x, l.y, 5, 0, Math.PI * 2); ctx!.fill();
+          ctx!.beginPath(); ctx!.arc(l.x + l.width, l.y, 5, 0, Math.PI * 2); ctx!.fill();
+        }
+
+        // 3) Ghost preview following the cursor — dashed blue outline
+        const gw = Math.min(ro.ghostW, 320);
+        const gh = Math.min(ro.ghostH, 80);
+        const gx = ro.cursorX + 14;
+        const gy = ro.cursorY + 14;
+        ctx!.fillStyle = "rgba(6, 182, 255, 0.12)";
+        ctx!.fillRect(gx, gy, gw, gh);
+        ctx!.strokeStyle = COL.blue;
+        ctx!.lineWidth = 1.5;
+        ctx!.setLineDash([5, 3]);
+        ctx!.strokeRect(gx, gy, gw, gh);
+        ctx!.setLineDash([]);
+        // Tag label on the ghost
+        const sel = editorState.selectedElement;
+        if (sel) {
+          ctx!.fillStyle = COL.blue;
+          ctx!.font = "600 10px ui-monospace, SFMono-Regular, Menlo, monospace";
+          ctx!.textBaseline = "top";
+          ctx!.textAlign = "left";
+          ctx!.fillText(`<${sel.tagName}>`, gx + 6, gy + 6);
+        }
+
         ctx!.restore();
       }
 

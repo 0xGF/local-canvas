@@ -334,7 +334,7 @@ export function paintFrame(
       // Tag badge + component badge + dimensions — only when zoomed in enough to read
       let tagBw = 0;
       if (zoomScale >= 0.35) {
-        tagBw = drawLabelBadge(ctx, label, r.left, r.top - 22, COL.blue);
+        tagBw = drawLabelBadge(ctx, label, r.left, r.top - 22, COL.blue, false, true);
         tagHit = { x: r.left, y: r.top - 22, w: tagBw, h: 18 };
 
         // Purple component badge — show which component file the element is from

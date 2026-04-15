@@ -250,6 +250,7 @@ export function useViewport() {
 }
 
 function isTyping(e: KeyboardEvent): boolean {
-  const t = e.target as HTMLElement;
+  // Use composedPath so we see through shadow DOM (e.target is retargeted to the host)
+  const t = (e.composedPath()[0] || e.target) as HTMLElement;
   return t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable;
 }

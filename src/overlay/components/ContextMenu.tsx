@@ -4,7 +4,7 @@ import { useWebSocket } from "../hooks/useWebSocket.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
 import {
   Type, Copy, ClipboardPaste, Trash2,
-  ArrowUp, ArrowDown, Layers, Sparkles,
+  ArrowUp, ArrowDown, ArrowLeft, Layers, Sparkles,
 } from "./icons.js";
 import { THEME } from "../theme.js";
 
@@ -73,13 +73,18 @@ export const ContextMenu = React.memo(function ContextMenu() {
   const { sendMutation, send } = useWebSocket();
   const [aiPromptOpen, setAiPromptOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
-  const aiInputRef = useRef<HTMLInputElement>(null);
+  const aiInputRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!menu) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") { setContextMenu(null); setAiPromptOpen(false); }
+      if (e.key === "Escape") {
+        // If AI prompt is open, first Escape returns to the menu;
+        // second Escape closes the whole thing.
+        if (aiPromptOpen) { e.stopPropagation(); setAiPromptOpen(false); return; }
+        setContextMenu(null);
+      }
     }
     function onClick(e: MouseEvent) {
       const path = e.composedPath();
@@ -90,7 +95,7 @@ export const ContextMenu = React.memo(function ContextMenu() {
     const timer = setTimeout(() => document.addEventListener("click", onClick, true), 50);
     document.addEventListener("keydown", onKey, true);
     return () => { clearTimeout(timer); document.removeEventListener("click", onClick, true); document.removeEventListener("keydown", onKey, true); };
-  }, [menu, setContextMenu]);
+  }, [menu, setContextMenu, aiPromptOpen]);
 
   useEffect(() => {
     if (aiPromptOpen && aiInputRef.current) aiInputRef.current.focus();
@@ -230,10 +235,13 @@ export const ContextMenu = React.memo(function ContextMenu() {
     },
   ];
 
-  const menuWidth = 220;
-  const menuHeight = items.length * 32 + 16;
-  const posX = x + menuWidth > window.innerWidth ? x - menuWidth : x;
-  const posY = y + menuHeight > window.innerHeight ? Math.max(8, y - menuHeight) : y;
+  const menuWidth = aiPromptOpen ? 320 : 220;
+  const menuHeight = aiPromptOpen ? 180 : items.length * 32 + 16;
+  // x,y is the anchor point (top of the element). Position the menu's bottom
+  // at that point so it floats above the element. Fall back to below if there
+  // isn't room above.
+  const posX = x + menuWidth > window.innerWidth ? Math.max(8, window.innerWidth - menuWidth - 8) : x;
+  const posY = y - menuHeight >= 8 ? y - menuHeight : Math.min(y + 12, window.innerHeight - menuHeight - 8);
 
   return (
     <div
@@ -254,13 +262,32 @@ export const ContextMenu = React.memo(function ContextMenu() {
 
       {aiPromptOpen ? (
         <div style={{ padding: 4 }}>
-          <div style={{ fontSize: 10, color: C.fgMuted, marginBottom: 4, fontWeight: 600 }}>Ask AI Agent</div>
-          <input
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+            <button
+              onClick={() => setAiPromptOpen(false)}
+              title="Back to menu (esc)"
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: "transparent", border: "none", padding: 2,
+                borderRadius: 4, color: C.fgMuted, cursor: "pointer",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = C.bgHover; e.currentTarget.style.color = C.fg; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = C.fgMuted; }}
+            >
+              <ArrowLeft size={13} />
+            </button>
+            <Sparkles size={12} />
+            <div style={{ fontSize: 10, color: C.fgMuted, fontWeight: 600 }}>Ask AI Agent</div>
+          </div>
+          <textarea
             ref={aiInputRef}
             value={aiPrompt}
             onChange={e => setAiPrompt(e.target.value)}
             onKeyDown={e => {
-              if (e.key === "Enter" && aiPrompt.trim()) {
+              // Stop propagation so nothing upstream steals keystrokes
+              e.stopPropagation();
+              if (e.key === "Enter" && !e.shiftKey && aiPrompt.trim()) {
+                e.preventDefault();
                 const prompt = aiPrompt.trim();
                 const elementPath = source
                   ? `${source.filePath}:${source.line}`
@@ -278,12 +305,55 @@ export const ContextMenu = React.memo(function ContextMenu() {
                 });
                 setAiPrompt(""); close();
               }
-              if (e.key === "Escape") setAiPromptOpen(false);
+              if (e.key === "Escape") { e.preventDefault(); setAiPromptOpen(false); }
             }}
-            placeholder="e.g. make this a 3-column grid..."
-            style={{ width: "100%", height: 32, background: C.bgAlt, border: `1px solid ${C.accent}`, borderRadius: 6, color: C.fg, fontSize: 11, fontFamily: C.mono, padding: "0 8px", outline: "none", boxSizing: "border-box" }}
+            placeholder="Describe the change... (e.g. make this a 3-column responsive grid with 16px gap)"
+            rows={4}
+            style={{
+              width: "100%", minHeight: 90, resize: "vertical",
+              background: C.bgAlt, border: `1px solid ${C.accent}`, borderRadius: 6,
+              color: C.fg, fontSize: 12, fontFamily: C.font,
+              padding: "8px 10px", outline: "none", boxSizing: "border-box",
+              lineHeight: 1.4,
+            }}
           />
-          <div style={{ fontSize: 9, color: C.fgMuted, marginTop: 4 }}>Enter to send to agent, Escape to cancel</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6, gap: 8 }}>
+            <div style={{ fontSize: 9, color: C.fgMuted, fontFamily: C.mono }}>
+              <kbd style={{ padding: "1px 4px", borderRadius: 3, background: C.bgAlt, border: `1px solid ${C.borderLight}` }}>↵</kbd> send&nbsp;&nbsp;
+              <kbd style={{ padding: "1px 4px", borderRadius: 3, background: C.bgAlt, border: `1px solid ${C.borderLight}` }}>⇧↵</kbd> newline&nbsp;&nbsp;
+              <kbd style={{ padding: "1px 4px", borderRadius: 3, background: C.bgAlt, border: `1px solid ${C.borderLight}` }}>esc</kbd> cancel
+            </div>
+            <button
+              disabled={!aiPrompt.trim()}
+              onClick={() => {
+                const prompt = aiPrompt.trim();
+                if (!prompt) return;
+                const elementPath = source ? `${source.filePath}:${source.line}` : tag;
+                postAnnotation({
+                  comment: prompt,
+                  element: `<${tag}>${classes.length ? "." + classes.join(".") : ""}`,
+                  elementPath,
+                  cssClasses: classes.join(" "),
+                  intent: "change",
+                }).then(() => {
+                  useEditorStore.getState().showToast("Sent to agent");
+                }).catch(() => {
+                  useEditorStore.getState().showToast("Agent not connected");
+                });
+                setAiPrompt(""); close();
+              }}
+              style={{
+                background: aiPrompt.trim() ? C.accent : C.bgAlt,
+                color: aiPrompt.trim() ? "#fff" : C.fgMuted,
+                border: "none", borderRadius: 5,
+                padding: "5px 12px", fontSize: 11, fontWeight: 600,
+                cursor: aiPrompt.trim() ? "pointer" : "default",
+                fontFamily: C.font,
+              }}
+            >
+              Send
+            </button>
+          </div>
         </div>
       ) : (
         items.map((item, i) => (

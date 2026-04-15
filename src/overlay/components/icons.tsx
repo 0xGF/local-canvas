@@ -73,6 +73,7 @@ export {
   ClipboardPaste,
   ArrowUp,
   ArrowDown,
+  ArrowLeft,
   WrapText,
   Info,
   Sparkles,

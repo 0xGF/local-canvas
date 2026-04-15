@@ -116,17 +116,28 @@ export function useTextEdit() {
         }
       }
 
-      // Find target in iframe document
+      // Resolve target — handles iframe + scale + main doc fallback.
+      // The previous version subtracted iframe offset but FORGOT to divide by
+      // the iframe's CSS transform scale, so at breakpoint widths the cursor
+      // picked an element above/below the actual target.
       const iframe = getIframe();
-      let targetDoc: Document = document;
-      let offsetX = 0, offsetY = 0;
+      let target: HTMLElement | null = null;
+
       if (iframe?.contentDocument) {
         const ir = iframe.getBoundingClientRect();
-        targetDoc = iframe.contentDocument;
-        offsetX = ir.left;
-        offsetY = ir.top;
+        // Only route to iframe if cursor is over it
+        if (e.clientX >= ir.left && e.clientX <= ir.right &&
+            e.clientY >= ir.top && e.clientY <= ir.bottom) {
+          const naturalW = parseInt(iframe.style.width) || ir.width;
+          const scale = ir.width / naturalW;
+          const localX = (e.clientX - ir.left) / scale;
+          const localY = (e.clientY - ir.top) / scale;
+          target = deepElementFromPoint(localX, localY, iframe.contentDocument);
+        }
       }
-      const target = deepElementFromPoint(e.clientX - offsetX, e.clientY - offsetY, targetDoc);
+      if (!target) {
+        target = deepElementFromPoint(e.clientX, e.clientY, document);
+      }
       if (!target || !isTextElement(target)) return;
 
       e.preventDefault();

@@ -78,4 +78,5 @@ export {
   Info,
   Sparkles,
   PlusCircle,
+  MessageSquarePlus,
 } from "lucide-react";

@@ -82,6 +82,15 @@ export function useKeyboard() {
         if (e.key === "]") { e.preventDefault(); dispatchNavigatePin("next"); return; }
       }
 
+      // `a` in edit mode toggles the annotate tool.
+      if (e.key === "a" && !isMeta && !e.shiftKey && !e.altKey &&
+          useEditorStore.getState().mode === "edit") {
+        e.preventDefault();
+        const on = useEditorStore.getState().annotateMode;
+        useEditorStore.getState().setAnnotateMode(!on);
+        return;
+      }
+
       // Chord leader: `g` on its own arms the chord, doesn't produce output.
       if (e.key === "g" && !isMeta && !e.shiftKey && !e.altKey) {
         armChord("g");
@@ -89,6 +98,11 @@ export function useKeyboard() {
       }
 
       if (e.key === "Escape") {
+        // Exit annotate tool if active (higher priority than selection walk-up)
+        if (useEditorStore.getState().annotateMode) {
+          useEditorStore.getState().setAnnotateMode(false);
+          return;
+        }
         // Close command bar if open
         if (useEditorStore.getState().commandBarOpen) { s.setCommandBarOpen(false); return; }
         // If editing text, let useTextEdit handle Escape

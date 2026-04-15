@@ -101,6 +101,14 @@ export const ContextMenu = React.memo(function ContextMenu() {
     if (aiPromptOpen && aiInputRef.current) aiInputRef.current.focus();
   }, [aiPromptOpen]);
 
+  // When the menu is opened with `initialMode: "ai-prompt"` (annotate-tool
+  // click path), skip the main item list and open the Ask AI textarea.
+  // Reset on dismiss so a subsequent right-click sees the full item list.
+  useEffect(() => {
+    if (menu?.initialMode === "ai-prompt" && !aiPromptOpen) setAiPromptOpen(true);
+    if (!menu && aiPromptOpen) setAiPromptOpen(false);
+  }, [menu, aiPromptOpen]);
+
   const close = useCallback(() => { setContextMenu(null); setAiPromptOpen(false); }, [setContextMenu]);
 
   const tracked = useCallback(async (mutation: any) => {

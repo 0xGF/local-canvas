@@ -229,6 +229,36 @@ export function useSelection() {
         return;
       }
 
+      // Annotate tool: when active, plain click on any element opens the
+      // Ask AI prompt directly. Doesn't touch Ctrl/Cmd-click or right-click.
+      if (useEditorStore.getState().annotateMode) {
+        const { target, fromIframe, iframe } = elementAtPoint(e.clientX, e.clientY);
+        if (!target) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const source = resolveSource(target);
+        const rect = target.getBoundingClientRect();
+        selectElement({
+          element: target, source, rect,
+          className: typeof target.className === "string" ? target.className : "",
+          tagName: target.tagName.toLowerCase(),
+          iframeRef: fromIframe && iframe ? iframe : undefined,
+        });
+        let menuX = rect.left, menuY = rect.top;
+        if (fromIframe && iframe) {
+          const ir = iframe.getBoundingClientRect();
+          const naturalW = parseInt(iframe.style.width) || ir.width;
+          const scale = ir.width / naturalW;
+          menuX = rect.left * scale + ir.left;
+          menuY = rect.top * scale + ir.top;
+        }
+        setContextMenu({ x: menuX, y: menuY - 6, element: target, source, initialMode: "ai-prompt" });
+        // Drop back to normal selection after one annotation so the user
+        // isn't stuck in annotate mode forever.
+        useEditorStore.getState().setAnnotateMode(false);
+        return;
+      }
+
       const { target, fromIframe, iframe } = elementAtPoint(e.clientX, e.clientY);
       if (!target) return;
 

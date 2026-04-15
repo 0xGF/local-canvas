@@ -37,8 +37,29 @@ interface EditorState {
   setCommandBarOpen: (open: boolean) => void;
 
   // Context menu
-  contextMenu: { x: number; y: number; element: HTMLElement; source: SourceLocation | null } | null;
-  setContextMenu: (menu: { x: number; y: number; element: HTMLElement; source: SourceLocation | null } | null) => void;
+  contextMenu: {
+    x: number;
+    y: number;
+    element: HTMLElement;
+    source: SourceLocation | null;
+    /** When set, open the menu directly into a specific sub-state. */
+    initialMode?: "ai-prompt";
+  } | null;
+  setContextMenu: (
+    menu: {
+      x: number;
+      y: number;
+      element: HTMLElement;
+      source: SourceLocation | null;
+      initialMode?: "ai-prompt";
+    } | null,
+  ) => void;
+
+  // Annotate tool — when true, clicks in Edit mode open Ask AI on the
+  // clicked element instead of selecting it. Ctrl/Cmd-click keeps its
+  // usual "open context menu" behaviour regardless of this flag.
+  annotateMode: boolean;
+  setAnnotateMode: (on: boolean) => void;
 
   // Inline text editing
   editingText: boolean;
@@ -104,6 +125,9 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   contextMenu: null,
   setContextMenu: (menu) => set({ contextMenu: menu }),
+
+  annotateMode: false,
+  setAnnotateMode: (on) => set({ annotateMode: on }),
 
   editingText: false,
   setEditingText: (editing) => set({ editingText: editing }),

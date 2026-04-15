@@ -8,8 +8,9 @@ import { useWebSocket } from "../hooks/useWebSocket.js";
 import { BREAKPOINT_PRESETS } from "../../shared/breakpoints.js";
 import {
   Pointer, Pencil, Undo, Redo, Save, Reset,
-  ChevronDown, ChevronUp, X, Check,
+  ChevronDown, ChevronUp, X, Check, Sparkles, MessageSquarePlus,
 } from "./icons.js";
+import { AskAIHistory } from "./AskAIHistory.js";
 
 import { THEME } from "../theme.js";
 
@@ -444,6 +445,40 @@ export const Toolbar = React.memo(function Toolbar() {
 
       <ChangesSaveButton onSave={handleSave} onReset={handleReset} pendingCount={pendingCount} disabled={pendingCount === 0} />
       <ToolBtn icon={<Reset size={15} />} onClick={handleReset} title="Reset all" disabled={pendingCount === 0} />
+
+      <Sep />
+
+      <AnnotateToolBtn />
+
+      <AskAIHistory
+        renderButton={(open, count) => (
+          <ToolBtn
+            icon={<Sparkles size={15} />}
+            onClick={open}
+            title="Ask AI history"
+            badge={count}
+          />
+        )}
+      />
     </motion.div>
+  );
+});
+
+/**
+ * Toggle for the annotate tool: next plain click in Edit mode opens Ask AI
+ * on that element instead of selecting it. Ctrl/Cmd-click and right-click
+ * keep their usual behaviour.
+ */
+const AnnotateToolBtn = React.memo(function AnnotateToolBtn() {
+  const annotateMode = useEditorStore((s) => s.annotateMode);
+  const setAnnotateMode = useEditorStore((s) => s.setAnnotateMode);
+  return (
+    <ToolBtn
+      icon={<MessageSquarePlus size={15} />}
+      active={annotateMode}
+      onClick={() => setAnnotateMode(!annotateMode)}
+      title={annotateMode ? "Annotate: click any element (A)" : "Annotate tool (A)"}
+      shortcut="A"
+    />
   );
 });

@@ -187,3 +187,23 @@ export function scrollToAndOpenAnnotation(a: Pick<Annotation, "id" | "elementPat
   // on the next position tick if it becomes available.
   dispatchOpenAnnotationPin(a.id);
 }
+
+// ── Keyboard-triggered navigation + popover toggles ──
+
+export type PinNavDirection = "prev" | "next" | "first" | "last";
+
+/**
+ * Ask the AnnotationPins layer to jump to another pin on the current page.
+ * "prev"/"next" move relative to the currently-open pin, or pick first/last
+ * if no pin is open.
+ */
+export function dispatchNavigatePin(direction: PinNavDirection) {
+  window.dispatchEvent(new CustomEvent("canvas:navigate-pin", {
+    detail: { direction },
+  }));
+}
+
+/** Toggle the toolbar Ask AI history popover (for the `g h` keyboard chord). */
+export function dispatchToggleAIHistory() {
+  window.dispatchEvent(new CustomEvent("canvas:toggle-ai-history"));
+}

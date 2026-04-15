@@ -13,6 +13,8 @@ import {
   type PinNavDirection,
 } from "../utils/agentation.js";
 import { useEditorStore } from "../stores/editor-store.js";
+import { measureText } from "../utils/style-cache.js";
+import { getEditorIframe } from "../utils/iframe-events.js";
 
 const C = THEME;
 
@@ -29,14 +31,6 @@ interface PinPosition {
   tagName: string;
 }
 
-/** Get the iframe element in the overlay shadow DOM, if present. */
-function getIframe(): HTMLIFrameElement | null {
-  const host = document.getElementById("local-canvas-host");
-  const shadow = host?.shadowRoot;
-  return (shadow?.querySelector("#responsive-frame-container iframe") ??
-    shadow?.querySelector("iframe")) as HTMLIFrameElement | null;
-}
-
 /** Compute the pin position (viewport coords) for an element. */
 function computePinPosition(el: HTMLElement, a: Annotation): PinPosition | null {
   const rect = el.getBoundingClientRect();
@@ -46,7 +40,7 @@ function computePinPosition(el: HTMLElement, a: Annotation): PinPosition | null 
   let scale = 1;
   let offsetX = 0;
   let offsetY = 0;
-  const iframe = getIframe();
+  const iframe = getEditorIframe();
   if (iframe && iframe.contentDocument && el.ownerDocument === iframe.contentDocument) {
     const ir = iframe.getBoundingClientRect();
     const naturalW = parseInt(iframe.style.width) || ir.width;
@@ -192,7 +186,31 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent }:
   }, [text, sending, position, onSent]);
 
   const popoverWidth = 260;
-  const popoverHeight = 150;
+
+  // Header fits: tag chip + comment + (optional) status badge + close button.
+  // Budget for the comment text is the popover's inner width minus everything
+  // else. pretext lets us measure the comment without hitting the DOM so we
+  // can both size the popover correctly up-front and know whether to clamp.
+  const HEADER_HORIZONTAL_PAD = 8 * 2;                  // popover padding
+  const HEADER_LEADING_GAP = 8 + 6 + 5;                 // "h1:" + gaps
+  const HEADER_TRAILING_GAP = 11 + 4 + (isResolved ? 58 : 0); // close + badge
+  const commentMaxWidth = Math.max(60, popoverWidth - HEADER_HORIZONTAL_PAD - HEADER_LEADING_GAP - HEADER_TRAILING_GAP);
+  const HEADER_FONT = "italic 11px -apple-system, BlinkMacSystemFont, Inter, sans-serif";
+  const HEADER_LINE_HEIGHT = 15;
+  const quoted = `"${position.annotation.comment}"`;
+  const measured = measureText(quoted, HEADER_FONT, commentMaxWidth, HEADER_LINE_HEIGHT);
+  const HEADER_MAX_LINES = 2;
+  const clamped = measured.lineCount > HEADER_MAX_LINES;
+  const headerTextLines = Math.min(measured.lineCount, HEADER_MAX_LINES);
+  const headerTextHeight = headerTextLines * HEADER_LINE_HEIGHT;
+
+  // Rough height budget for the rest of the popover (thread bubbles, textarea
+  // or Re-open row, action buttons). Don't need to be exact — only used for
+  // flipping the popover above/below the element when there isn't room.
+  const threadHeight = thread.length > 0 ? Math.min(160, thread.length * 44) + 6 : 0;
+  const bodyHeight = isResolved ? 32 : 48 /* textarea */ + 24 /* action row */;
+  const popoverHeight = 8 /* top padding */ + headerTextHeight + 6 /* gap */ + threadHeight + bodyHeight + 8 /* bottom padding */;
+
   // Position below the element by default; if no room, above
   const elemBottom = position.elementRect.top + position.elementRect.height;
   let popX = position.elementRect.left;
@@ -226,15 +244,24 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent }:
       onClick={e => e.stopPropagation()}
     >
       <div style={{
-        display: "flex", alignItems: "center", gap: 5, marginBottom: 6,
-        fontSize: 11, color: "rgba(255,255,255,0.55)",
+        display: "flex", alignItems: "flex-start", gap: 5, marginBottom: 6,
+        fontSize: 11, lineHeight: `${HEADER_LINE_HEIGHT}px`,
+        color: "rgba(255,255,255,0.55)",
       }}>
-        <span style={{ fontWeight: 600 }}>{position.tagName}:</span>
+        <span style={{ fontWeight: 600, flexShrink: 0 }}>{position.tagName}:</span>
         <span style={{
-          flex: 1, fontStyle: "italic", overflow: "hidden",
-          textOverflow: "ellipsis", whiteSpace: "nowrap",
-        }} title={position.annotation.comment}>
-          "{position.annotation.comment}"
+          flex: 1, fontStyle: "italic",
+          // pretext told us whether the text actually overflows at this width.
+          // If it does, clamp to 2 lines with ellipsis; if not, let it render
+          // naturally (no unnecessary CSS ellipsis computation).
+          display: clamped ? "-webkit-box" : "block",
+          WebkitBoxOrient: clamped ? "vertical" : undefined,
+          WebkitLineClamp: clamped ? HEADER_MAX_LINES : undefined,
+          overflow: clamped ? "hidden" : "visible",
+          overflowWrap: "break-word",
+          wordBreak: "break-word",
+        } as React.CSSProperties} title={clamped ? position.annotation.comment : undefined}>
+          {quoted}
         </span>
         {isResolved && (() => {
           const c = statusColor(status);

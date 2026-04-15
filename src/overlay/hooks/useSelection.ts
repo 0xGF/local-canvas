@@ -2,7 +2,7 @@ import { useEffect, useCallback, useRef } from "react";
 import { useEditorStore } from "../stores/editor-store.js";
 import { deepElementFromPoint } from "../utils/element-picker.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
-import { attachToDocumentAndIframe } from "../utils/iframe-events.js";
+import { attachToDocumentAndIframe, bind, getEditorIframe } from "../utils/iframe-events.js";
 import { getCachedStyle } from "../utils/style-cache.js";
 import { wasDragRecent } from "../utils/drag-state.js";
 
@@ -69,15 +69,6 @@ function isClickInsideOverlay(e: MouseEvent): boolean {
 }
 
 /**
- * Get the iframe element if present (edit mode).
- */
-function getIframe(): HTMLIFrameElement | null {
-  const host = document.getElementById("local-canvas-host");
-  const shadow = host?.shadowRoot;
-  return shadow?.querySelector("iframe") as HTMLIFrameElement | null;
-}
-
-/**
  * When the cursor lands on an ancestor (because it's inside a child's margin
  * zone rather than the child itself), snap to the child whose margin box
  * contains the point. Returns the original target if no child matches.
@@ -129,7 +120,7 @@ function elementAtPoint(clientX: number, clientY: number): { target: HTMLElement
   }
 
   // Try iframe document (translate coords)
-  const iframe = getIframe();
+  const iframe = getEditorIframe();
   if (iframe?.contentDocument) {
     const ir = iframe.getBoundingClientRect();
     const iframeX = clientX - ir.left;
@@ -253,9 +244,9 @@ export function useSelection() {
           menuY = rect.top * scale + ir.top;
         }
         setContextMenu({ x: menuX, y: menuY - 6, element: target, source, initialMode: "ai-prompt" });
-        // Drop back to normal selection after one annotation so the user
-        // isn't stuck in annotate mode forever.
-        useEditorStore.getState().setAnnotateMode(false);
+        // Stay in annotate mode — user stays armed until they toggle the
+        // button off, press `A` again, or hit Escape (handled in
+        // useKeyboard). Lets them drop multiple pins without re-arming.
         return;
       }
 
@@ -329,7 +320,7 @@ export function useSelection() {
       // If nothing found, try iframe directly (event may have iframe-local coords).
       let result = elementAtPoint(e.clientX, e.clientY);
       if (!result.target) {
-        const iframe = getIframe();
+        const iframe = getEditorIframe();
         if (iframe?.contentDocument) {
           const t = deepElementFromPoint(e.clientX, e.clientY, iframe.contentDocument);
           if (t) result = { target: t, fromIframe: true, iframe };
@@ -381,13 +372,57 @@ export function useSelection() {
   useEffect(() => {
     if (mode !== "edit") return;
     const cleanup = attachToDocumentAndIframe([
-      { event: "mousemove", handler: handleMouseMove },
-      { event: "click", handler: handleClick },
-      { event: "contextmenu", handler: handleContextMenu },
-      { event: "mousedown", handler: blockMouseDown as any },
-      { event: "selectstart", handler: blockSelection as any },
-      { event: "dragstart", handler: blockSelection as any },
+      bind("mousemove", handleMouseMove),
+      bind("click", handleClick),
+      bind("contextmenu", handleContextMenu),
+      bind("mousedown", blockMouseDown),
+      bind("selectstart", blockSelection),
+      bind("dragstart", blockSelection),
     ]);
     return cleanup;
   }, [mode, handleMouseMove, handleClick, handleContextMenu, blockMouseDown, blockSelection]);
+
+  // ── Annotate tool cursor ──
+  // While the annotate tool is armed, swap the cursor in the iframe body and
+  // the overlay host so the user has an unambiguous "I'm in comment mode"
+  // signal. Also applies a yellow body outline on hover via a data attribute
+  // the paint layer could branch on (currently just used for the cursor rule).
+  const annotateMode = useEditorStore((s) => s.annotateMode);
+  useEffect(() => {
+    if (mode !== "edit" || !annotateMode) return;
+    const cursor = ANNOTATE_CURSOR_CSS;
+    const applied: Array<{ el: HTMLElement; prev: string }> = [];
+    function apply(el: HTMLElement | null | undefined) {
+      if (!el) return;
+      applied.push({ el, prev: el.style.cursor });
+      el.style.cursor = cursor;
+    }
+    apply(document.body);
+    const iframe = getEditorIframe();
+    apply(iframe?.contentDocument?.body);
+    // Also poll briefly for the iframe body in case it remounts after breakpoint change
+    const pollId = setInterval(() => {
+      const doc = getEditorIframe()?.contentDocument?.body;
+      if (doc && !applied.some(a => a.el === doc)) apply(doc);
+    }, 500);
+    return () => {
+      clearInterval(pollId);
+      for (const { el, prev } of applied) {
+        try { el.style.cursor = prev; } catch { /* detached */ }
+      }
+    };
+  }, [mode, annotateMode]);
 }
+
+/**
+ * Yellow `+` cursor for the annotate tool. Double-stroked (black under,
+ * yellow over) so it reads on both light and dark backgrounds. URL-encoded
+ * SVG so it works cross-origin in the iframe body.
+ * Hotspot is the centre of the `+` at (12, 12).
+ */
+const ANNOTATE_CURSOR_SVG =
+  `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">` +
+    `<path d="M12 5v14M5 12h14" stroke="%23000" stroke-width="5" stroke-linecap="round" fill="none"/>` +
+    `<path d="M12 5v14M5 12h14" stroke="%23ffb800" stroke-width="3" stroke-linecap="round" fill="none"/>` +
+  `</svg>`;
+const ANNOTATE_CURSOR_CSS = `url('data:image/svg+xml;utf8,${ANNOTATE_CURSOR_SVG}') 12 12, crosshair`;

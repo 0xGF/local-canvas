@@ -8,7 +8,7 @@ import { useWebSocket } from "../hooks/useWebSocket.js";
 import { BREAKPOINT_PRESETS } from "../../shared/breakpoints.js";
 import {
   Pointer, Pencil, Undo, Redo, Save, Reset,
-  ChevronDown, ChevronUp, X, Check, Sparkles, MessageSquarePlus,
+  ChevronDown, ChevronUp, X, Check, Sparkles, Plus,
 } from "./icons.js";
 import { AskAIHistory } from "./AskAIHistory.js";
 
@@ -358,7 +358,7 @@ export const Toolbar = React.memo(function Toolbar() {
   const redo = useCallback(() => { rawRedo(); didRedo(); incrementPending(); showToast("↪ Redo"); triggerFlash(); }, [rawRedo, didRedo, incrementPending, showToast, triggerFlash]);
 
   const handleSave = useCallback(() => {
-    send({ type: "save" as any });
+    send({ type: "save" });
     clearPending();
   }, [send, clearPending]);
 
@@ -472,11 +472,29 @@ export const Toolbar = React.memo(function Toolbar() {
 const AnnotateToolBtn = React.memo(function AnnotateToolBtn() {
   const annotateMode = useEditorStore((s) => s.annotateMode);
   const setAnnotateMode = useEditorStore((s) => s.setAnnotateMode);
+  const showToast = useEditorStore((s) => s.showToast);
+  const toggle = useCallback(() => {
+    const next = !annotateMode;
+    setAnnotateMode(next);
+    if (next) showToast("Annotate: click any element · Esc to cancel");
+  }, [annotateMode, setAnnotateMode, showToast]);
   return (
     <ToolBtn
-      icon={<MessageSquarePlus size={15} />}
+      icon={
+        <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+          <Sparkles size={15} />
+          <span style={{
+            position: "absolute", right: -4, bottom: -4,
+            width: 9, height: 9, borderRadius: "50%",
+            background: "currentColor",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <Plus size={7} style={{ color: "#000", strokeWidth: 3 }} />
+          </span>
+        </span>
+      }
       active={annotateMode}
-      onClick={() => setAnnotateMode(!annotateMode)}
+      onClick={toggle}
       title={annotateMode ? "Annotate: click any element (A)" : "Annotate tool (A)"}
       shortcut="A"
     />

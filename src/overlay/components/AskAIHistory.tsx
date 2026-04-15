@@ -228,10 +228,10 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
               <div style={{ flex: 1, overflowY: "auto" }}>
                 {visible.length === 0 ? (
                   <div style={{ padding: "24px 16px", textAlign: "center", color: C.fgMuted, fontSize: 11 }}>
-                    {loading ? "Loading\u2026" : (
+                    {loading ? "Loading…" : (
                       <>
                         No prompts yet.<br/>
-                        <span style={{ fontSize: 10 }}>Right-click an element \u2192 Ask AI</span>
+                        <span style={{ fontSize: 10 }}>Right-click an element → Ask AI</span>
                       </>
                     )}
                   </div>

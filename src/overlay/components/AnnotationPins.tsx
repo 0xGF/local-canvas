@@ -8,7 +8,9 @@ import {
   currentSessionId,
   getHiddenAnnotationIds,
   findElementForAnnotation,
+  scrollToAndOpenAnnotation,
   type Annotation,
+  type PinNavDirection,
 } from "../utils/agentation.js";
 import { useEditorStore } from "../stores/editor-store.js";
 
@@ -354,6 +356,45 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
     }
     window.addEventListener("canvas:open-annotation-pin", onOpenRequest);
     return () => window.removeEventListener("canvas:open-annotation-pin", onOpenRequest);
+  }, []);
+
+  // Keep latest positions + openId in refs so the navigate listener below
+  // doesn't re-attach every frame.
+  const positionsRef = useRef<PinPosition[]>([]);
+  const openIdRef = useRef<string | null>(null);
+  positionsRef.current = positions;
+  openIdRef.current = openId;
+
+  // Listen for keyboard-triggered pin navigation (`[` / `]`).
+  useEffect(() => {
+    function onNavigate(e: Event) {
+      const direction = (e as CustomEvent<{ direction: PinNavDirection }>).detail?.direction;
+      if (!direction) return;
+      // Sort pins by vertical position so "next" moves down the page.
+      const ordered = [...positionsRef.current].sort((a, b) => a.y - b.y);
+      if (ordered.length === 0) return;
+
+      let target: PinPosition | undefined;
+      if (direction === "first") target = ordered[0];
+      else if (direction === "last") target = ordered[ordered.length - 1];
+      else {
+        const currentIdx = openIdRef.current
+          ? ordered.findIndex(p => p.annotation.id === openIdRef.current)
+          : -1;
+        if (currentIdx === -1) {
+          // Nothing open — seed with the natural endpoint for the direction.
+          target = direction === "next" ? ordered[0] : ordered[ordered.length - 1];
+        } else {
+          const nextIdx = direction === "next" ? currentIdx + 1 : currentIdx - 1;
+          // Wrap around so repeated presses cycle.
+          const wrapped = ((nextIdx % ordered.length) + ordered.length) % ordered.length;
+          target = ordered[wrapped];
+        }
+      }
+      if (target) scrollToAndOpenAnnotation(target.annotation);
+    }
+    window.addEventListener("canvas:navigate-pin", onNavigate);
+    return () => window.removeEventListener("canvas:navigate-pin", onNavigate);
   }, []);
 
   const handleSent = useCallback(() => {

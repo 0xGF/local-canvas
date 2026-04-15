@@ -3,6 +3,8 @@ import {
   findElementForAnnotation,
   scrollToAndOpenAnnotation,
   dispatchOpenAnnotationPin,
+  dispatchNavigatePin,
+  dispatchToggleAIHistory,
 } from "../agentation.js";
 
 describe("findElementForAnnotation", () => {
@@ -120,5 +122,36 @@ describe("scrollToAndOpenAnnotation", () => {
     scrollToAndOpenAnnotation({ id: "a", elementPath: "src/Bar.tsx:10" });
     expect(scrollSpy).toHaveBeenCalledTimes(2);
     expect(scrollSpy.mock.calls[1]).toEqual([]);
+  });
+});
+
+describe("dispatchNavigatePin", () => {
+  it.each(["prev", "next", "first", "last"] as const)(
+    "dispatches canvas:navigate-pin with direction=%s",
+    (direction) => {
+      const listener = vi.fn();
+      window.addEventListener("canvas:navigate-pin", listener as EventListener);
+      try {
+        dispatchNavigatePin(direction);
+        expect(listener).toHaveBeenCalledTimes(1);
+        const ev = listener.mock.calls[0][0] as CustomEvent<{ direction: string }>;
+        expect(ev.detail?.direction).toBe(direction);
+      } finally {
+        window.removeEventListener("canvas:navigate-pin", listener as EventListener);
+      }
+    },
+  );
+});
+
+describe("dispatchToggleAIHistory", () => {
+  it("dispatches a canvas:toggle-ai-history event", () => {
+    const listener = vi.fn();
+    window.addEventListener("canvas:toggle-ai-history", listener as EventListener);
+    try {
+      dispatchToggleAIHistory();
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener("canvas:toggle-ai-history", listener as EventListener);
+    }
   });
 });

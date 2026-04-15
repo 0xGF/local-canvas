@@ -155,6 +155,13 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
     return () => window.removeEventListener("canvas:hidden-annotations-changed", onChange);
   }, []);
 
+  // Keyboard chord (`g h`) dispatches this event to toggle the popover.
+  useEffect(() => {
+    function onToggle() { setOpen(o => !o); }
+    window.addEventListener("canvas:toggle-ai-history", onToggle);
+    return () => window.removeEventListener("canvas:toggle-ai-history", onToggle);
+  }, []);
+
   const handleOpenAnnotation = useCallback((a: Annotation) => {
     if (a.url !== window.location.href) return; // Can't jump cross-page
     setOpen(false);

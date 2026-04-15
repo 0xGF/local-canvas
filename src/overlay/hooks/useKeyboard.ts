@@ -5,6 +5,10 @@ import { useChangesStore } from "../stores/changes-store.js";
 import { useWebSocket } from "./useWebSocket.js";
 import { attachToDocumentAndIframe } from "../utils/iframe-events.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
+import { dispatchNavigatePin, dispatchToggleAIHistory } from "../utils/agentation.js";
+
+/** How long (ms) a chord-leader key stays armed before we drop it. */
+const CHORD_TIMEOUT_MS = 750;
 
 export function useKeyboard() {
   const { undo, redo, send } = useWebSocket();
@@ -27,7 +31,24 @@ export function useKeyboard() {
   storeRef.current.redo = redo;
   storeRef.current.send = send;
 
+  // Chord state — when the leader key (currently only `g`) is pressed, we
+  // arm this and consume the NEXT key as the chord. Cleared on timeout or
+  // on any non-matching key.
+  const chordRef = useRef<{ leader: string | null; timer: ReturnType<typeof setTimeout> | null }>({
+    leader: null, timer: null,
+  });
+
   useEffect(() => {
+    function clearChord() {
+      if (chordRef.current.timer) clearTimeout(chordRef.current.timer);
+      chordRef.current = { leader: null, timer: null };
+    }
+    function armChord(leader: string) {
+      if (chordRef.current.timer) clearTimeout(chordRef.current.timer);
+      chordRef.current.leader = leader;
+      chordRef.current.timer = setTimeout(clearChord, CHORD_TIMEOUT_MS);
+    }
+
     function handleKeyDown(e: KeyboardEvent) {
       const s = storeRef.current;
       const isMeta = e.metaKey || e.ctrlKey;
@@ -39,6 +60,33 @@ export function useKeyboard() {
 
       // Let inputs handle their own keystrokes (including Escape)
       if (isTyping(e)) return;
+
+      // Chord resolution: if `g` is armed, the next key finishes the chord.
+      if (chordRef.current.leader === "g" && !isMeta) {
+        const leader = chordRef.current.leader;
+        clearChord();
+        if (e.key === "h") {
+          e.preventDefault();
+          dispatchToggleAIHistory();
+          return;
+        }
+        // Unknown follow-up — let other handlers process this key. We've
+        // already cleared the chord so there's no leak.
+        // Fall through so e.g. `g n` still triggers navigate mode via `n`.
+        void leader;
+      }
+
+      // Pin navigation shortcuts (only meaningful in edit mode).
+      if (useEditorStore.getState().mode === "edit" && !isMeta) {
+        if (e.key === "[") { e.preventDefault(); dispatchNavigatePin("prev"); return; }
+        if (e.key === "]") { e.preventDefault(); dispatchNavigatePin("next"); return; }
+      }
+
+      // Chord leader: `g` on its own arms the chord, doesn't produce output.
+      if (e.key === "g" && !isMeta && !e.shiftKey && !e.altKey) {
+        armChord("g");
+        return;
+      }
 
       if (e.key === "Escape") {
         // Close command bar if open

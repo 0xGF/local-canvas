@@ -138,17 +138,32 @@ interface PinPopoverProps {
   onSent: () => void;
 }
 
+interface ThreadEntry { role: string; content: string; timestamp?: number }
+
+/** Colour for a status badge / thread message bubble. */
+function statusColor(status: string | undefined) {
+  if (status === "resolved") return { bg: "rgba(50,205,110,0.18)", fg: "#6dd58a" };
+  if (status === "dismissed") return { bg: "rgba(255,255,255,0.08)", fg: "rgba(255,255,255,0.55)" };
+  return { bg: "rgba(255,184,0,0.18)", fg: PIN_YELLOW };
+}
+
 const PinPopover = React.memo(function PinPopover({ position, onClose, onSent }: PinPopoverProps) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+  const status = position.annotation.status ?? "pending";
+  const isResolved = status === "resolved" || status === "dismissed";
+  const thread = ((position.annotation as unknown as { thread?: ThreadEntry[] }).thread) || [];
 
-  const send = useCallback(async () => {
-    const prompt = text.trim();
+  useEffect(() => {
+    if (!isResolved) inputRef.current?.focus();
+  }, [isResolved]);
+
+  const send = useCallback(async (opts: { reopen?: boolean } = {}) => {
+    const prompt = opts.reopen
+      ? `Re-opening: ${position.annotation.comment}`
+      : text.trim();
     if (!prompt || sending) return;
     setSending(true);
     try {
@@ -167,7 +182,7 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent }:
           height: Math.round(position.elementRect.height),
         },
       });
-      useEditorStore.getState().showToast("Sent to agent");
+      useEditorStore.getState().showToast(opts.reopen ? "Re-opened" : "Sent to agent");
       onSent();
     } catch {
       useEditorStore.getState().showToast("Send failed");
@@ -221,6 +236,19 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent }:
         }} title={position.annotation.comment}>
           "{position.annotation.comment}"
         </span>
+        {isResolved && (() => {
+          const c = statusColor(status);
+          return (
+            <span style={{
+              background: c.bg, color: c.fg,
+              fontSize: 9, fontWeight: 700, letterSpacing: 0.3,
+              padding: "1px 6px", borderRadius: 8,
+              textTransform: "uppercase", flexShrink: 0,
+            }}>
+              {status}
+            </span>
+          );
+        })()}
         <button
           onClick={onClose}
           style={{
@@ -231,58 +259,120 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent }:
           <X size={11} />
         </button>
       </div>
-      <textarea
-        ref={inputRef}
-        value={text}
-        onChange={e => setText(e.target.value)}
-        onKeyDown={e => {
-          e.stopPropagation();
-          if (e.key === "Enter" && !e.shiftKey && text.trim()) {
-            e.preventDefault();
-            send();
-          }
-          if (e.key === "Escape") { e.preventDefault(); onClose(); }
-        }}
-        placeholder="Add a follow-up..."
-        rows={2}
-        style={{
-          width: "100%",
-          minHeight: 48,
-          background: "#262626",
-          border: "none",
-          borderRadius: 5,
-          color: "#fff", fontSize: 11, fontFamily: C.font,
-          padding: "6px 8px", outline: "none", boxSizing: "border-box",
-          resize: "vertical", lineHeight: 1.35,
-        }}
-      />
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 4, marginTop: 6 }}>
-        <button
-          onClick={onClose}
-          style={{
-            background: "transparent", border: "none",
-            color: "rgba(255,255,255,0.55)", fontSize: 10,
-            padding: "3px 8px", borderRadius: 4, cursor: "pointer",
-            fontFamily: C.font,
-          }}
-        >
-          Cancel
-        </button>
-        <button
-          onClick={send}
-          disabled={!text.trim() || sending}
-          style={{
-            background: text.trim() && !sending ? PIN_YELLOW : "rgba(255,255,255,0.08)",
-            color: text.trim() && !sending ? "#000" : "rgba(255,255,255,0.4)",
-            border: "none", borderRadius: 4,
-            padding: "3px 12px", fontSize: 10, fontWeight: 700,
-            cursor: text.trim() && !sending ? "pointer" : "default",
-            fontFamily: C.font,
-          }}
-        >
-          {sending ? "Sending\u2026" : "Add"}
-        </button>
-      </div>
+
+      {thread.length > 0 && (
+        <div style={{
+          maxHeight: 160, overflowY: "auto",
+          display: "flex", flexDirection: "column", gap: 4,
+          marginBottom: 6,
+        }}>
+          {thread.map((entry, i) => {
+            const isAgent = entry.role === "agent";
+            return (
+              <div key={i} style={{
+                alignSelf: isAgent ? "flex-start" : "flex-end",
+                maxWidth: "88%",
+                background: isAgent ? "rgba(109,213,138,0.12)" : "rgba(255,255,255,0.08)",
+                color: isAgent ? "#cfeeda" : "rgba(255,255,255,0.85)",
+                fontSize: 10, lineHeight: 1.4,
+                padding: "4px 8px", borderRadius: 6,
+                whiteSpace: "pre-wrap", wordBreak: "break-word",
+              }}>
+                <div style={{ fontSize: 8, opacity: 0.6, marginBottom: 1, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                  {isAgent ? "agent" : entry.role}
+                </div>
+                {entry.content}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {isResolved ? (
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 4, marginTop: 2 }}>
+          <button
+            onClick={onClose}
+            style={{
+              background: "transparent", border: "none",
+              color: "rgba(255,255,255,0.55)", fontSize: 10,
+              padding: "3px 8px", borderRadius: 4, cursor: "pointer",
+              fontFamily: C.font,
+            }}
+          >
+            Close
+          </button>
+          <button
+            onClick={() => send({ reopen: true })}
+            disabled={sending}
+            style={{
+              background: sending ? "rgba(255,255,255,0.08)" : PIN_YELLOW,
+              color: sending ? "rgba(255,255,255,0.4)" : "#000",
+              border: "none", borderRadius: 4,
+              padding: "3px 12px", fontSize: 10, fontWeight: 700,
+              cursor: sending ? "default" : "pointer",
+              fontFamily: C.font,
+            }}
+            title="Post a new annotation referencing this one"
+          >
+            {sending ? "Re-opening…" : "Re-open"}
+          </button>
+        </div>
+      ) : (
+        <>
+          <textarea
+            ref={inputRef}
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyDown={e => {
+              e.stopPropagation();
+              if (e.key === "Enter" && !e.shiftKey && text.trim()) {
+                e.preventDefault();
+                send();
+              }
+              if (e.key === "Escape") { e.preventDefault(); onClose(); }
+            }}
+            placeholder="Add a follow-up..."
+            rows={2}
+            style={{
+              width: "100%",
+              minHeight: 48,
+              background: "#262626",
+              border: "none",
+              borderRadius: 5,
+              color: "#fff", fontSize: 11, fontFamily: C.font,
+              padding: "6px 8px", outline: "none", boxSizing: "border-box",
+              resize: "vertical", lineHeight: 1.35,
+            }}
+          />
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 4, marginTop: 6 }}>
+            <button
+              onClick={onClose}
+              style={{
+                background: "transparent", border: "none",
+                color: "rgba(255,255,255,0.55)", fontSize: 10,
+                padding: "3px 8px", borderRadius: 4, cursor: "pointer",
+                fontFamily: C.font,
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => send()}
+              disabled={!text.trim() || sending}
+              style={{
+                background: text.trim() && !sending ? PIN_YELLOW : "rgba(255,255,255,0.08)",
+                color: text.trim() && !sending ? "#000" : "rgba(255,255,255,0.4)",
+                border: "none", borderRadius: 4,
+                padding: "3px 12px", fontSize: 10, fontWeight: 700,
+                cursor: text.trim() && !sending ? "pointer" : "default",
+                fontFamily: C.font,
+              }}
+            >
+              {sending ? "Sending…" : "Add"}
+            </button>
+          </div>
+        </>
+      )}
     </motion.div>
   );
 });
@@ -298,7 +388,10 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => getHiddenAnnotationIds());
 
-  // Poll annotations from server every 3s
+  // Poll annotations from server every 3s.
+  // Keep all statuses on the current page — the render loop filters to
+  // pending-only for pins, but we need resolved/dismissed entries in memory
+  // so history-row clicks can open their popovers with thread history.
   useEffect(() => {
     let cancelled = false;
     async function refresh() {
@@ -306,11 +399,7 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
       try {
         const list = await listAnnotations();
         if (cancelled) return;
-        // Only show pending annotations on the current page
-        const filtered = list.filter(a =>
-          (a.status === "pending" || !a.status) &&
-          a.url === window.location.href
-        );
+        const filtered = list.filter(a => a.url === window.location.href);
         setAnnotations(filtered);
       } catch { /* ignore */ }
     }
@@ -326,13 +415,16 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
     return () => window.removeEventListener("canvas:hidden-annotations-changed", onChange);
   }, []);
 
-  // Recompute pin positions every frame (cheap for small N)
+  // Recompute pin positions every frame (cheap for small N).
+  // Pins render for PENDING annotations only — resolved/dismissed don't
+  // get a pin but can still be opened via the history popover or nav.
   useEffect(() => {
     let raf = 0;
     function tick() {
       const next: PinPosition[] = [];
       for (const a of annotations) {
         if (hiddenIds.has(a.id)) continue;
+        if (a.status && a.status !== "pending") continue;
         const el = findElementForAnnotation(a);
         if (!el) continue;
         const pos = computePinPosition(el, a);
@@ -401,14 +493,22 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
     setOpenId(null);
     // Refresh now so the new annotation shows up immediately
     listAnnotations().then(list => {
-      const filtered = list.filter(a =>
-        (a.status === "pending" || !a.status) && a.url === window.location.href
-      );
+      const filtered = list.filter(a => a.url === window.location.href);
       setAnnotations(filtered);
     }).catch(() => {});
   }, []);
 
-  const openPosition = openId ? positions.find(p => p.annotation.id === openId) : null;
+  // Resolve the open popover: prefer a pin position (pending annotation),
+  // otherwise look up the annotation + compute its position on demand so
+  // resolved/dismissed entries clicked from the history popover still show.
+  let openPosition: PinPosition | null = openId ? (positions.find(p => p.annotation.id === openId) ?? null) : null;
+  if (openId && !openPosition) {
+    const a = annotations.find(x => x.id === openId);
+    if (a) {
+      const el = findElementForAnnotation(a);
+      if (el) openPosition = computePinPosition(el, a);
+    }
+  }
 
   return (
     <>

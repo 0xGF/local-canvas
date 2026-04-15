@@ -162,6 +162,14 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
     return () => window.removeEventListener("canvas:toggle-ai-history", onToggle);
   }, []);
 
+  // Refresh the list immediately when a new annotation is posted, so the
+  // row appears without waiting for the 5s poll tick.
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener("canvas:annotation-posted", refresh);
+    return () => window.removeEventListener("canvas:annotation-posted", refresh);
+  }, [open, refresh]);
+
   const handleOpenAnnotation = useCallback((a: Annotation) => {
     if (a.url !== window.location.href) return; // Can't jump cross-page
     setOpen(false);

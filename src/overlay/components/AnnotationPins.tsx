@@ -405,7 +405,14 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
     }
     refresh();
     const id = setInterval(refresh, 3000);
-    return () => { cancelled = true; clearInterval(id); };
+    // Refresh immediately when an annotation is posted so the pin shows up
+    // without waiting for the next 3s tick.
+    window.addEventListener("canvas:annotation-posted", refresh);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      window.removeEventListener("canvas:annotation-posted", refresh);
+    };
   }, []);
 
   // Sync with localStorage hidden-set (updated from toolbar history rows)
@@ -491,11 +498,8 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
 
   const handleSent = useCallback(() => {
     setOpenId(null);
-    // Refresh now so the new annotation shows up immediately
-    listAnnotations().then(list => {
-      const filtered = list.filter(a => a.url === window.location.href);
-      setAnnotations(filtered);
-    }).catch(() => {});
+    // `postAnnotation` dispatches canvas:annotation-posted, which the poll
+    // effect above listens for and refreshes on — no manual refresh needed.
   }, []);
 
   // Resolve the open popover: prefer a pin position (pending annotation),

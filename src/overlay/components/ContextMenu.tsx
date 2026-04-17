@@ -8,6 +8,7 @@ import {
   ArrowUp, ArrowDown, ArrowLeft, Layers, MessageSquarePlus, Sparkles,
 } from "./icons.js";
 import { THEME } from "../theme.js";
+import { getEditorIframe } from "../utils/iframe-events.js";
 
 const C = THEME;
 
@@ -43,6 +44,7 @@ export const ContextMenu = React.memo(function ContextMenu() {
   const setContextMenu = useEditorStore((s) => s.setContextMenu);
   const incrementPending = useEditorStore((s) => s.incrementPending);
   const selectElement = useEditorStore((s) => s.selectElement);
+  const multiSelection = useEditorStore((s) => s.multiSelection);
   const { sendMutation, send } = useWebSocket();
   const [aiPromptOpen, setAiPromptOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -65,9 +67,24 @@ export const ContextMenu = React.memo(function ContextMenu() {
         setContextMenu(null); setAiPromptOpen(false);
       }
     }
-    const timer = setTimeout(() => document.addEventListener("click", onClick, true), 50);
+    const timer = setTimeout(() => {
+      document.addEventListener("click", onClick, true);
+      // Also listen on iframe doc so clicking inside the page closes the menu
+      try {
+        const iframeDoc = getEditorIframe()?.contentDocument;
+        if (iframeDoc) iframeDoc.addEventListener("click", onClick, true);
+      } catch {}
+    }, 50);
     document.addEventListener("keydown", onKey, true);
-    return () => { clearTimeout(timer); document.removeEventListener("click", onClick, true); document.removeEventListener("keydown", onKey, true); };
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("click", onClick, true);
+      document.removeEventListener("keydown", onKey, true);
+      try {
+        const iframeDoc = getEditorIframe()?.contentDocument;
+        if (iframeDoc) iframeDoc.removeEventListener("click", onClick, true);
+      } catch {}
+    };
   }, [menu, setContextMenu, aiPromptOpen]);
 
   useEffect(() => {
@@ -104,7 +121,34 @@ export const ContextMenu = React.memo(function ContextMenu() {
   }
   const hasText = directText.trim().length > 0;
 
-  const items: MenuItem[] = [
+  const isMulti = multiSelection.length > 1;
+
+  const items: MenuItem[] = isMulti ? [
+    {
+      label: `${multiSelection.length} elements selected`,
+      icon: <Layers size={13} />,
+      disabled: true,
+      action: () => {},
+      dividerAfter: true,
+    },
+    {
+      label: "Copy All Classes",
+      icon: <Copy size={13} />,
+      action: () => {
+        const allClasses = multiSelection.flatMap(s => s.className.split(/\s+/).filter(Boolean));
+        copiedClasses = [...new Set(allClasses)];
+        navigator.clipboard?.writeText(copiedClasses.join(" "));
+        useEditorStore.getState().showToast(`Copied ${copiedClasses.length} classes`);
+        close();
+      },
+      dividerAfter: true,
+    },
+    {
+      label: "Clear Selection",
+      icon: <Type size={13} />,
+      action: () => { useEditorStore.getState().selectElement(null); close(); },
+    },
+  ] : [
     {
       label: "Edit Text",
       icon: <Type size={13} />,
@@ -112,7 +156,6 @@ export const ContextMenu = React.memo(function ContextMenu() {
       action: () => {
         if (!hasSource) return;
         close();
-        // Dispatch custom event for useTextEdit to start inline editing
         setTimeout(() => {
           el.dispatchEvent(new CustomEvent("canvas:start-text-edit", { bubbles: true }));
         }, 0);
@@ -258,7 +301,11 @@ export const ContextMenu = React.memo(function ContextMenu() {
               <ArrowLeft size={13} />
             </button>
             <MessageSquarePlus size={12} />
-            <div style={{ fontSize: 10, color: C.fgMuted, fontWeight: 600 }}>Add Annotation</div>
+            <div style={{ fontSize: 10, color: C.fgMuted, fontWeight: 600 }}>
+              {multiSelection.length > 1
+                ? `${multiSelection.length} elements: ${multiSelection.map(s => s.tagName).join(", ")}`
+                : "Add Annotation"}
+            </div>
           </div>
           <textarea
             ref={aiInputRef}
@@ -270,14 +317,18 @@ export const ContextMenu = React.memo(function ContextMenu() {
               if (e.key === "Enter" && !e.shiftKey && aiPrompt.trim()) {
                 e.preventDefault();
                 const prompt = aiPrompt.trim();
-                const elementPath = source
-                  ? `${source.filePath}:${source.line}`
-                  : tag;
+                const multi = useEditorStore.getState().multiSelection;
+                const elementPath = multi.length > 1
+                  ? multi.map(s => s.source ? `${s.source.filePath}:${s.source.line}` : s.tagName).join(", ")
+                  : source ? `${source.filePath}:${source.line}` : tag;
+                const elementDesc = multi.length > 1
+                  ? `${multi.length} elements: ${multi.map(s => `<${s.tagName}>`).join(", ")}`
+                  : `<${tag}>${classes.length ? "." + classes.join(".") : ""}`;
                 postAnnotation({
                   comment: prompt,
-                  element: `<${tag}>${classes.length ? "." + classes.join(".") : ""}`,
+                  element: elementDesc,
                   elementPath,
-                  cssClasses: classes.join(" "),
+                  cssClasses: multi.length > 1 ? multi.map(s => s.className).filter(Boolean).join(" | ") : classes.join(" "),
                   intent: "change",
                 }).then(() => {
                   useEditorStore.getState().showToast("Sent to agent");
@@ -288,7 +339,9 @@ export const ContextMenu = React.memo(function ContextMenu() {
               }
               if (e.key === "Escape") { e.preventDefault(); setAiPromptOpen(false); }
             }}
-            placeholder="Describe the change... (e.g. make this a 3-column responsive grid with 16px gap)"
+            placeholder={multiSelection.length > 1
+              ? "Feedback for this group of elements..."
+              : "Describe the change... (e.g. make this a 3-column responsive grid with 16px gap)"}
             rows={4}
             style={{
               width: "100%", minHeight: 90, resize: "vertical",

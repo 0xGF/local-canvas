@@ -57,6 +57,7 @@ You can also put these in a `.local-canvas.json` file in your project root:
 - **Animation pause** — freeze all CSS animations and transitions to inspect moving elements
 - **Interact mode** — hold Space to click through to your app (open modals, navigate, expand dropdowns) without leaving edit mode
 - **Annotations** — add annotations to any element via the annotate tool (`A`) or context menu. Annotations show as numbered pins that auto-pick the best corner, cluster when dense, pulse when new, and can be dragged or right-click dismissed
+- **Multi-element selection** — Shift+click to select multiple elements, Alt+drag for marquee select. Group annotations target all selected elements at once
 
 ## Keyboard Shortcuts
 
@@ -72,6 +73,8 @@ You can also put these in a `.local-canvas.json` file in your project root:
 | `Space` (hold) | Interact mode — click through to your app |
 | `A` | Toggle annotate tool |
 | `[` / `]` | Navigate between annotation pins |
+| `Shift+Click` | Add/remove element from multi-selection |
+| `Alt+Drag` | Marquee select elements in a rectangle |
 | `Ctrl+Click` | Context menu |
 | `Double-click` | Edit text inline |
 | Drag pin | Reposition an annotation pin (persisted) |

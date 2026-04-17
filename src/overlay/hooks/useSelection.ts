@@ -189,6 +189,38 @@ export function useSelection() {
       if (useEditorStore.getState().interacting) return;
       if (useEditorStore.getState().editingText) return;
 
+      // Shift+click: add to multi-selection. Checked early so
+      // isClickInsideOverlay (unreliable with iframe coords) doesn't block it.
+      if (e.shiftKey) {
+        const iframeEl = getEditorIframe();
+        let target: HTMLElement | null = null;
+        let fromIframe = false;
+
+        if (iframeEl?.contentDocument) {
+          const eventDoc = (e.target as Node)?.ownerDocument;
+          if (eventDoc === iframeEl.contentDocument) {
+            target = deepElementFromPoint(e.clientX, e.clientY, iframeEl.contentDocument);
+            fromIframe = true;
+          } else {
+            return; // parent handler — let iframe handler do it
+          }
+        } else {
+          target = deepElementFromPoint(e.clientX, e.clientY, document);
+        }
+        if (!target) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const source = resolveSource(target);
+        const rect = target.getBoundingClientRect();
+        useEditorStore.getState().addToSelection({
+          element: target, source, rect,
+          className: typeof target.className === "string" ? target.className : "",
+          tagName: target.tagName.toLowerCase(),
+          iframeRef: fromIframe && iframeEl ? iframeEl : undefined,
+        });
+        return;
+      }
+
       // Annotate tool: when active, plain click on any element opens the
       // Ask AI prompt directly. Checked early so isClickInsideOverlay
       // (which can misread iframe coords) doesn't block it.
@@ -254,31 +286,39 @@ export function useSelection() {
       const { target, fromIframe, iframe } = elementAtPoint(e.clientX, e.clientY);
       if (!target) return;
 
+      e.preventDefault();
+      e.stopPropagation();
+
+      const source = resolveSource(target);
+      const rect = target.getBoundingClientRect();
+      const selData = {
+        element: target,
+        source,
+        rect,
+        className: typeof target.className === "string" ? target.className : "",
+        tagName: target.tagName.toLowerCase(),
+        iframeRef: fromIframe && iframe ? iframe : undefined,
+      };
+
       // If clicking in the margin/padding zone of the selected element (target is parent),
       // don't change selection — user is interacting with spacing, not selecting parent
       const sel = useEditorStore.getState().selectedElement;
       if (sel?.element && target !== sel.element && target.contains(sel.element)) {
-        // Clicked on an ancestor of the selected element — likely in the margin zone
-        // Only skip if the click is near the selected element's edges
         const sr = sel.element.getBoundingClientRect();
-        const pad = 20; // proximity threshold
+        const pad = 20;
         const nearSelected = e.clientX >= sr.left - pad && e.clientX <= sr.right + pad &&
                             e.clientY >= sr.top - pad && e.clientY <= sr.bottom + pad;
         if (nearSelected) return;
       }
 
-      e.preventDefault();
-      e.stopPropagation();
-
       // If clicking an ancestor of the selected element, only keep the child
       // selected if the click is near the child (within margin + small buffer).
-      // Clicking far away on the parent should select the parent normally.
       const currentSel = useEditorStore.getState().selectedElement;
       if (currentSel?.element && currentSel.element.isConnected && target !== currentSel.element) {
         if (target.contains(currentSel.element)) {
           const cr = currentSel.element.getBoundingClientRect();
           const cs = getCachedStyle(currentSel.element);
-          const buf = 10; // extra buffer beyond margin
+          const buf = 10;
           const outerBox = {
             left: cr.left - (parseFloat(cs.marginLeft) || 0) - buf,
             top: cr.top - (parseFloat(cs.marginTop) || 0) - buf,
@@ -287,23 +327,12 @@ export function useSelection() {
           };
           if (e.clientX >= outerBox.left && e.clientX <= outerBox.right &&
               e.clientY >= outerBox.top && e.clientY <= outerBox.bottom) {
-            return; // Near child's spacing zone — keep child selected
+            return;
           }
-          // Click is far from child — allow selecting the parent
         }
       }
 
-      const source = resolveSource(target);
-      const rect = target.getBoundingClientRect();
-
-      selectElement({
-        element: target,
-        source,
-        rect,
-        className: typeof target.className === "string" ? target.className : "",
-        tagName: target.tagName.toLowerCase(),
-        iframeRef: fromIframe && iframe ? iframe : undefined,
-      });
+      selectElement(selData);
     },
     [mode, selectElement, setContextMenu]
   );
@@ -334,14 +363,20 @@ export function useSelection() {
       const source = resolveSource(target);
       const rect = target.getBoundingClientRect();
 
-      selectElement({
-        element: target,
-        source,
-        rect,
-        className: typeof target.className === "string" ? target.className : "",
-        tagName: target.tagName.toLowerCase(),
-        iframeRef: fromIframe && iframe ? iframe : undefined,
-      });
+      // If multi-selection is active and right-clicked element is in the set,
+      // keep multi-selection intact — just open the context menu.
+      const multi = useEditorStore.getState().multiSelection;
+      const isInMulti = multi.length > 1 && multi.some(s => s.element === target);
+      if (!isInMulti) {
+        selectElement({
+          element: target,
+          source,
+          rect,
+          className: typeof target.className === "string" ? target.className : "",
+          tagName: target.tagName.toLowerCase(),
+          iframeRef: fromIframe && iframe ? iframe : undefined,
+        });
+      }
 
       // Anchor to the top of the element (screen space — translate if in iframe)
       let menuX = rect.left, menuY = rect.top;
@@ -373,6 +408,92 @@ export function useSelection() {
     e.preventDefault();
   }, [mode]);
 
+  // ── Marquee select (Alt+drag) ──
+  const marqueeRef = useRef<{ startX: number; startY: number; active: boolean } | null>(null);
+  const setMarqueeRect = useEditorStore.getState().setMarqueeRect;
+
+  const handleMarqueeDown = useCallback((e: MouseEvent) => {
+    if (mode !== "edit" || !e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    useEditorStore.getState().selectElement(null);
+    marqueeRef.current = { startX: e.clientX, startY: e.clientY, active: false };
+  }, [mode]);
+
+  const handleMarqueeMove = useCallback((e: MouseEvent) => {
+    const m = marqueeRef.current;
+    if (!m) return;
+    const dx = e.clientX - m.startX;
+    const dy = e.clientY - m.startY;
+    if (!m.active && Math.hypot(dx, dy) < 5) return;
+    m.active = true;
+    setMarqueeRect({
+      x: Math.min(m.startX, e.clientX),
+      y: Math.min(m.startY, e.clientY),
+      w: Math.abs(dx),
+      h: Math.abs(dy),
+    });
+  }, []);
+
+  const handleMarqueeUp = useCallback((e: MouseEvent) => {
+    const m = marqueeRef.current;
+    if (!m) return;
+    marqueeRef.current = null;
+    if (!m.active) { setMarqueeRect(null); return; }
+
+    const rect = {
+      x: Math.min(m.startX, e.clientX),
+      y: Math.min(m.startY, e.clientY),
+      w: Math.abs(e.clientX - m.startX),
+      h: Math.abs(e.clientY - m.startY),
+    };
+    setMarqueeRect(null);
+
+    const iframe = getEditorIframe();
+    const doc = iframe?.contentDocument ?? document;
+    const allEls = doc.querySelectorAll("[data-source-file]");
+    const iframeEl = iframe;
+    let scale = 1, ox = 0, oy = 0;
+    if (iframeEl) {
+      const ir = iframeEl.getBoundingClientRect();
+      const naturalW = parseInt(iframeEl.style.width) || ir.width;
+      scale = ir.width / naturalW;
+      ox = ir.left;
+      oy = ir.top;
+    }
+
+    const matched: import("../stores/editor-store.js").SelectedElement[] = [];
+    for (const el of allEls) {
+      const html = el as HTMLElement;
+      const r = html.getBoundingClientRect();
+      const elX = r.left * scale + ox;
+      const elY = r.top * scale + oy;
+      const elW = r.width * scale;
+      const elH = r.height * scale;
+      const overlapX = Math.max(0, Math.min(elX + elW, rect.x + rect.w) - Math.max(elX, rect.x));
+      const overlapY = Math.max(0, Math.min(elY + elH, rect.y + rect.h) - Math.max(elY, rect.y));
+      const overlapArea = overlapX * overlapY;
+      const elArea = elW * elH;
+      if (elArea > 0 && overlapArea / elArea > 0.5) {
+        matched.push({
+          element: html,
+          source: resolveSource(html),
+          rect: r,
+          className: typeof html.className === "string" ? html.className : "",
+          tagName: html.tagName.toLowerCase(),
+          iframeRef: iframeEl ?? undefined,
+        });
+      }
+    }
+    if (matched.length > 0) {
+      useEditorStore.setState({
+        selectedElement: matched[0],
+        multiSelection: matched,
+        propertiesOpen: true,
+      });
+    }
+  }, []);
+
   useEffect(() => {
     if (mode !== "edit") return;
     const cleanup = attachToDocumentAndIframe([
@@ -383,8 +504,19 @@ export function useSelection() {
       bind("selectstart", blockSelection),
       bind("dragstart", blockSelection),
     ]);
-    return cleanup;
-  }, [mode, handleMouseMove, handleClick, handleContextMenu, blockMouseDown, blockSelection]);
+
+    // Marquee listeners on parent document (viewport coords)
+    document.addEventListener("mousedown", handleMarqueeDown, true);
+    document.addEventListener("mousemove", handleMarqueeMove, true);
+    document.addEventListener("mouseup", handleMarqueeUp, true);
+
+    return () => {
+      cleanup();
+      document.removeEventListener("mousedown", handleMarqueeDown, true);
+      document.removeEventListener("mousemove", handleMarqueeMove, true);
+      document.removeEventListener("mouseup", handleMarqueeUp, true);
+    };
+  }, [mode, handleMouseMove, handleClick, handleContextMenu, blockMouseDown, blockSelection, handleMarqueeDown, handleMarqueeMove, handleMarqueeUp]);
 
   // ── Annotate tool cursor ──
   // While the annotate tool is armed, swap the cursor in the iframe body and

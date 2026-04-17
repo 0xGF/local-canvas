@@ -116,6 +116,9 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
         e.stopPropagation();
         // Skip if a drag just ended (margin/resize/spacing)
         if (wasDragRecent(300)) return;
+        // Shift+click is handled by useSelection's addToSelection — don't interfere
+        // Alt+click comes from marquee select release — don't wipe multi-selection
+        if (e.shiftKey || e.altKey) return;
         const target = deepElementFromPoint(e.clientX, e.clientY, doc);
         if (!target) return;
 
@@ -123,7 +126,6 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
 
         // Ctrl+Click or Meta+Click — open context menu
         if (e.ctrlKey || e.metaKey) {
-          // Select the element first
           selectElement({
             element: target,
             source,
@@ -132,7 +134,6 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
             tagName: target.tagName.toLowerCase(),
             iframeRef: iframe!,
           });
-          // Translate click coords to screen space for menu positioning
           const ir = iframe!.getBoundingClientRect();
           const naturalW = parseInt(iframe!.style.width) || ir.width;
           const scale = ir.width / naturalW;
@@ -187,15 +188,15 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
       };
       const forwardMouseDown = (e: MouseEvent) => {
         const c = toScreen(e);
-        document.dispatchEvent(new MouseEvent("mousedown", { clientX: c.clientX, clientY: c.clientY, button: e.button, bubbles: true, cancelable: true }));
+        document.dispatchEvent(new MouseEvent("mousedown", { clientX: c.clientX, clientY: c.clientY, button: e.button, bubbles: true, cancelable: true, altKey: e.altKey, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey }));
       };
       const forwardMouseMove = (e: MouseEvent) => {
         const c = toScreen(e);
-        document.dispatchEvent(new MouseEvent("mousemove", { clientX: c.clientX, clientY: c.clientY, bubbles: true }));
+        document.dispatchEvent(new MouseEvent("mousemove", { clientX: c.clientX, clientY: c.clientY, bubbles: true, altKey: e.altKey, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey }));
       };
       const forwardMouseUp = (e: MouseEvent) => {
         const c = toScreen(e);
-        document.dispatchEvent(new MouseEvent("mouseup", { clientX: c.clientX, clientY: c.clientY, bubbles: true }));
+        document.dispatchEvent(new MouseEvent("mouseup", { clientX: c.clientX, clientY: c.clientY, bubbles: true, altKey: e.altKey, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey }));
       };
 
       // Right-click context menu
@@ -205,14 +206,19 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
         const target = deepElementFromPoint(e.clientX, e.clientY, doc);
         if (!target) return;
         const source = resolveSource(target);
-        selectElement({
-          element: target,
-          source,
-          rect: target.getBoundingClientRect(),
-          className: typeof target.className === "string" ? target.className : "",
-          tagName: target.tagName.toLowerCase(),
-          iframeRef: iframe!,
-        });
+        // Preserve multi-selection if right-clicking an element that's in the set
+        const multi = useEditorStore.getState().multiSelection;
+        const isInMulti = multi.length > 1 && multi.some(s => s.element === target);
+        if (!isInMulti) {
+          selectElement({
+            element: target,
+            source,
+            rect: target.getBoundingClientRect(),
+            className: typeof target.className === "string" ? target.className : "",
+            tagName: target.tagName.toLowerCase(),
+            iframeRef: iframe!,
+          });
+        }
         const c = toScreen(e);
         useEditorStore.getState().setContextMenu({
           x: c.clientX,

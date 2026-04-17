@@ -119,8 +119,6 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
         // Shift+click is handled by useSelection's addToSelection — don't interfere
         // Alt+click comes from marquee select release — don't wipe multi-selection
         if (e.shiftKey || e.altKey) return;
-        // Don't wipe an active multi-selection from a stale click
-        if (useEditorStore.getState().multiSelection.length > 1) return;
         const target = deepElementFromPoint(e.clientX, e.clientY, doc);
         if (!target) return;
 

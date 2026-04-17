@@ -140,9 +140,35 @@ export function useKeyboard() {
         s.setMode("edit");
         return;
       }
+
+      // Alt+P — toggle animation pause
+      if (e.key === "p" && e.altKey && !isMeta && !e.shiftKey) {
+        e.preventDefault();
+        useEditorStore.getState().toggleAnimationsPaused();
+        const paused = useEditorStore.getState().animationsPaused;
+        useEditorStore.getState().showToast(paused ? "Animations paused" : "Animations resumed");
+        return;
+      }
+
+      // Space hold — enter interactive mode (pass events through to the app)
+      if (e.key === " " && !isMeta && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        useEditorStore.getState().setInteracting(true);
+        return;
+      }
     }
 
-    return attachToDocumentAndIframe([bind("keydown", handleKeyDown)]);
+    function handleKeyUp(e: KeyboardEvent) {
+      // Release space — exit interactive mode
+      if (e.key === " ") {
+        useEditorStore.getState().setInteracting(false);
+      }
+    }
+
+    return attachToDocumentAndIframe([
+      bind("keydown", handleKeyDown),
+      bind("keyup", handleKeyUp),
+    ]);
   }, []);
 }
 

@@ -79,4 +79,6 @@ export {
   Sparkles,
   PlusCircle,
   MessageSquarePlus,
+  Pause,
+  Play,
 } from "lucide-react";

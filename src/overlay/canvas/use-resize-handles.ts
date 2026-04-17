@@ -6,6 +6,7 @@ import { getBreakpointPrefix } from "../../shared/breakpoints.js";
 import { TW_PX, TW_NAMES } from "./constants.js";
 import { attachToDocumentAndIframe, bind } from "../utils/iframe-events.js";
 import { markDragEnd } from "../utils/drag-state.js";
+import { sourceStyleHasProperty } from "../utils/inline-style-source.js";
 
 export type HandlePosition = "top" | "right" | "bottom" | "left" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
@@ -79,6 +80,10 @@ interface DragState {
   startWidth: number;
   startHeight: number;
   moved: boolean;
+  // Snapshotted at mousedown so we don't confuse the drag's own preview
+  // updates on `el.style` with state that was really in source.
+  hadInlineWidthAtStart: boolean;
+  hadInlineHeightAtStart: boolean;
 }
 
 /**
@@ -98,6 +103,24 @@ export function useResizeHandles(handlesRef: React.MutableRefObject<ResizeHandle
     const classes = (sel.className || "").split(/\s+/).filter(Boolean);
     const bp = getBreakpointPrefix(useEditorStore.getState().breakpoint);
     const prefix = property;
+
+    // Inline width/height wins against utility classes — route through
+    // modify-style so the resize actually changes rendered size. Uses the
+    // drag-start snapshot so we don't mistake our own preview updates for
+    // real source state.
+    const inlineKey = property === "w" ? "width" : "height";
+    const hadInline = property === "w"
+      ? dragRef.current?.hadInlineWidthAtStart
+      : dragRef.current?.hadInlineHeightAtStart;
+    if (hadInline) {
+      sendMutation({
+        type: "modify-style",
+        source: sel.source,
+        property: inlineKey,
+        value: pxValue > 0 ? `${pxValue}px` : "",
+      }).then(() => incrementPending());
+      return;
+    }
 
     let old: string | undefined;
     if (bp) {
@@ -149,6 +172,8 @@ export function useResizeHandles(handlesRef: React.MutableRefObject<ResizeHandle
         startWidth: parseFloat(cs.width) || sel.rect.width,
         startHeight: parseFloat(cs.height) || sel.rect.height,
         moved: false,
+        hadInlineWidthAtStart: sourceStyleHasProperty(sel.element, "width"),
+        hadInlineHeightAtStart: sourceStyleHasProperty(sel.element, "height"),
       };
       document.body.style.cursor = handle.cursor;
     }

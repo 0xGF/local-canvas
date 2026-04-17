@@ -10,6 +10,16 @@ import { getBreakpointPrefix } from "../../shared/breakpoints.js";
 import { attachToDocumentAndIframe, bind, getIframeDocument } from "../utils/iframe-events.js";
 import { markDragEnd } from "../utils/drag-state.js";
 import { setStyleProp } from "../utils/dom-style.js";
+import { sourceStyleHasProperty, camelToKebabCss } from "../utils/inline-style-source.js";
+
+// Mapping used to route a spacing drag through modify-style when the element
+// already has the same property set inline. Tailwind utility classes lose
+// against inline style's specificity, so using modify-class on these elements
+// would appear to do nothing.
+const SPACING_PREFIX_TO_STYLE: Record<string, string> = {
+  mt: "marginTop", mr: "marginRight", mb: "marginBottom", ml: "marginLeft",
+  pt: "paddingTop", pr: "paddingRight", pb: "paddingBottom", pl: "paddingLeft",
+};
 
 /**
  * After a reorder mutation + HMR, re-select the moved element by finding the
@@ -67,7 +77,7 @@ export function useSpacingDrag(
   const { sendMutation } = useWebSocket();
   const incrementPending = useEditorStore((s) => s.incrementPending);
 
-  const spacingDragRef = useRef<{ badge: BadgeHit; startX: number; startY: number; startValue: number; moved: boolean; lastPx: number; isTrusted?: boolean } | null>(null);
+  const spacingDragRef = useRef<{ badge: BadgeHit; startX: number; startY: number; startValue: number; moved: boolean; lastPx: number; isTrusted?: boolean; hadInlineStyleAtStart: boolean } | null>(null);
   const reorderRef = useRef<{
     el: HTMLElement;
     startX: number; startY: number;
@@ -94,6 +104,21 @@ export function useSpacingDrag(
     const liveClassName = typeof sel.element.className === "string" ? sel.element.className : sel.className || "";
     const classes = liveClassName.split(/\s+/).filter(Boolean);
     const bp = getBreakpointPrefix(useEditorStore.getState().breakpoint);
+
+    // If the element had this spacing set inline in source (captured at drag
+    // start, before the drag's own setStyleProp preview wrote to el.style),
+    // a utility class wouldn't win against inline style's specificity —
+    // route the edit through modify-style so the drag actually takes effect.
+    const inlineKey = SPACING_PREFIX_TO_STYLE[prefix];
+    if (inlineKey && spacingDragRef.current?.hadInlineStyleAtStart) {
+      sendMutation({
+        type: "modify-style",
+        source: sel.source,
+        property: inlineKey,
+        value: pxValue > 0 ? `${pxValue}px` : "",
+      }).then(() => incrementPending());
+      return;
+    }
 
     // Find existing class — prefer breakpoint-prefixed version
     let old: string | undefined;
@@ -154,7 +179,14 @@ export function useSpacingDrag(
         e.preventDefault();
         e.stopPropagation();
         const isHoriz = badge.side === "left" || badge.side === "right";
-        spacingDragRef.current = { badge, startX: e.clientX, startY: e.clientY, startValue: badge.value, moved: false, lastPx: badge.value, isTrusted: e.isTrusted };
+        // Snapshot whether this property was in the source's inline style,
+        // BEFORE the drag's preview updates el.style. Checking live el.style
+        // later would mistake the preview for original source state.
+        const curSel = useEditorStore.getState().selectedElement;
+        const inlineKey = SPACING_PREFIX_TO_STYLE[badge.prefix];
+        const hadInlineStyleAtStart = !!(inlineKey && curSel?.element &&
+          sourceStyleHasProperty(curSel.element, camelToKebabCss(inlineKey)));
+        spacingDragRef.current = { badge, startX: e.clientX, startY: e.clientY, startValue: badge.value, moved: false, lastPx: badge.value, isTrusted: e.isTrusted, hadInlineStyleAtStart };
         document.body.style.cursor = isHoriz ? "ew-resize" : "ns-resize";
         document.body.style.userSelect = "none";
         setStyleProp(document.body, "webkitUserSelect", "none");

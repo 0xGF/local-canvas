@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Pencil, X } from "./icons.js";
 import { THEME } from "../theme.js";
+import { popoverEmerge } from "../utils/motion-presets.js";
+import { EASE, DURATION } from "../utils/easings.js";
 import {
   listAnnotations,
   postAnnotation,
@@ -95,7 +97,7 @@ const Pin = React.memo(function Pin({ position, number, isOpen, onClick, onHover
         cursor: "pointer",
         boxShadow: "0 2px 8px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05)",
         zIndex: 2147483646,
-        transition: "background 0.12s ease, transform 0.12s ease",
+        transition: `background ${DURATION.small}ms ${EASE.snappy}, transform ${DURATION.small}ms ${EASE.snappy}`,
         transform: isHovered ? "scale(1.08)" : "scale(1)",
         pointerEvents: "auto",
         padding: 0,
@@ -224,10 +226,10 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent }:
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 4, scale: 0.96 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 4, scale: 0.96 }}
-      transition={{ duration: 0.12 }}
+      initial={popoverEmerge.initial}
+      animate={popoverEmerge.animate}
+      exit={popoverEmerge.exit}
+      transition={popoverEmerge.transition}
       style={{
         position: "fixed",
         left: popX, top: popY,

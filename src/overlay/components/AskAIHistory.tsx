@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, X } from "./icons.js";
 import { THEME } from "../theme.js";
+import { popoverEmerge } from "../utils/motion-presets.js";
 import {
   listAnnotations,
   currentSessionId,
@@ -195,10 +196,10 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
               onClick={() => setOpen(false)}
             />
             <motion.div
-              initial={{ opacity: 0, y: 8, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.95 }}
-              transition={{ duration: 0.12 }}
+              initial={popoverEmerge.initial}
+              animate={popoverEmerge.animate}
+              exit={popoverEmerge.exit}
+              transition={popoverEmerge.transition}
               style={{
                 position: "absolute", bottom: "100%", right: 0,
                 marginBottom: 8,

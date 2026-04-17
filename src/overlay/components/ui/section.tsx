@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronRight } from "../icons.js";
+import { TWEEN, EASE, DURATION } from "../../utils/easings.js";
+import { sectionExpand } from "../../utils/motion-presets.js";
 
 interface SectionProps {
   title: string;
@@ -21,7 +23,7 @@ export function Section({ title, children, defaultOpen = true }: SectionProps) {
         style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
           padding: "8px 12px", cursor: "pointer",
-          transition: "background 0.1s", minHeight: 32,
+          transition: `background ${DURATION.micro}ms ${EASE.snappy}`, minHeight: 32,
         }}
         onMouseEnter={e => (e.currentTarget.style.background = C.bgHover)}
         onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
@@ -29,7 +31,7 @@ export function Section({ title, children, defaultOpen = true }: SectionProps) {
         <span style={{ fontSize: 11, fontWeight: 500, color: C.fgDim }}>{title}</span>
         <motion.span
           animate={{ rotate: open ? 90 : 0 }}
-          transition={{ duration: 0.15 }}
+          transition={TWEEN.small}
           style={{ display: "flex", alignItems: "center" }}
         >
           <ChevronRight size={12} style={{ color: C.fgDim, flexShrink: 0 }} />
@@ -38,10 +40,10 @@ export function Section({ title, children, defaultOpen = true }: SectionProps) {
       <AnimatePresence initial={false}>
         {open && (
           <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.15, ease: "easeInOut" }}
+            initial={sectionExpand.initial}
+            animate={sectionExpand.animate}
+            exit={sectionExpand.exit}
+            transition={sectionExpand.transition}
             style={{ overflow: "hidden" }}
           >
             <div style={{ padding: "4px 12px 12px", display: "flex", flexDirection: "column", gap: 6 }}>

@@ -13,6 +13,8 @@ import {
 import { AskAIHistory } from "./AskAIHistory.js";
 
 import { THEME } from "../theme.js";
+import { toolbarSlideUp, popoverEmerge } from "../utils/motion-presets.js";
+import { EASE, DURATION } from "../utils/easings.js";
 
 const C = THEME;
 
@@ -44,7 +46,7 @@ const ToolBtn = React.memo(function ToolBtn({
         background: active ? C.accent : hovered && !disabled ? C.bgHover : "transparent",
         color: active ? "#fff" : disabled ? C.fgMuted : hovered ? C.fg : C.fgDim,
         cursor: disabled ? "default" : "pointer",
-        transition: "all 0.12s ease",
+        transition: `all ${DURATION.small}ms ${EASE.snappy}`,
         opacity: disabled ? 0.4 : 1,
         padding: shortcut ? "2px 4px" : "2px 0",
       }}
@@ -98,7 +100,7 @@ const BreakpointSwitcher = React.memo(function BreakpointSwitcher() {
           color: C.fg, cursor: "pointer",
           padding: "4px 8px", height: 36,
           fontFamily: C.mono, fontSize: 11, fontWeight: 600,
-          transition: "all 0.12s ease",
+          transition: `all ${DURATION.small}ms ${EASE.snappy}`,
         }}
       >
         <span>{current.label}</span>
@@ -205,10 +207,10 @@ const ChangesSaveButton = React.memo(function ChangesSaveButton({
               onClick={() => setOpen(false)}
             />
             <motion.div
-              initial={{ opacity: 0, y: 8, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.95 }}
-              transition={{ duration: 0.12 }}
+              initial={popoverEmerge.initial}
+              animate={popoverEmerge.animate}
+              exit={popoverEmerge.exit}
+              transition={popoverEmerge.transition}
               style={{
                 position: "absolute", bottom: "100%", right: 0,
                 marginBottom: 8,
@@ -399,9 +401,9 @@ export const Toolbar = React.memo(function Toolbar() {
   if (mode === "navigate") {
     return (
       <motion.div
-        initial={{ y: 60, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ type: "spring", stiffness: 400, damping: 30, mass: 0.8 }}
+        initial={toolbarSlideUp.initial}
+        animate={toolbarSlideUp.animate}
+        transition={toolbarSlideUp.transition}
         style={{ ...barBase, left: 0, right: 0, margin: "0 auto", width: "fit-content", gap: 2 }}
       >
         <ToolBtn icon={<Pointer size={15} />} active={mode === "navigate"} onClick={setNavigateMode} title="Navigate (N)" shortcut="N" />

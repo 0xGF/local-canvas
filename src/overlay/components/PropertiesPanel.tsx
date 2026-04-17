@@ -1,6 +1,8 @@
 import React, { useState, useCallback } from "react";
 import { useEditorStore } from "../stores/editor-store.js";
+import { useReadonlyStyleStore } from "../stores/readonly-style-store.js";
 import { useClassHelpers } from "../hooks/useClassHelpers.js";
+import { sourceStyleHasProperty } from "../utils/inline-style-source.js";
 import { getCachedStyle } from "../utils/style-cache.js";
 import { setStyleProp } from "../utils/dom-style.js";
 import { useCSSVariables, filterVariables } from "../hooks/useCSSVariables.js";
@@ -44,8 +46,19 @@ export const PropertiesPanel = React.memo(function PropertiesPanel() {
   const open = useEditorStore((s) => s.propertiesOpen);
   const toggle = useEditorStore((s) => s.toggleProperties);
   const helpers = useClassHelpers();
+  const readonlyEntries = useReadonlyStyleStore((s) => s.entries);
 
   if (!open || !sel) return null;
+
+  // Collect unmutable properties from prior modify-style failures (source
+  // uses a computed value — template, ternary, or identifier).
+  const unmutableProps: string[] = [];
+  if (sel.source) {
+    const keyPrefix = `${sel.source.filePath}:${sel.source.line}:`;
+    for (const key of Object.keys(readonlyEntries)) {
+      if (key.startsWith(keyPrefix)) unmutableProps.push(key.slice(keyPrefix.length));
+    }
+  }
 
   return (
     <div style={panelStyle} data-canvas-overlay="true">
@@ -78,6 +91,22 @@ export const PropertiesPanel = React.memo(function PropertiesPanel() {
           <IconBtn icon={<X size={14} />} onClick={toggle} title="Close" />
         </div>
       </div>
+
+      {unmutableProps.length > 0 && (
+        <div style={{
+          padding: "6px 10px",
+          fontSize: 10,
+          color: "#f87171",
+          background: "rgba(248, 113, 113, 0.08)",
+          borderBottom: `1px solid ${C.border}`,
+          lineHeight: 1.4,
+          fontFamily: C.mono,
+        }}>
+          Read-only: <strong>{unmutableProps.join(", ")}</strong>. Source uses
+          a computed value (template, ternary, or variable) — edit the source
+          directly or swap to a className.
+        </div>
+      )}
 
       <div style={{ overflowY: "auto", overflowX: "hidden", flex: 1, minHeight: 0 }}>
         <PositionSection h={helpers} sel={sel} />
@@ -435,12 +464,15 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
 });
 
 const TextColorSection = React.memo(function TextColorSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
+  const inlineColor = sel.element && sourceStyleHasProperty(sel.element, "color");
+  const warning = inlineColor ? "color is set in style={{ ... }} — edit the source or remove the inline declaration" : undefined;
   return (
-    <Section title="Text" defaultOpen={false}>
+    <Section title="Text" defaultOpen={false} warning={warning}>
       <ColorPicker
         label="Color"
         prefix="text"
         classes={h.classes}
+        disabledReason={warning}
         onApply={(remove, add) => {
           if (sel.source) h.sendPrefixed({ type: "modify-class", source: sel.source, remove, add });
         }}
@@ -450,12 +482,18 @@ const TextColorSection = React.memo(function TextColorSection({ h, sel }: { h: C
 });
 
 const FillSection = React.memo(function FillSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
+  const inlineBg = sel.element && (
+    sourceStyleHasProperty(sel.element, "background-color") ||
+    sourceStyleHasProperty(sel.element, "background")
+  );
+  const warning = inlineBg ? "background is set in style={{ ... }} — edit the source or remove the inline declaration" : undefined;
   return (
-    <Section title="Fill" defaultOpen>
+    <Section title="Fill" defaultOpen warning={warning}>
       <ColorPicker
         label="BG"
         prefix="bg"
         classes={h.classes}
+        disabledReason={warning}
         onApply={(remove, add) => {
           if (sel.source) h.sendPrefixed({ type: "modify-class", source: sel.source, remove, add });
         }}
@@ -465,8 +503,13 @@ const FillSection = React.memo(function FillSection({ h, sel }: { h: ClassHelper
 });
 
 const BorderSection = React.memo(function BorderSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
+  const inlineBorder = sel.element && (
+    sourceStyleHasProperty(sel.element, "border-color") ||
+    sourceStyleHasProperty(sel.element, "border")
+  );
+  const warning = inlineBorder ? "border is set in style={{ ... }} — edit the source or remove the inline declaration" : undefined;
   return (
-    <Section title="Border" defaultOpen={false}>
+    <Section title="Border" defaultOpen={false} warning={warning}>
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
         <NumberInput
           label="W"
@@ -493,19 +536,36 @@ const BorderSection = React.memo(function BorderSection({ h, sel }: { h: ClassHe
           }}
         />
       </div>
-      <ColorPicker label="Color" prefix="border" classes={h.classes} onApply={(remove, add) => { if (sel.source) h.sendPrefixed({ type: "modify-class", source: sel.source, remove, add }); }} />
+      <ColorPicker
+        label="Color"
+        prefix="border"
+        classes={h.classes}
+        disabledReason={warning}
+        onApply={(remove, add) => { if (sel.source) h.sendPrefixed({ type: "modify-class", source: sel.source, remove, add }); }}
+      />
     </Section>
   );
 });
 
 const OutlineSection = React.memo(function OutlineSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
+  const inlineOutline = sel.element && (
+    sourceStyleHasProperty(sel.element, "outline-color") ||
+    sourceStyleHasProperty(sel.element, "outline")
+  );
+  const warning = inlineOutline ? "outline is set in style={{ ... }} — edit the source or remove the inline declaration" : undefined;
   return (
-    <Section title="Outline" defaultOpen={false}>
+    <Section title="Outline" defaultOpen={false} warning={warning}>
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
         <NumberInput label="W" value={parseInt(h.get("outline")) || 0} suffix="px" onChange={v => h.set("outline", String(parseInt(v) || 0))} />
         <NumberInput label="Offset" value={parseInt(h.get("outline-offset")) || 0} suffix="px" onChange={v => h.set("outline-offset", String(parseInt(v) || 0))} />
       </div>
-      <ColorPicker label="Color" prefix="outline" classes={h.classes} onApply={(remove, add) => { if (sel.source) h.sendPrefixed({ type: "modify-class", source: sel.source, remove, add }); }} />
+      <ColorPicker
+        label="Color"
+        prefix="outline"
+        classes={h.classes}
+        disabledReason={warning}
+        onApply={(remove, add) => { if (sel.source) h.sendPrefixed({ type: "modify-class", source: sel.source, remove, add }); }}
+      />
     </Section>
   );
 });

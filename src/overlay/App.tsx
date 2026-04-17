@@ -13,7 +13,7 @@ import { readFromStorage } from "./utils/persist-state.js";
 import { getIframeDocument } from "./utils/iframe-events.js";
 
 const PAUSE_STYLE_ID = "local-canvas-animation-pause";
-const PAUSE_CSS = "*, *::before, *::after { animation-play-state: paused !important; transition: none !important; }";
+const PAUSE_CSS = "*, *::before, *::after { animation-play-state: paused !important; transition: none !important; pointer-events: none !important; }";
 
 /** Inject or remove the animation-pause stylesheet in the target page. */
 function syncAnimationPause(paused: boolean) {

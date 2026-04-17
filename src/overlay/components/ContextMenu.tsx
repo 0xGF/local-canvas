@@ -43,6 +43,7 @@ export const ContextMenu = React.memo(function ContextMenu() {
   const setContextMenu = useEditorStore((s) => s.setContextMenu);
   const incrementPending = useEditorStore((s) => s.incrementPending);
   const selectElement = useEditorStore((s) => s.selectElement);
+  const multiSelection = useEditorStore((s) => s.multiSelection);
   const { sendMutation, send } = useWebSocket();
   const [aiPromptOpen, setAiPromptOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -258,7 +259,11 @@ export const ContextMenu = React.memo(function ContextMenu() {
               <ArrowLeft size={13} />
             </button>
             <MessageSquarePlus size={12} />
-            <div style={{ fontSize: 10, color: C.fgMuted, fontWeight: 600 }}>Add Annotation</div>
+            <div style={{ fontSize: 10, color: C.fgMuted, fontWeight: 600 }}>
+              {multiSelection.length > 1
+                ? `${multiSelection.length} elements: ${multiSelection.map(s => s.tagName).join(", ")}`
+                : "Add Annotation"}
+            </div>
           </div>
           <textarea
             ref={aiInputRef}
@@ -270,14 +275,18 @@ export const ContextMenu = React.memo(function ContextMenu() {
               if (e.key === "Enter" && !e.shiftKey && aiPrompt.trim()) {
                 e.preventDefault();
                 const prompt = aiPrompt.trim();
-                const elementPath = source
-                  ? `${source.filePath}:${source.line}`
-                  : tag;
+                const multi = useEditorStore.getState().multiSelection;
+                const elementPath = multi.length > 1
+                  ? multi.map(s => s.source ? `${s.source.filePath}:${s.source.line}` : s.tagName).join(", ")
+                  : source ? `${source.filePath}:${source.line}` : tag;
+                const elementDesc = multi.length > 1
+                  ? `${multi.length} elements: ${multi.map(s => `<${s.tagName}>`).join(", ")}`
+                  : `<${tag}>${classes.length ? "." + classes.join(".") : ""}`;
                 postAnnotation({
                   comment: prompt,
-                  element: `<${tag}>${classes.length ? "." + classes.join(".") : ""}`,
+                  element: elementDesc,
                   elementPath,
-                  cssClasses: classes.join(" "),
+                  cssClasses: multi.length > 1 ? multi.map(s => s.className).filter(Boolean).join(" | ") : classes.join(" "),
                   intent: "change",
                 }).then(() => {
                   useEditorStore.getState().showToast("Sent to agent");
@@ -288,7 +297,9 @@ export const ContextMenu = React.memo(function ContextMenu() {
               }
               if (e.key === "Escape") { e.preventDefault(); setAiPromptOpen(false); }
             }}
-            placeholder="Describe the change... (e.g. make this a 3-column responsive grid with 16px gap)"
+            placeholder={multiSelection.length > 1
+              ? "Feedback for this group of elements..."
+              : "Describe the change... (e.g. make this a 3-column responsive grid with 16px gap)"}
             rows={4}
             style={{
               width: "100%", minHeight: 90, resize: "vertical",

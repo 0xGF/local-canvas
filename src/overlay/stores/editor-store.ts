@@ -23,8 +23,11 @@ interface EditorState {
 
   // Selection
   selectedElement: SelectedElement | null;
+  multiSelection: SelectedElement[];
   hoveredElement: HTMLElement | null;
   selectElement: (el: SelectedElement | null) => void;
+  addToSelection: (el: SelectedElement) => void;
+  clearMultiSelection: () => void;
   setHoveredElement: (el: HTMLElement | null) => void;
 
   // Panels
@@ -61,6 +64,10 @@ interface EditorState {
   // usual "open context menu" behaviour regardless of this flag.
   annotateMode: boolean;
   setAnnotateMode: (on: boolean) => void;
+
+  // Marquee selection rect (Alt+drag)
+  marqueeRect: { x: number; y: number; w: number; h: number } | null;
+  setMarqueeRect: (rect: { x: number; y: number; w: number; h: number } | null) => void;
 
   // Inline text editing
   editingText: boolean;
@@ -118,9 +125,37 @@ export const useEditorStore = create<EditorState>((set) => ({
   setMode: (mode) => set({ mode }),
 
   selectedElement: null,
+  multiSelection: [],
   hoveredElement: null,
   selectElement: (el) =>
-    set({ selectedElement: el, propertiesOpen: el !== null }),
+    set({ selectedElement: el, multiSelection: [], propertiesOpen: el !== null }),
+  addToSelection: (el) =>
+    set((s) => {
+      // If nothing selected yet, just select it normally
+      if (!s.selectedElement) {
+        return { selectedElement: el, multiSelection: [], propertiesOpen: true };
+      }
+
+      // Build the current set: if multiSelection is empty, start from selectedElement
+      const current = s.multiSelection.length > 0
+        ? s.multiSelection
+        : [s.selectedElement];
+
+      // Check if already in the set
+      const exists = current.some(e => e.element === el.element);
+      if (exists) {
+        // Toggle off — remove it
+        const filtered = current.filter(e => e.element !== el.element);
+        if (filtered.length === 0) return { selectedElement: null, multiSelection: [], propertiesOpen: false };
+        if (filtered.length === 1) return { selectedElement: filtered[0], multiSelection: [], propertiesOpen: true };
+        return { selectedElement: filtered[0], multiSelection: filtered };
+      }
+
+      // Add to the set
+      const multi = [...current, el];
+      return { selectedElement: s.selectedElement, multiSelection: multi, propertiesOpen: true };
+    }),
+  clearMultiSelection: () => set({ multiSelection: [] }),
   setHoveredElement: (el) => set({ hoveredElement: el }),
 
   propertiesOpen: false,
@@ -138,6 +173,9 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   annotateMode: false,
   setAnnotateMode: (on) => set({ annotateMode: on }),
+
+  marqueeRect: null,
+  setMarqueeRect: (rect) => set({ marqueeRect: rect }),
 
   editingText: false,
   setEditingText: (editing) => set({ editingText: editing }),

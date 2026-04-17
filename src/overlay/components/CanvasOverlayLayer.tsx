@@ -227,6 +227,52 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
         }
       }
 
+      // Multi-selection: individual green dashed outline per selected element
+      const multiSel = useEditorStore.getState().multiSelection;
+      if (multiSel.length > 1) {
+        ctx!.save();
+        ctx!.setLineDash([6, 4]);
+        ctx!.strokeStyle = "#14ae5c";
+        ctx!.lineWidth = 2;
+        const ifs2 = iframeOffset.scale ?? 1;
+        const ox = iframeOffset.x, oy = iframeOffset.y;
+
+        for (const sel of multiSel) {
+          if (!sel.element.isConnected) continue;
+          const r = sel.element.getBoundingClientRect();
+          const ex = r.left * ifs2 + ox;
+          const ey = r.top * ifs2 + oy;
+          const ew = r.width * ifs2;
+          const eh = r.height * ifs2;
+          ctx!.strokeRect(ex, ey, ew, eh);
+          // Light fill to highlight
+          ctx!.fillStyle = "rgba(20, 174, 92, 0.06)";
+          ctx!.fillRect(ex, ey, ew, eh);
+        }
+
+        // Badge showing count near the last selected element
+        const last = multiSel[multiSel.length - 1];
+        if (last.element.isConnected) {
+          const lr = last.element.getBoundingClientRect();
+          const lx = lr.left * ifs2 + ox;
+          const ly = lr.top * ifs2 + oy;
+          const badge = `${multiSel.length} selected`;
+          ctx!.font = "600 10px -apple-system, BlinkMacSystemFont, Inter, sans-serif";
+          const bw = ctx!.measureText(badge).width + 12;
+          ctx!.setLineDash([]);
+          ctx!.fillStyle = "#14ae5c";
+          ctx!.beginPath();
+          ctx!.roundRect(lx, ly - 18, bw, 16, 4);
+          ctx!.fill();
+          ctx!.fillStyle = "#fff";
+          ctx!.textBaseline = "middle";
+          ctx!.textAlign = "left";
+          ctx!.fillText(badge, lx + 6, ly - 10);
+        }
+
+        ctx!.restore();
+      }
+
       // Populate resize handle hit zones for useResizeHandles hook
       if (editorState.selectedElement?.element?.isConnected) {
         const rr = editorState.selectedElement.element.getBoundingClientRect();
@@ -241,6 +287,20 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
         ];
       } else {
         resizeHandlesRef.current = [];
+      }
+
+      // Marquee selection rectangle (Alt+drag)
+      const mRect = useEditorStore.getState().marqueeRect;
+      if (mRect) {
+        ctx!.save();
+        ctx!.fillStyle = "rgba(12, 140, 233, 0.08)";
+        ctx!.fillRect(mRect.x, mRect.y, mRect.w, mRect.h);
+        ctx!.strokeStyle = "#0c8ce9";
+        ctx!.lineWidth = 1;
+        ctx!.setLineDash([4, 3]);
+        ctx!.strokeRect(mRect.x, mRect.y, mRect.w, mRect.h);
+        ctx!.setLineDash([]);
+        ctx!.restore();
       }
 
       rafRef.current = requestAnimationFrame(frame);

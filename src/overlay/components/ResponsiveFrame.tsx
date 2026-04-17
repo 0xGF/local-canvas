@@ -116,6 +116,8 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
         e.stopPropagation();
         // Skip if a drag just ended (margin/resize/spacing)
         if (wasDragRecent(300)) return;
+        // Shift+click is handled by useSelection's addToSelection — don't interfere
+        if (e.shiftKey) return;
         const target = deepElementFromPoint(e.clientX, e.clientY, doc);
         if (!target) return;
 
@@ -123,7 +125,6 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
 
         // Ctrl+Click or Meta+Click — open context menu
         if (e.ctrlKey || e.metaKey) {
-          // Select the element first
           selectElement({
             element: target,
             source,
@@ -132,7 +133,6 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
             tagName: target.tagName.toLowerCase(),
             iframeRef: iframe!,
           });
-          // Translate click coords to screen space for menu positioning
           const ir = iframe!.getBoundingClientRect();
           const naturalW = parseInt(iframe!.style.width) || ir.width;
           const scale = ir.width / naturalW;

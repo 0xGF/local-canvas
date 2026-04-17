@@ -194,6 +194,7 @@ export function useViewport() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.code === "Space" && !isTyping(e)) {
+        if (useEditorStore.getState().interacting) return;
         const { zoom } = useViewportStore.getState();
         if (zoom !== 1 || isPanning.current) {
           e.preventDefault();
@@ -210,6 +211,7 @@ export function useViewport() {
     }
 
     function onDown(e: MouseEvent) {
+      if (useEditorStore.getState().interacting) return;
       if (e.button === 1 || (e.button === 0 && spaceHeld.current)) {
         e.preventDefault();
         e.stopPropagation();

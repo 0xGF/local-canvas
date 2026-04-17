@@ -436,6 +436,7 @@ export const Toolbar = React.memo(function Toolbar() {
 
   // ── Edit mode: compact centered bar ──
   return (
+    <>
     <motion.div
       initial={{ y: 60, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
@@ -485,17 +486,27 @@ export const Toolbar = React.memo(function Toolbar() {
         shortcut="Alt+P"
       />
 
-      {interacting && (
-        <span style={{
-          fontSize: 9, fontWeight: 600, color: C.accent,
-          background: "rgba(12,140,233,0.15)",
-          padding: "2px 8px", borderRadius: 6,
-          fontFamily: C.mono, whiteSpace: "nowrap",
-        }}>
-          Interacting
-        </span>
-      )}
     </motion.div>
+
+    {interacting && (
+      <div style={{
+        position: "fixed", bottom: 72, left: 0, right: 0,
+        display: "flex", justifyContent: "center",
+        pointerEvents: "none", zIndex: 2147483647,
+      }}>
+        <span style={{
+          fontSize: 10, fontWeight: 600, color: "#fff",
+          background: C.accent,
+          padding: "5px 14px", borderRadius: 20,
+          fontFamily: C.mono, whiteSpace: "nowrap",
+          boxShadow: "0 2px 12px rgba(12,140,233,0.4)",
+          letterSpacing: "0.02em",
+        }}>
+          Interact Mode
+        </span>
+      </div>
+    )}
+    </>
   );
 });
 

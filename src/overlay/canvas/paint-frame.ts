@@ -69,9 +69,6 @@ export function shouldRepaint(editor: EditorSnapshot, viewport: ViewportSnapshot
     if (str !== prevRectStr) return true;
   }
 
-  // When an element is selected, repaint frequently for notch hover effects
-  if (selEl && now - lastPaintTime > 50) return true;
-
   // Fallback: repaint at least every 500ms
   if (now - lastPaintTime > 500) return true;
 

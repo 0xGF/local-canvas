@@ -188,45 +188,12 @@ export function useSelection() {
       if (mode !== "edit") return;
       if (useEditorStore.getState().interacting) return;
       if (useEditorStore.getState().editingText) return;
-      if (isClickInsideOverlay(e)) return;
-      // Skip selection if a drag just ended — prevents deselecting after margin/resize drag
-      if (wasDragRecent(300)) return;
-
-      // Ctrl+click (or Meta+click on non-Mac) → open context menu instead of selecting
-      if (e.ctrlKey || (e.metaKey && navigator.platform.indexOf("Mac") === -1)) {
-        const { target, fromIframe, iframe } = elementAtPoint(e.clientX, e.clientY);
-        if (!target) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const source = resolveSource(target);
-        const rect = target.getBoundingClientRect();
-        selectElement({
-          element: target, source,
-          rect,
-          className: typeof target.className === "string" ? target.className : "",
-          tagName: target.tagName.toLowerCase(),
-          iframeRef: fromIframe && iframe ? iframe : undefined,
-        });
-        // Anchor menu to the top of the element (not cursor). Translate to
-        // screen space when the element lives in the iframe.
-        let menuX = rect.left, menuY = rect.top;
-        if (fromIframe && iframe) {
-          const ir = iframe.getBoundingClientRect();
-          const naturalW = parseInt(iframe.style.width) || ir.width;
-          const scale = ir.width / naturalW;
-          menuX = rect.left * scale + ir.left;
-          menuY = rect.top * scale + ir.top;
-        }
-        // Offset slightly above the element so it doesn't cover the top edge
-        setContextMenu({ x: menuX, y: menuY - 6, element: target, source });
-        return;
-      }
 
       // Annotate tool: when active, plain click on any element opens the
-      // Ask AI prompt directly. Doesn't touch Ctrl/Cmd-click or right-click.
-      if (useEditorStore.getState().annotateMode) {
+      // Ask AI prompt directly. Checked early so isClickInsideOverlay
+      // (which can misread iframe coords) doesn't block it.
+      if (useEditorStore.getState().annotateMode && !e.ctrlKey && !e.metaKey) {
         const { target, fromIframe, iframe } = elementAtPoint(e.clientX, e.clientY);
-        useEditorStore.getState().showToast(`annotate-click target=${target?.tagName || "null"} iframe=${fromIframe}`);
         if (!target) return;
         e.preventDefault();
         e.stopPropagation();
@@ -250,6 +217,37 @@ export function useSelection() {
         // Stay in annotate mode — user stays armed until they toggle the
         // button off, press `A` again, or hit Escape (handled in
         // useKeyboard). Lets them drop multiple pins without re-arming.
+        return;
+      }
+
+      if (isClickInsideOverlay(e)) return;
+      // Skip selection if a drag just ended — prevents deselecting after margin/resize drag
+      if (wasDragRecent(300)) return;
+
+      // Ctrl+click (or Meta+click on non-Mac) → open context menu instead of selecting
+      if (e.ctrlKey || (e.metaKey && navigator.platform.indexOf("Mac") === -1)) {
+        const { target, fromIframe, iframe } = elementAtPoint(e.clientX, e.clientY);
+        if (!target) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const source = resolveSource(target);
+        const rect = target.getBoundingClientRect();
+        selectElement({
+          element: target, source,
+          rect,
+          className: typeof target.className === "string" ? target.className : "",
+          tagName: target.tagName.toLowerCase(),
+          iframeRef: fromIframe && iframe ? iframe : undefined,
+        });
+        let menuX = rect.left, menuY = rect.top;
+        if (fromIframe && iframe) {
+          const ir = iframe.getBoundingClientRect();
+          const naturalW = parseInt(iframe.style.width) || ir.width;
+          const scale = ir.width / naturalW;
+          menuX = rect.left * scale + ir.left;
+          menuY = rect.top * scale + ir.top;
+        }
+        setContextMenu({ x: menuX, y: menuY - 6, element: target, source });
         return;
       }
 

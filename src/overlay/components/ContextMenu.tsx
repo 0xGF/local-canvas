@@ -210,7 +210,7 @@ export const ContextMenu = React.memo(function ContextMenu() {
       dividerAfter: true,
     },
     {
-      label: "Ask AI...",
+      label: "Add annotation...",
       icon: <Sparkles size={13} />,
       action: () => setAiPromptOpen(true),
     },
@@ -258,7 +258,7 @@ export const ContextMenu = React.memo(function ContextMenu() {
               <ArrowLeft size={13} />
             </button>
             <Sparkles size={12} />
-            <div style={{ fontSize: 10, color: C.fgMuted, fontWeight: 600 }}>Ask AI Agent</div>
+            <div style={{ fontSize: 10, color: C.fgMuted, fontWeight: 600 }}>Add Annotation</div>
           </div>
           <textarea
             ref={aiInputRef}

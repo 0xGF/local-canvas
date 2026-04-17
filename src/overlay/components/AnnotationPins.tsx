@@ -13,6 +13,7 @@ import {
   hideAnnotation,
   findElementForAnnotation,
   scrollToAndOpenAnnotation,
+  scrollToAndFocusAnnotation,
   type Annotation,
   type PinNavDirection,
 } from "../utils/agentation.js";
@@ -141,6 +142,7 @@ interface PinProps {
   position: PinPosition;
   number: number;
   isOpen: boolean;
+  isFocused: boolean;
   isNew: boolean;
   onClick: () => void;
   onHover: (hovered: boolean) => void;
@@ -150,7 +152,7 @@ interface PinProps {
 
 const SNAP_DISTANCE = 12;
 
-const Pin = React.memo(function Pin({ position, number, isOpen, isNew, onClick, onHover, onDismiss, isHovered }: PinProps) {
+const Pin = React.memo(function Pin({ position, number, isOpen, isFocused, isNew, onClick, onHover, onDismiss, isHovered }: PinProps) {
   const status = position.annotation.status;
   const colors = pinColors(status);
   const dragRef = useRef<{ startX: number; startY: number; pinX: number; pinY: number; moved: boolean } | null>(null);
@@ -224,6 +226,8 @@ const Pin = React.memo(function Pin({ position, number, isOpen, isNew, onClick, 
         cursor: isDragging ? "grabbing" : "grab",
         boxShadow: isDragging
           ? "0 4px 16px rgba(0,0,0,0.4), 0 0 0 2px rgba(255,184,0,0.5)"
+          : isFocused
+          ? "0 0 0 3px #fff, 0 0 0 5px " + colors.bg + ", 0 2px 8px rgba(0,0,0,0.3)"
           : "0 2px 8px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05)",
         zIndex: 2147483646,
         transition: isDragging
@@ -264,6 +268,7 @@ interface PinPopoverProps {
   position: PinPosition;
   onClose: () => void;
   onSent: () => void;
+  skipAutoFocus?: boolean;
 }
 
 interface ThreadEntry { role: string; content: string; timestamp?: number }
@@ -275,7 +280,7 @@ function statusColor(status: string | undefined) {
   return { bg: "rgba(255,184,0,0.18)", fg: PIN_YELLOW };
 }
 
-const PinPopover = React.memo(function PinPopover({ position, onClose, onSent }: PinPopoverProps) {
+const PinPopover = React.memo(function PinPopover({ position, onClose, onSent, skipAutoFocus }: PinPopoverProps) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -285,7 +290,7 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent }:
   const thread = ((position.annotation as unknown as { thread?: ThreadEntry[] }).thread) || [];
 
   useEffect(() => {
-    if (!isResolved) inputRef.current?.focus();
+    if (!isResolved && !skipAutoFocus) inputRef.current?.focus();
   }, [isResolved]);
 
   const send = useCallback(async (opts: { reopen?: boolean } = {}) => {
@@ -615,6 +620,7 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [positions, setPositions] = useState<PinPosition[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => getHiddenAnnotationIds());
   const [expandedClusterIdx, setExpandedClusterIdx] = useState<number | null>(null);
@@ -709,19 +715,36 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
     return () => window.removeEventListener("canvas:open-annotation-pin", onOpenRequest);
   }, []);
 
-  // Keep latest positions + openId in refs so the navigate listener below
+  // Keep latest positions + focusedId in refs so the navigate listener below
   // doesn't re-attach every frame.
   const positionsRef = useRef<PinPosition[]>([]);
-  const openIdRef = useRef<string | null>(null);
+  const focusedIdRef = useRef<string | null>(null);
   positionsRef.current = positions;
-  openIdRef.current = openId;
+  focusedIdRef.current = focusedId;
+
+  // Track whether the popover was opened via keyboard nav (don't auto-focus textarea)
+  const keyboardNavRef = useRef(false);
+
+  // Listen for focus-pin events (from keyboard navigation)
+  useEffect(() => {
+    function onFocus(e: Event) {
+      const id = (e as CustomEvent<{ annotationId: string }>).detail?.annotationId;
+      if (id) {
+        keyboardNavRef.current = true;
+        setFocusedId(id);
+        setOpenId(id);
+      }
+    }
+    window.addEventListener("canvas:focus-annotation-pin", onFocus);
+    return () => window.removeEventListener("canvas:focus-annotation-pin", onFocus);
+  }, []);
 
   // Listen for keyboard-triggered pin navigation (`[` / `]`).
+  // Focuses the pin (highlights it) instead of opening the popover.
   useEffect(() => {
     function onNavigate(e: Event) {
       const direction = (e as CustomEvent<{ direction: PinNavDirection }>).detail?.direction;
       if (!direction) return;
-      // Sort pins by vertical position so "next" moves down the page.
       const ordered = [...positionsRef.current].sort((a, b) => a.y - b.y);
       if (ordered.length === 0) return;
 
@@ -729,20 +752,18 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
       if (direction === "first") target = ordered[0];
       else if (direction === "last") target = ordered[ordered.length - 1];
       else {
-        const currentIdx = openIdRef.current
-          ? ordered.findIndex(p => p.annotation.id === openIdRef.current)
+        const currentIdx = focusedIdRef.current
+          ? ordered.findIndex(p => p.annotation.id === focusedIdRef.current)
           : -1;
         if (currentIdx === -1) {
-          // Nothing open — seed with the natural endpoint for the direction.
           target = direction === "next" ? ordered[0] : ordered[ordered.length - 1];
         } else {
           const nextIdx = direction === "next" ? currentIdx + 1 : currentIdx - 1;
-          // Wrap around so repeated presses cycle.
           const wrapped = ((nextIdx % ordered.length) + ordered.length) % ordered.length;
           target = ordered[wrapped];
         }
       }
-      if (target) scrollToAndOpenAnnotation(target.annotation);
+      if (target) scrollToAndFocusAnnotation(target.annotation);
     }
     window.addEventListener("canvas:navigate-pin", onNavigate);
     return () => window.removeEventListener("canvas:navigate-pin", onNavigate);
@@ -804,11 +825,12 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
         />
       )}
 
-      {/* Highlight outline on the targeted element when hovering or open */}
+      {/* Highlight outline on the targeted element when hovering, focused, or open */}
       {allVisiblePins.map((p) => {
         const isHover = hoveredId === p.annotation.id;
         const isOpen = openId === p.annotation.id;
-        if (!isHover && !isOpen) return null;
+        const isFocus = focusedId === p.annotation.id;
+        if (!isHover && !isOpen && !isFocus) return null;
         return <PinHighlight key={`hl-${p.annotation.id}`} rect={p.elementRect} />;
       })}
 
@@ -832,8 +854,14 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
           position={p}
           number={pinNumberMap.get(p.annotation.id) ?? 0}
           isOpen={openId === p.annotation.id}
+          isFocused={focusedId === p.annotation.id}
           isNew={newIds.has(p.annotation.id)}
-          onClick={() => setOpenId(openId === p.annotation.id ? null : p.annotation.id)}
+          onClick={() => {
+            const id = p.annotation.id;
+            keyboardNavRef.current = false;
+            setOpenId(openId === id ? null : id);
+            setFocusedId(id);
+          }}
           onHover={(h) => setHoveredId(h ? p.annotation.id : null)}
           onDismiss={() => handleDismiss(p.annotation.id)}
           isHovered={hoveredId === p.annotation.id}
@@ -846,8 +874,9 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
           <PinPopover
             key={openPosition.annotation.id}
             position={openPosition}
-            onClose={() => setOpenId(null)}
-            onSent={handleSent}
+            onClose={() => { setOpenId(null); keyboardNavRef.current = false; }}
+            onSent={() => { handleSent(); keyboardNavRef.current = false; }}
+            skipAutoFocus={keyboardNavRef.current}
           />
         )}
       </AnimatePresence>

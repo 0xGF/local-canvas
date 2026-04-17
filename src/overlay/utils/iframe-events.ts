@@ -79,19 +79,34 @@ export function attachToDocumentAndIframe(
   // --- Parent document handlers (guarded) ---
   const parentHandlers: AnyEventBinding[] = [];
 
+  // Track whether a mouse button is currently pressed. During an active drag,
+  // pointer capture keeps mousemove/mouseup events on whichever document
+  // received the mousedown — so if the drag started in the parent (e.g. on a
+  // tag badge) and the cursor later enters the iframe area, we MUST still
+  // deliver those parent-side events to the handler. Without this, the
+  // reorder-drag ghost freezes at the iframe boundary because cursorX/Y stops
+  // updating the moment the cursor crosses into the iframe region.
+  let parentMouseDown = false;
+
   for (const binding of events) {
     const { event, handler } = binding as EventBinding<EventName>;
     const guarded: Listener = (e) => {
-      // Skip mouse events when cursor is over the iframe — iframe handler covers those
       if (e instanceof MouseEvent && e.isTrusted) {
-        const iframe = getEditorIframe();
-        if (iframe) {
-          const ir = iframe.getBoundingClientRect();
-          if (e.clientX >= ir.left && e.clientX <= ir.right &&
-              e.clientY >= ir.top && e.clientY <= ir.bottom) {
-            return;
+        if (e.type === "mousedown") parentMouseDown = true;
+        // Skip mouse events when cursor is over the iframe — iframe handler
+        // covers those — EXCEPT during an active drag started in the parent.
+        if (!parentMouseDown) {
+          const iframe = getEditorIframe();
+          if (iframe) {
+            const ir = iframe.getBoundingClientRect();
+            if (e.clientX >= ir.left && e.clientX <= ir.right &&
+                e.clientY >= ir.top && e.clientY <= ir.bottom) {
+              if (e.type === "mouseup") parentMouseDown = false;
+              return;
+            }
           }
         }
+        if (e.type === "mouseup") parentMouseDown = false;
       }
       handler(e);
     };

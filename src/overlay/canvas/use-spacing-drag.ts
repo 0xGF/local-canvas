@@ -62,6 +62,7 @@ function reselectAfterReorder(
 export function useSpacingDrag(
   badgeHitsRef: React.MutableRefObject<BadgeHit[]>,
   tagBadgeHitRef: React.MutableRefObject<TagBadgeHit | null>,
+  resizeHandlesRef?: React.MutableRefObject<import("./use-resize-handles.js").ResizeHandle[]>,
 ) {
   const { sendMutation } = useWebSocket();
   const incrementPending = useEditorStore((s) => s.incrementPending);
@@ -131,7 +132,20 @@ export function useSpacingDrag(
     function hitTestTag(x: number, y: number): boolean {
       const t = tagBadgeHitRef.current;
       if (!t) return false;
-      return x >= t.x && x <= t.x + t.w && y >= t.y && y <= t.y + t.h;
+      if (!(x >= t.x && x <= t.x + t.w && y >= t.y && y <= t.y + t.h)) return false;
+      // Resize handles at top-left corner overlap the tag badge's bottom edge.
+      // If the click also hits a handle, resize wins — reject the tag hit.
+      const handles = resizeHandlesRef?.current;
+      if (handles) {
+        const TOL = 4; // must match tolerance in use-resize-handles.ts
+        for (const h of handles) {
+          if (x >= h.x - TOL && x <= h.x + h.w + TOL &&
+              y >= h.y - TOL && y <= h.y + h.h + TOL) {
+            return false;
+          }
+        }
+      }
+      return true;
     }
 
     function onMouseDown(e: MouseEvent) {

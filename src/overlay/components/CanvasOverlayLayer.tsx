@@ -33,7 +33,7 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
   const prevMousePosRef = useRef<{ x: number; y: number } | null>(null);
 
   const resizeHandlesRef = useRef<ResizeHandle[]>([]);
-  const { reorderRef, commitSpacing, spacingDragRef } = useSpacingDrag(badgeHitsRef, tagBadgeHitRef);
+  const { reorderRef, commitSpacing, spacingDragRef } = useSpacingDrag(badgeHitsRef, tagBadgeHitRef, resizeHandlesRef);
   useTextEdit();
   const { resizeTooltip } = useResizeHandles(resizeHandlesRef);
 

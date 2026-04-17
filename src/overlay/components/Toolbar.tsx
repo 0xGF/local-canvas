@@ -8,9 +8,10 @@ import { useWebSocket } from "../hooks/useWebSocket.js";
 import { BREAKPOINT_PRESETS } from "../../shared/breakpoints.js";
 import {
   Pointer, Pencil, Undo, Redo, Save, Reset,
-  ChevronDown, ChevronUp, X, Check, Sparkles, Plus,
+  ChevronDown, ChevronUp, X, Check, Plus,
   Pause, Play,
   MessageSquarePlus,
+  MessagesSquare,
 } from "./icons.js";
 import { AskAIHistory } from "./AskAIHistory.js";
 
@@ -471,7 +472,7 @@ export const Toolbar = React.memo(function Toolbar() {
       <AskAIHistory
         renderButton={(open, count) => (
           <ToolBtn
-            icon={<Sparkles size={15} />}
+            icon={<MessagesSquare size={15} />}
             onClick={open}
             title="Annotation history"
             badge={count}

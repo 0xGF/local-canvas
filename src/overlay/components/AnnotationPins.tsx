@@ -422,7 +422,7 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent, s
             cursor: "pointer", padding: 0, display: "flex",
           }}
         >
-          <X size={11} />
+          <X size={12} />
         </button>
       </div>
 

@@ -473,7 +473,7 @@ export const Toolbar = React.memo(function Toolbar() {
           <ToolBtn
             icon={<Sparkles size={15} />}
             onClick={open}
-            title="Ask AI history"
+            title="Annotation history"
             badge={count}
           />
         )}

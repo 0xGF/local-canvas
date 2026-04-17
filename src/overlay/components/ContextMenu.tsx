@@ -5,7 +5,7 @@ import type { Mutation } from "../../server/types.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
 import {
   Type, Copy, ClipboardPaste, Trash2,
-  ArrowUp, ArrowDown, ArrowLeft, Layers, Sparkles,
+  ArrowUp, ArrowDown, ArrowLeft, Layers, MessageSquarePlus, Sparkles,
 } from "./icons.js";
 import { THEME } from "../theme.js";
 
@@ -211,7 +211,7 @@ export const ContextMenu = React.memo(function ContextMenu() {
     },
     {
       label: "Add annotation...",
-      icon: <Sparkles size={13} />,
+      icon: <MessageSquarePlus size={13} />,
       action: () => setAiPromptOpen(true),
     },
   ];
@@ -257,7 +257,7 @@ export const ContextMenu = React.memo(function ContextMenu() {
             >
               <ArrowLeft size={13} />
             </button>
-            <Sparkles size={12} />
+            <MessageSquarePlus size={12} />
             <div style={{ fontSize: 10, color: C.fgMuted, fontWeight: 600 }}>Add Annotation</div>
           </div>
           <textarea

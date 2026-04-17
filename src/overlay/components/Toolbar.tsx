@@ -410,7 +410,7 @@ export const Toolbar = React.memo(function Toolbar() {
         <Sep />
 
         <ToolBtn icon={<Undo size={15} />} onClick={undo} title={`Undo (${MOD}Z)`} shortcut={`${MOD}Z`} disabled={!canUndo} />
-        <ToolBtn icon={<Redo size={15} />} onClick={redo} title={`Redo (${MOD}\u21E7Z)`} shortcut={`${MOD}\u21E7Z`} disabled={!canRedo} />
+        <ToolBtn icon={<Redo size={15} />} onClick={redo} title={`Redo (${MOD}Y)`} shortcut={`${MOD}Y`} disabled={!canRedo} />
 
         <Sep />
 
@@ -439,7 +439,7 @@ export const Toolbar = React.memo(function Toolbar() {
       <Sep />
 
       <ToolBtn icon={<Undo size={15} />} onClick={undo} title={`Undo (${MOD}Z)`} shortcut={`${MOD}Z`} disabled={!canUndo} />
-      <ToolBtn icon={<Redo size={15} />} onClick={redo} title={`Redo (${MOD}\u21E7Z)`} shortcut={`${MOD}\u21E7Z`} disabled={!canRedo} />
+      <ToolBtn icon={<Redo size={15} />} onClick={redo} title={`Redo (${MOD}Y)`} shortcut={`${MOD}Y`} disabled={!canRedo} />
 
       <Sep />
 

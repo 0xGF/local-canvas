@@ -53,10 +53,13 @@ export function useKeyboard() {
       const s = storeRef.current;
       const isMeta = e.metaKey || e.ctrlKey;
 
-      // Global shortcuts (work even while typing)
+      // Global shortcuts (work even while typing — except undo/redo during inline text editing)
       if (isMeta && e.key === "s") { e.preventDefault(); e.stopPropagation(); s.send({ type: "save" }); s.clearPending(); s.clearChanges(); return; }
-      if (isMeta && e.key === "z" && !e.shiftKey) { e.preventDefault(); if (useEditorStore.getState().pendingCount <= 0) return; s.undo(); s.didUndo(); s.decrementPending(); useEditorStore.getState().showToast("↩ Undo"); return; }
-      if (isMeta && e.key === "z" && e.shiftKey) { e.preventDefault(); s.redo(); s.didRedo(); s.incrementPending(); useEditorStore.getState().showToast("↪ Redo"); return; }
+      if (!useEditorStore.getState().editingText) {
+        if (isMeta && e.key === "z" && !e.shiftKey) { e.preventDefault(); if (useEditorStore.getState().pendingCount <= 0) return; s.undo(); s.didUndo(); s.decrementPending(); useEditorStore.getState().showToast("↩ Undo"); return; }
+        if (isMeta && e.key === "y") { e.preventDefault(); s.redo(); s.didRedo(); s.incrementPending(); useEditorStore.getState().showToast("↪ Redo"); return; }
+        if (isMeta && e.key === "z" && e.shiftKey) { e.preventDefault(); s.redo(); s.didRedo(); s.incrementPending(); useEditorStore.getState().showToast("↪ Redo"); return; }
+      }
 
       // Let inputs handle their own keystrokes (including Escape)
       if (isTyping(e)) return;

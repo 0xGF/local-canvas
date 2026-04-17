@@ -82,7 +82,12 @@ export async function createServer(options: ServerOptions) {
   });
 
   // WebSocket upgrade
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({
+    noServer: true,
+    // permessage-deflate: ws handles negotiation; browser client opts in automatically.
+    // Threshold avoids compressing trivially small frames where overhead wins.
+    perMessageDeflate: { threshold: 256 },
+  });
   const wsHandler = createWSHandler(projectRoot);
 
   server.on("upgrade", (req, socket, head) => {

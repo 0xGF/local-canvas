@@ -157,6 +157,7 @@ export function useSelection() {
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
       if (mode !== "edit") return;
+      if (useEditorStore.getState().interacting) return;
       if (isClickInsideOverlay(e)) {
         if (lastHoveredRef.current !== null) {
           lastHoveredRef.current = null;
@@ -185,6 +186,7 @@ export function useSelection() {
   const handleClick = useCallback(
     (e: MouseEvent) => {
       if (mode !== "edit") return;
+      if (useEditorStore.getState().interacting) return;
       if (useEditorStore.getState().editingText) return;
       if (isClickInsideOverlay(e)) return;
       // Skip selection if a drag just ended — prevents deselecting after margin/resize drag
@@ -311,6 +313,7 @@ export function useSelection() {
   const handleContextMenu = useCallback(
     (e: MouseEvent) => {
       if (mode !== "edit") return;
+      if (useEditorStore.getState().interacting) return;
       // Always block native context menu in edit mode
       e.preventDefault();
       e.stopPropagation();
@@ -358,6 +361,7 @@ export function useSelection() {
 
   // Block text selection and native drag in edit mode
   const blockSelection = useCallback((e: Event) => {
+    if (useEditorStore.getState().interacting) return;
     if (useEditorStore.getState().editingText) return;
     if (isClickInsideOverlay(e as MouseEvent)) return;
     e.preventDefault();
@@ -365,6 +369,7 @@ export function useSelection() {
 
   const blockMouseDown = useCallback((e: MouseEvent) => {
     if (mode !== "edit") return;
+    if (useEditorStore.getState().interacting) return;
     if (useEditorStore.getState().editingText) return;
     if (isClickInsideOverlay(e)) return;
     e.preventDefault();

@@ -54,6 +54,8 @@ You can also put these in a `.local-canvas.json` file in your project root:
 - **Undo/Redo** — Cmd+Z / Cmd+Shift+Z with full history tracking and canvas flash feedback
 - **CSS variable suggestions** — scans your stylesheets for `--custom-properties`
 - **HMR aware** — automatically re-selects elements after hot reload
+- **Animation pause** — freeze all CSS animations and transitions to inspect moving elements
+- **Interact mode** — hold Space to click through to your app (open modals, navigate, expand dropdowns) without leaving edit mode
 
 ## Keyboard Shortcuts
 
@@ -65,6 +67,9 @@ You can also put these in a `.local-canvas.json` file in your project root:
 | `Cmd+Shift+Z` | Redo |
 | `Cmd+S` | Save changes |
 | `Escape` | Select parent (or deselect / exit edit mode at top level) |
+| `Alt+P` | Pause/resume animations |
+| `Space` (hold) | Interact mode — click through to your app |
+| `A` | Toggle annotate tool |
 | `Ctrl+Click` | Context menu |
 | `Double-click` | Edit text inline |
 

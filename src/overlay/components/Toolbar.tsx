@@ -9,6 +9,7 @@ import { BREAKPOINT_PRESETS } from "../../shared/breakpoints.js";
 import {
   Pointer, Pencil, Undo, Redo, Save, Reset,
   ChevronDown, ChevronUp, X, Check, Sparkles, Plus,
+  Pause, Play,
 } from "./icons.js";
 import { AskAIHistory } from "./AskAIHistory.js";
 
@@ -346,6 +347,9 @@ export const Toolbar = React.memo(function Toolbar() {
   const decrementPending = useEditorStore((s) => s.decrementPending);
   const incrementPending = useEditorStore((s) => s.incrementPending);
 
+  const animationsPaused = useEditorStore((s) => s.animationsPaused);
+  const toggleAnimationsPaused = useEditorStore((s) => s.toggleAnimationsPaused);
+  const interacting = useEditorStore((s) => s.interacting);
   const selectElement = useEditorStore((s) => s.selectElement);
   const setBreakpoint = useEditorStore((s) => s.setBreakpoint);
 
@@ -416,12 +420,23 @@ export const Toolbar = React.memo(function Toolbar() {
 
         <ToolBtn icon={<Save size={15} />} onClick={handleSave} title={`Save (${MOD}S)`} shortcut={`${MOD}S`} badge={pendingCount} disabled={pendingCount === 0} />
         <ToolBtn icon={<Reset size={15} />} onClick={handleReset} title="Reset all" disabled={pendingCount === 0} />
+
+        <Sep />
+
+        <ToolBtn
+          icon={animationsPaused ? <Play size={15} /> : <Pause size={15} />}
+          active={animationsPaused}
+          onClick={toggleAnimationsPaused}
+          title={animationsPaused ? "Resume animations (Alt+P)" : "Pause animations (Alt+P)"}
+          shortcut="Alt+P"
+        />
       </motion.div>
     );
   }
 
   // ── Edit mode: compact centered bar ──
   return (
+    <>
     <motion.div
       initial={{ y: 60, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
@@ -460,7 +475,38 @@ export const Toolbar = React.memo(function Toolbar() {
           />
         )}
       />
+
+      <Sep />
+
+      <ToolBtn
+        icon={animationsPaused ? <Play size={15} /> : <Pause size={15} />}
+        active={animationsPaused}
+        onClick={toggleAnimationsPaused}
+        title={animationsPaused ? "Resume animations (Alt+P)" : "Pause animations (Alt+P)"}
+        shortcut="Alt+P"
+      />
+
     </motion.div>
+
+    {interacting && (
+      <div style={{
+        position: "fixed", bottom: 72, left: 0, right: 0,
+        display: "flex", justifyContent: "center",
+        pointerEvents: "none", zIndex: 2147483647,
+      }}>
+        <span style={{
+          fontSize: 10, fontWeight: 600, color: "#fff",
+          background: C.accent,
+          padding: "5px 14px", borderRadius: 20,
+          fontFamily: C.mono, whiteSpace: "nowrap",
+          boxShadow: "0 2px 12px rgba(12,140,233,0.4)",
+          letterSpacing: "0.02em",
+        }}>
+          Interact Mode
+        </span>
+      </div>
+    )}
+    </>
   );
 });
 

@@ -76,6 +76,15 @@ interface EditorState {
   connected: boolean;
   setConnected: (connected: boolean) => void;
 
+  // Animation pause — freezes CSS animations and transitions in the target page
+  animationsPaused: boolean;
+  setAnimationsPaused: (paused: boolean) => void;
+  toggleAnimationsPaused: () => void;
+
+  // Interactive mode — temporarily passes pointer events through to the app
+  interacting: boolean;
+  setInteracting: (on: boolean) => void;
+
   // Active toolbar
   toolbarVisible: boolean;
   setToolbarVisible: (visible: boolean) => void;
@@ -151,6 +160,13 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   connected: false,
   setConnected: (connected) => set({ connected }),
+
+  animationsPaused: !!_persisted.animationsPaused,
+  setAnimationsPaused: (paused) => set({ animationsPaused: paused }),
+  toggleAnimationsPaused: () => set((s) => ({ animationsPaused: !s.animationsPaused })),
+
+  interacting: false,
+  setInteracting: (on) => set({ interacting: on }),
 
   toolbarVisible: true,
   setToolbarVisible: (visible) => set({ toolbarVisible: visible }),
@@ -228,4 +244,4 @@ export const useEditorStore = create<EditorState>((set) => ({
 }));
 
 // Persist selected keys to localStorage
-syncToStorage(useEditorStore, ["mode", "breakpoint"], "editor", 300);
+syncToStorage(useEditorStore, ["mode", "breakpoint", "animationsPaused"], "editor", 300);

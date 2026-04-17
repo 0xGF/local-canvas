@@ -2,6 +2,7 @@ import { createServer as createHttpServer } from "http";
 import { WebSocketServer } from "ws";
 import { createProxy } from "../proxy/index.js";
 import { createWSHandler } from "./ws-handler.js";
+import { recordSnapshot, listSnapshots, applyUndo } from "./agent-undo.js";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { readFileSync, existsSync } from "fs";
@@ -42,6 +43,55 @@ export async function createServer(options: ServerOptions) {
       return;
     }
 
+    // Agent-undo endpoints — see src/server/agent-undo.ts for layout.
+    if (req.url === "/__canvas/agent-snapshot" && req.method === "POST") {
+      readJsonBody(req).then((raw) => {
+        try {
+          const body = (raw ?? {}) as Record<string, unknown>;
+          const snap = recordSnapshot(projectRoot, {
+            annotationId: String(body.annotationId ?? ""),
+            files: Array.isArray(body.files) ? body.files as never : [],
+            summary: typeof body.summary === "string" ? body.summary : undefined,
+          });
+          res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+          res.end(JSON.stringify({ ok: true, annotationId: snap.annotationId, createdAt: snap.createdAt }));
+        } catch (err) {
+          res.writeHead(400, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+          res.end(JSON.stringify({ ok: false, error: String(err) }));
+        }
+      }).catch(() => {
+        res.writeHead(400).end();
+      });
+      return;
+    }
+    if (req.url === "/__canvas/agent-undo" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+      res.end(JSON.stringify(listSnapshots(projectRoot)));
+      return;
+    }
+    if (req.url === "/__canvas/agent-undo" && req.method === "POST") {
+      readJsonBody(req).then((raw) => {
+        const body = (raw ?? {}) as Record<string, unknown>;
+        const id = String(body.annotationId ?? "");
+        if (!id) {
+          res.writeHead(400, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+          res.end(JSON.stringify({ ok: false, error: "annotationId required" }));
+          return;
+        }
+        const result = applyUndo(projectRoot, id);
+        if (!result) {
+          res.writeHead(404, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+          res.end(JSON.stringify({ ok: false, error: "no snapshot for this annotation" }));
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+        res.end(JSON.stringify({ ok: true, restored: result.restored, summary: result.summary }));
+      }).catch(() => {
+        res.writeHead(400).end();
+      });
+      return;
+    }
+
     // Proxy everything else
     proxy.web(req, res);
   });
@@ -65,6 +115,30 @@ export async function createServer(options: ServerOptions) {
   return new Promise<void>((resolve, reject) => {
     server.on("error", reject);
     server.listen(serverPort, () => resolve());
+  });
+}
+
+/** Read a JSON body from an incoming request, capped at 2 MB so a pathological
+ *  snapshot payload can't exhaust memory. */
+function readJsonBody(req: import("http").IncomingMessage): Promise<unknown> {
+  return new Promise((resolveBody, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > 2 * 1024 * 1024) {
+        reject(new Error("payload too large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      if (chunks.length === 0) return resolveBody({});
+      try { resolveBody(JSON.parse(Buffer.concat(chunks).toString("utf-8"))); }
+      catch (e) { reject(e); }
+    });
+    req.on("error", reject);
   });
 }
 

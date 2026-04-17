@@ -116,6 +116,31 @@ export function listSnapshots(projectRoot: string): Array<Omit<Snapshot, "files"
 }
 
 /**
+ * Dev-only helper: pretend an agent just edited a file. Snapshots the current
+ * content, then prepends a visible marker line so the user can see that
+ * something changed — and that clicking Undo actually restores it. Returns
+ * the absolute path that was modified, or null if the file doesn't exist.
+ */
+export function simulateAgentEdit(
+  projectRoot: string,
+  annotationId: string,
+  relPath: string,
+): { filePath: string; summary: string } | null {
+  if (!isSafeRelativePath(projectRoot, relPath)) return null;
+  const abs = resolve(projectRoot, relPath);
+  if (!existsSync(abs)) return null;
+  const before = readFileSync(abs, "utf-8");
+  recordSnapshot(projectRoot, {
+    annotationId,
+    files: [{ path: relPath, contentBefore: before }],
+    summary: `simulated edit to ${relPath.split("/").pop()}`,
+  });
+  const marker = `// [canvas simulate] agent edit @ ${new Date().toISOString()}\n`;
+  writeFileSync(abs, marker + before);
+  return { filePath: relPath, summary: `simulated edit to ${relPath.split("/").pop()}` };
+}
+
+/**
  * Restore the files from the snapshot with the given annotationId, then
  * drop the entry. Returns the restored file paths (or null if no snapshot
  * exists for that id).

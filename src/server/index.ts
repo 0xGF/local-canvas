@@ -2,7 +2,7 @@ import { createServer as createHttpServer } from "http";
 import { WebSocketServer } from "ws";
 import { createProxy } from "../proxy/index.js";
 import { createWSHandler } from "./ws-handler.js";
-import { recordSnapshot, listSnapshots, applyUndo } from "./agent-undo.js";
+import { recordSnapshot, listSnapshots, applyUndo, simulateAgentEdit } from "./agent-undo.js";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { readFileSync, existsSync } from "fs";
@@ -67,6 +67,34 @@ export async function createServer(options: ServerOptions) {
     if (req.url === "/__canvas/agent-undo" && req.method === "GET") {
       res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
       res.end(JSON.stringify(listSnapshots(projectRoot)));
+      return;
+    }
+    if (req.url === "/__canvas/agent-simulate" && req.method === "POST") {
+      readJsonBody(req).then((raw) => {
+        const body = (raw ?? {}) as Record<string, unknown>;
+        const id = String(body.annotationId ?? "");
+        const rel = String(body.filePath ?? "");
+        if (!id || !rel) {
+          res.writeHead(400, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+          res.end(JSON.stringify({ ok: false, error: "annotationId and filePath required" }));
+          return;
+        }
+        try {
+          const result = simulateAgentEdit(projectRoot, id, rel);
+          if (!result) {
+            res.writeHead(404, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+            res.end(JSON.stringify({ ok: false, error: "file not found or unsafe path" }));
+            return;
+          }
+          res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+          res.end(JSON.stringify({ ok: true, ...result }));
+        } catch (err) {
+          res.writeHead(400, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+          res.end(JSON.stringify({ ok: false, error: String(err) }));
+        }
+      }).catch(() => {
+        res.writeHead(400).end();
+      });
       return;
     }
     if (req.url === "/__canvas/agent-undo" && req.method === "POST") {

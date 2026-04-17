@@ -254,6 +254,22 @@ export async function listAgentUndoEntries(): Promise<AgentUndoEntry[]> {
   }
 }
 
+/** Dev-only: pretend an agent just edited the file an annotation targets.
+ *  The server snapshots the current content, then prepends a visible marker
+ *  line so the user can watch Undo restore it. */
+export async function simulateAgentEdit(annotationId: string, filePath: string): Promise<boolean> {
+  try {
+    const res = await fetch("/__canvas/agent-simulate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ annotationId, filePath }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Restore the files for a given annotation. Returns the restored path list
  *  on success, or null if no snapshot exists / the request failed. */
 export async function undoAgentChange(annotationId: string): Promise<{ restored: string[]; summary?: string } | null> {

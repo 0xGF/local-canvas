@@ -11,6 +11,7 @@ import {
   scrollToAndOpenAnnotation,
   listAgentUndoEntries,
   undoAgentChange,
+  simulateAgentEdit,
   type Annotation,
   type AgentUndoEntry,
 } from "../utils/agentation.js";
@@ -48,9 +49,10 @@ interface HistoryRowProps {
   onHide: (id: string) => void;
   undoAvailable: boolean;
   onUndo: (id: string) => void;
+  onSimulate: (a: Annotation) => void;
 }
 
-const HistoryRow = React.memo(function HistoryRow({ a, onOpen, onHide, undoAvailable, onUndo }: HistoryRowProps) {
+const HistoryRow = React.memo(function HistoryRow({ a, onOpen, onHide, undoAvailable, onUndo, onSimulate }: HistoryRowProps) {
   const [hovered, setHovered] = useState(false);
   const fileTail = a.elementPath?.split("/").pop() || a.elementPath;
   const tag = a.element?.match(/^<(\w+)>/)?.[1] || "?";
@@ -107,8 +109,8 @@ const HistoryRow = React.memo(function HistoryRow({ a, onOpen, onHide, undoAvail
           {lastReply}
         </div>
       )}
-      {undoAvailable && (
-        <div style={{ marginTop: 6, marginLeft: 12 }}>
+      <div style={{ marginTop: 6, marginLeft: 12, display: "flex", gap: 6 }}>
+        {undoAvailable ? (
           <button
             onClick={e => { e.stopPropagation(); onUndo(a.id); }}
             style={{
@@ -122,8 +124,24 @@ const HistoryRow = React.memo(function HistoryRow({ a, onOpen, onHide, undoAvail
           >
             Undo agent change
           </button>
-        </div>
-      )}
+        ) : (
+          a.elementPath && a.elementPath.includes(":") && (
+            <button
+              onClick={e => { e.stopPropagation(); onSimulate(a); }}
+              style={{
+                fontSize: 10, color: C.fgMuted,
+                background: "transparent",
+                border: `1px dashed ${C.borderLight}`,
+                padding: "2px 8px", borderRadius: 3,
+                cursor: "pointer", fontFamily: C.mono,
+              }}
+              title="Dev helper — writes a marker line at the top of this annotation's file so you can see Undo restore it"
+            >
+              Simulate agent edit
+            </button>
+          )
+        )}
+      </div>
     </div>
   );
 });
@@ -164,6 +182,22 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
       setLoading(false);
     }
   }, []);
+
+  const handleSimulate = useCallback(async (a: Annotation) => {
+    // Take the first path from comma-joined groups so the simulated edit
+    // targets a real file on disk.
+    const path = (a.elementPath || "").split(",")[0].trim();
+    const lastColon = path.lastIndexOf(":");
+    if (lastColon < 0) return;
+    const filePath = path.slice(0, lastColon);
+    const ok = await simulateAgentEdit(a.id, filePath);
+    if (ok) {
+      showToast(`Simulated agent edit to ${filePath.split("/").pop()}`);
+      refresh();
+    } else {
+      showToast("Couldn't simulate (file not resolvable?)");
+    }
+  }, [refresh, showToast]);
 
   const handleUndo = useCallback(async (id: string) => {
     const result = await undoAgentChange(id);
@@ -321,6 +355,7 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
                       onHide={handleHide}
                       undoAvailable={undoIds.has(a.id)}
                       onUndo={handleUndo}
+                      onSimulate={handleSimulate}
                     />
                   ))
                 )}

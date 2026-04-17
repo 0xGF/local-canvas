@@ -8,6 +8,7 @@ import {
   ArrowUp, ArrowDown, ArrowLeft, Layers, MessageSquarePlus, Sparkles,
 } from "./icons.js";
 import { THEME } from "../theme.js";
+import { getEditorIframe } from "../utils/iframe-events.js";
 
 const C = THEME;
 
@@ -66,9 +67,24 @@ export const ContextMenu = React.memo(function ContextMenu() {
         setContextMenu(null); setAiPromptOpen(false);
       }
     }
-    const timer = setTimeout(() => document.addEventListener("click", onClick, true), 50);
+    const timer = setTimeout(() => {
+      document.addEventListener("click", onClick, true);
+      // Also listen on iframe doc so clicking inside the page closes the menu
+      try {
+        const iframeDoc = getEditorIframe()?.contentDocument;
+        if (iframeDoc) iframeDoc.addEventListener("click", onClick, true);
+      } catch {}
+    }, 50);
     document.addEventListener("keydown", onKey, true);
-    return () => { clearTimeout(timer); document.removeEventListener("click", onClick, true); document.removeEventListener("keydown", onKey, true); };
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("click", onClick, true);
+      document.removeEventListener("keydown", onKey, true);
+      try {
+        const iframeDoc = getEditorIframe()?.contentDocument;
+        if (iframeDoc) iframeDoc.removeEventListener("click", onClick, true);
+      } catch {}
+    };
   }, [menu, setContextMenu, aiPromptOpen]);
 
   useEffect(() => {
@@ -105,7 +121,34 @@ export const ContextMenu = React.memo(function ContextMenu() {
   }
   const hasText = directText.trim().length > 0;
 
-  const items: MenuItem[] = [
+  const isMulti = multiSelection.length > 1;
+
+  const items: MenuItem[] = isMulti ? [
+    {
+      label: `${multiSelection.length} elements selected`,
+      icon: <Layers size={13} />,
+      disabled: true,
+      action: () => {},
+      dividerAfter: true,
+    },
+    {
+      label: "Copy All Classes",
+      icon: <Copy size={13} />,
+      action: () => {
+        const allClasses = multiSelection.flatMap(s => s.className.split(/\s+/).filter(Boolean));
+        copiedClasses = [...new Set(allClasses)];
+        navigator.clipboard?.writeText(copiedClasses.join(" "));
+        useEditorStore.getState().showToast(`Copied ${copiedClasses.length} classes`);
+        close();
+      },
+      dividerAfter: true,
+    },
+    {
+      label: "Clear Selection",
+      icon: <Type size={13} />,
+      action: () => { useEditorStore.getState().selectElement(null); close(); },
+    },
+  ] : [
     {
       label: "Edit Text",
       icon: <Type size={13} />,
@@ -113,7 +156,6 @@ export const ContextMenu = React.memo(function ContextMenu() {
       action: () => {
         if (!hasSource) return;
         close();
-        // Dispatch custom event for useTextEdit to start inline editing
         setTimeout(() => {
           el.dispatchEvent(new CustomEvent("canvas:start-text-edit", { bubbles: true }));
         }, 0);

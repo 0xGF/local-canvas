@@ -244,10 +244,10 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
           const ey = r.top * ifs2 + oy;
           const ew = r.width * ifs2;
           const eh = r.height * ifs2;
-          ctx!.strokeRect(ex, ey, ew, eh);
-          // Light fill to highlight
-          ctx!.fillStyle = "rgba(20, 174, 92, 0.06)";
+          // Visible green fill + dashed border
+          ctx!.fillStyle = "rgba(20, 174, 92, 0.12)";
           ctx!.fillRect(ex, ey, ew, eh);
+          ctx!.strokeRect(ex, ey, ew, eh);
         }
 
         // Badge showing count near the last selected element

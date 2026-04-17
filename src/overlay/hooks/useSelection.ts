@@ -363,14 +363,20 @@ export function useSelection() {
       const source = resolveSource(target);
       const rect = target.getBoundingClientRect();
 
-      selectElement({
-        element: target,
-        source,
-        rect,
-        className: typeof target.className === "string" ? target.className : "",
-        tagName: target.tagName.toLowerCase(),
-        iframeRef: fromIframe && iframe ? iframe : undefined,
-      });
+      // If multi-selection is active and right-clicked element is in the set,
+      // keep multi-selection intact — just open the context menu.
+      const multi = useEditorStore.getState().multiSelection;
+      const isInMulti = multi.length > 1 && multi.some(s => s.element === target);
+      if (!isInMulti) {
+        selectElement({
+          element: target,
+          source,
+          rect,
+          className: typeof target.className === "string" ? target.className : "",
+          tagName: target.tagName.toLowerCase(),
+          iframeRef: fromIframe && iframe ? iframe : undefined,
+        });
+      }
 
       // Anchor to the top of the element (screen space — translate if in iframe)
       let menuX = rect.left, menuY = rect.top;
@@ -408,8 +414,9 @@ export function useSelection() {
 
   const handleMarqueeDown = useCallback((e: MouseEvent) => {
     if (mode !== "edit" || !e.altKey || e.button !== 0) return;
-    if (isClickInsideOverlay(e)) return;
     e.preventDefault();
+    e.stopPropagation();
+    useEditorStore.getState().selectElement(null);
     marqueeRef.current = { startX: e.clientX, startY: e.clientY, active: false };
   }, [mode]);
 
@@ -430,8 +437,9 @@ export function useSelection() {
 
   const handleMarqueeUp = useCallback((e: MouseEvent) => {
     const m = marqueeRef.current;
+    if (!m) return;
     marqueeRef.current = null;
-    if (!m?.active) { setMarqueeRect(null); return; }
+    if (!m.active) { setMarqueeRect(null); return; }
 
     const rect = {
       x: Math.min(m.startX, e.clientX),
@@ -441,7 +449,6 @@ export function useSelection() {
     };
     setMarqueeRect(null);
 
-    // Find all elements inside the marquee rect
     const iframe = getEditorIframe();
     const doc = iframe?.contentDocument ?? document;
     const allEls = doc.querySelectorAll("[data-source-file]");
@@ -455,31 +462,35 @@ export function useSelection() {
       oy = ir.top;
     }
 
-    const store = useEditorStore.getState();
+    const matched: import("../stores/editor-store.js").SelectedElement[] = [];
     for (const el of allEls) {
       const html = el as HTMLElement;
       const r = html.getBoundingClientRect();
-      // Translate to viewport coords
       const elX = r.left * scale + ox;
       const elY = r.top * scale + oy;
       const elW = r.width * scale;
       const elH = r.height * scale;
-      // Element is "mostly inside" if >50% of its area overlaps the marquee
       const overlapX = Math.max(0, Math.min(elX + elW, rect.x + rect.w) - Math.max(elX, rect.x));
       const overlapY = Math.max(0, Math.min(elY + elH, rect.y + rect.h) - Math.max(elY, rect.y));
       const overlapArea = overlapX * overlapY;
       const elArea = elW * elH;
       if (elArea > 0 && overlapArea / elArea > 0.5) {
-        const source = resolveSource(html);
-        store.addToSelection({
+        matched.push({
           element: html,
-          source,
+          source: resolveSource(html),
           rect: r,
           className: typeof html.className === "string" ? html.className : "",
           tagName: html.tagName.toLowerCase(),
           iframeRef: iframeEl ?? undefined,
         });
       }
+    }
+    if (matched.length > 0) {
+      useEditorStore.setState({
+        selectedElement: matched[0],
+        multiSelection: matched,
+        propertiesOpen: true,
+      });
     }
   }, []);
 

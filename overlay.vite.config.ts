@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import terser from "@rollup/plugin-terser";
 import path from "path";
 
 export default defineConfig({
@@ -11,14 +12,15 @@ export default defineConfig({
   build: {
     lib: {
       entry: path.resolve(__dirname, "src/overlay/index.tsx"),
-      formats: ["iife"],
-      name: "CanvasEditorOverlay",
-      fileName: "overlay",
+      formats: ["es"],
+      fileName: () => "overlay.js",
     },
     rollupOptions: {
       external: [],
+      // Vite lib-mode ES silently skips minification — wire terser in directly.
+      plugins: [terser()],
       output: {
-        inlineDynamicImports: true,
+        chunkFileNames: "chunk-[hash].js",
       },
     },
     cssCodeSplit: false,

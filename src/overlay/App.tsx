@@ -1,10 +1,13 @@
-import React, { useEffect } from "react";
+import React, { Suspense, lazy, useEffect } from "react";
 import { CanvasOverlayLayer } from "./components/CanvasOverlayLayer.js";
 import { Toolbar } from "./components/Toolbar.js";
 import { PropertiesPanel } from "./components/PropertiesPanel.js";
 import { ResponsiveFrame } from "./components/ResponsiveFrame.js";
 import { ContextMenu } from "./components/ContextMenu.js";
-import { AnnotationPins } from "./components/AnnotationPins.js";
+// Only needed once the user is in edit mode and not mid-interaction.
+const AnnotationPins = lazy(() =>
+  import("./components/AnnotationPins.js").then(m => ({ default: m.AnnotationPins }))
+);
 import { useSelection } from "./hooks/useSelection.js";
 import { useKeyboard } from "./hooks/useKeyboard.js";
 import { useViewport, restoreViewport } from "./hooks/useViewport.js";
@@ -78,7 +81,11 @@ export function App() {
       {mode === "edit" && !interacting && <CanvasOverlayLayer />}
       {mode === "edit" && !interacting && <PropertiesPanel />}
       {mode === "edit" && !interacting && <ContextMenu />}
-      {mode === "edit" && !interacting && <AnnotationPins />}
+      {mode === "edit" && !interacting && (
+        <Suspense fallback={null}>
+          <AnnotationPins />
+        </Suspense>
+      )}
 
       <Toolbar />
     </>

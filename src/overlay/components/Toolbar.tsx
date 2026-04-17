@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { Suspense, lazy, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useHistoryStore } from "../stores/history-store.js";
@@ -13,7 +13,11 @@ import {
   MessageSquarePlus,
   MessagesSquare,
 } from "./icons.js";
-import { AskAIHistory } from "./AskAIHistory.js";
+// Loaded on demand so the AI history + agentation client stay out of the
+// critical-path bundle.
+const AskAIHistory = lazy(() =>
+  import("./AskAIHistory.js").then(m => ({ default: m.AskAIHistory }))
+);
 
 import { THEME } from "../theme.js";
 import { toolbarSlideUp, popoverEmerge } from "../utils/motion-presets.js";
@@ -469,16 +473,18 @@ export const Toolbar = React.memo(function Toolbar() {
 
       <AnnotateToolBtn />
 
-      <AskAIHistory
-        renderButton={(open, count) => (
-          <ToolBtn
-            icon={<MessagesSquare size={15} />}
-            onClick={open}
-            title="Annotation history"
-            badge={count}
-          />
-        )}
-      />
+      <Suspense fallback={null}>
+        <AskAIHistory
+          renderButton={(open, count) => (
+            <ToolBtn
+              icon={<MessagesSquare size={15} />}
+              onClick={open}
+              title="Annotation history"
+              badge={count}
+            />
+          )}
+        />
+      </Suspense>
 
       <Sep />
 

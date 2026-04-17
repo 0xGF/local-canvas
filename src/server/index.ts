@@ -18,34 +18,46 @@ export async function createServer(options: ServerOptions) {
   const { targetHost, targetPort, serverPort } = options;
   const projectRoot = options.projectRoot || process.cwd();
 
-  // Resolve overlay bundle path
+  // Resolve overlay bundle dir — serves the entry and any split chunks.
   const __dirname = dirname(fileURLToPath(import.meta.url));
-  const overlayPath = resolve(__dirname, "../overlay/overlay.iife.js");
+  const overlayDir = resolve(__dirname, "../overlay");
 
-  // Per-encoding cache keyed by mtime so we don't re-compress on every request.
-  let overlayCache: { mtime: number; raw: Buffer; gzip?: Buffer; br?: Buffer } | null = null;
-  function loadOverlay() {
-    if (!existsSync(overlayPath)) return null;
-    const mtime = statSync(overlayPath).mtimeMs;
-    if (!overlayCache || overlayCache.mtime !== mtime) {
-      overlayCache = { mtime, raw: readFileSync(overlayPath) };
+  // Per-asset cache keyed by mtime so we don't re-compress on every request.
+  const assetCache = new Map<string, { mtime: number; raw: Buffer; gzip?: Buffer; br?: Buffer }>();
+  function loadAsset(name: string) {
+    // Plain filenames only — reject anything that looks like traversal.
+    if (!/^[\w.-]+\.js$/.test(name)) return null;
+    const p = resolve(overlayDir, name);
+    if (!existsSync(p)) return null;
+    const mtime = statSync(p).mtimeMs;
+    let entry = assetCache.get(name);
+    if (!entry || entry.mtime !== mtime) {
+      entry = { mtime, raw: readFileSync(p) };
+      assetCache.set(name, entry);
     }
-    return overlayCache;
+    return entry;
   }
 
   const proxy = createProxy({ targetHost, targetPort });
 
   const server = createHttpServer((req, res) => {
-    // Serve the overlay script (read fresh each time for dev reload)
-    if (req.url === "/__canvas/overlay.js") {
-      const entry = loadOverlay();
+    // Serve overlay entry + dynamic chunks from /__canvas/*.js.
+    const url = req.url || "";
+    if (url.startsWith("/__canvas/") && url.endsWith(".js")) {
+      const name = url.slice("/__canvas/".length);
+      const entry = loadAsset(name);
       if (!entry) {
-        res.writeHead(200, {
-          "Content-Type": "application/javascript",
-          "Cache-Control": "no-cache",
-          "Access-Control-Allow-Origin": "*",
-        });
-        res.end("");
+        // Keep legacy behaviour: empty 200 when the main bundle hasn't been built yet.
+        if (name === "overlay.js") {
+          res.writeHead(200, {
+            "Content-Type": "application/javascript",
+            "Cache-Control": "no-cache",
+            "Access-Control-Allow-Origin": "*",
+          });
+          res.end("");
+          return;
+        }
+        res.writeHead(404).end();
         return;
       }
       const accept = String(req.headers["accept-encoding"] || "");

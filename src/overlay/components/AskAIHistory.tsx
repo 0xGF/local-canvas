@@ -217,7 +217,7 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
               }}>
                 <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, color: C.fg }}>
                   <Sparkles size={12} />
-                  Ask AI history
+                  Annotation history
                   {visible.length > 0 && (
                     <span style={{
                       fontSize: 9, fontWeight: 700, color: C.accent,
@@ -239,7 +239,7 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
                     {loading ? "Loading…" : (
                       <>
                         No prompts yet.<br/>
-                        <span style={{ fontSize: 10 }}>Right-click an element → Ask AI</span>
+                        <span style={{ fontSize: 10 }}>Right-click an element → Add annotation</span>
                       </>
                     )}
                   </div>

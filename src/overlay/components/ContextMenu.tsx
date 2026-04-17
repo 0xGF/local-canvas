@@ -5,7 +5,7 @@ import type { Mutation } from "../../server/types.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
 import {
   Type, Copy, ClipboardPaste, Trash2,
-  ArrowUp, ArrowDown, ArrowLeft, Layers, Sparkles,
+  ArrowUp, ArrowDown, ArrowLeft, Layers, MessageSquarePlus, Sparkles,
 } from "./icons.js";
 import { THEME } from "../theme.js";
 
@@ -24,21 +24,9 @@ interface MenuItem {
 let copiedClasses: string[] = [];
 
 // ── Agentation MCP bridge ──
-const AGENTATION_PORT = 4747;
-let _agentationSessionId: string | null = null;
-
-async function getOrCreateSession(): Promise<string> {
-  if (_agentationSessionId) return _agentationSessionId;
-  const res = await fetch(`http://localhost:${AGENTATION_PORT}/sessions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url: window.location.href }),
-  });
-  if (!res.ok) throw new Error(`agentation: ${res.status}`);
-  const session = await res.json();
-  _agentationSessionId = session.id;
-  return session.id;
-}
+// Re-use the shared agentation client so ContextMenu and AnnotationPins
+// share the same session and port config.
+import { postAnnotation as sharedPostAnnotation } from "../utils/agentation.js";
 
 async function postAnnotation(opts: {
   comment: string;
@@ -47,23 +35,7 @@ async function postAnnotation(opts: {
   cssClasses?: string;
   intent?: "fix" | "change" | "question";
 }) {
-  const sessionId = await getOrCreateSession();
-  const res = await fetch(`http://localhost:${AGENTATION_PORT}/sessions/${sessionId}/annotations`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      comment: opts.comment,
-      element: opts.element,
-      elementPath: opts.elementPath,
-      cssClasses: opts.cssClasses,
-      intent: opts.intent || "change",
-      severity: "important",
-      url: window.location.href,
-      timestamp: Date.now(),
-    }),
-  });
-  if (!res.ok) throw new Error(`agentation: ${res.status}`);
-  return res.json();
+  return sharedPostAnnotation(opts);
 }
 
 export const ContextMenu = React.memo(function ContextMenu() {
@@ -238,8 +210,8 @@ export const ContextMenu = React.memo(function ContextMenu() {
       dividerAfter: true,
     },
     {
-      label: "Ask AI...",
-      icon: <Sparkles size={13} />,
+      label: "Add annotation...",
+      icon: <MessageSquarePlus size={13} />,
       action: () => setAiPromptOpen(true),
     },
   ];
@@ -285,8 +257,8 @@ export const ContextMenu = React.memo(function ContextMenu() {
             >
               <ArrowLeft size={13} />
             </button>
-            <Sparkles size={12} />
-            <div style={{ fontSize: 10, color: C.fgMuted, fontWeight: 600 }}>Ask AI Agent</div>
+            <MessageSquarePlus size={12} />
+            <div style={{ fontSize: 10, color: C.fgMuted, fontWeight: 600 }}>Add Annotation</div>
           </div>
           <textarea
             ref={aiInputRef}

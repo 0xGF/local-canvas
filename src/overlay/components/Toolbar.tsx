@@ -10,6 +10,7 @@ import {
   Pointer, Pencil, Undo, Redo, Save, Reset,
   ChevronDown, ChevronUp, X, Check, Sparkles, Plus,
   Pause, Play,
+  MessageSquarePlus,
 } from "./icons.js";
 import { AskAIHistory } from "./AskAIHistory.js";
 
@@ -472,7 +473,7 @@ export const Toolbar = React.memo(function Toolbar() {
           <ToolBtn
             icon={<Sparkles size={15} />}
             onClick={open}
-            title="Ask AI history"
+            title="Annotation history"
             badge={count}
           />
         )}
@@ -524,23 +525,11 @@ const AnnotateToolBtn = React.memo(function AnnotateToolBtn() {
   const toggle = useCallback(() => {
     const next = !annotateMode;
     setAnnotateMode(next);
-    if (next) showToast("Annotate: click any element · Esc to cancel");
+    if (next) showToast("Add annotation: click any element · Esc to cancel");
   }, [annotateMode, setAnnotateMode, showToast]);
   return (
     <ToolBtn
-      icon={
-        <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-          <Sparkles size={15} />
-          <span style={{
-            position: "absolute", right: -4, bottom: -4,
-            width: 9, height: 9, borderRadius: "50%",
-            background: "currentColor",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            <Plus size={7} style={{ color: "#000", strokeWidth: 3 }} />
-          </span>
-        </span>
-      }
+      icon={<MessageSquarePlus size={15} />}
       active={annotateMode}
       onClick={toggle}
       title={annotateMode ? "Annotate: click any element (A)" : "Annotate tool (A)"}

@@ -8,9 +8,12 @@ import {
   listAnnotations,
   postAnnotation,
   currentSessionId,
+  getOrCreateSession,
   getHiddenAnnotationIds,
+  hideAnnotation,
   findElementForAnnotation,
   scrollToAndOpenAnnotation,
+  scrollToAndFocusAnnotation,
   type Annotation,
   type PinNavDirection,
 } from "../utils/agentation.js";
@@ -20,10 +23,37 @@ import { getEditorIframe } from "../utils/iframe-events.js";
 
 const C = THEME;
 
+// ── Persisted pin offsets (drag-to-reposition) ──
+const PIN_OFFSETS_KEY = "canvas:pin-offsets";
+
+function readPinOffsets(): Record<string, { dx: number; dy: number }> {
+  try {
+    const raw = localStorage.getItem(PIN_OFFSETS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function writePinOffset(id: string, dx: number, dy: number) {
+  const offsets = readPinOffsets();
+  offsets[id] = { dx, dy };
+  try { localStorage.setItem(PIN_OFFSETS_KEY, JSON.stringify(offsets)); } catch {}
+}
+
+function clearPinOffset(id: string) {
+  const offsets = readPinOffsets();
+  delete offsets[id];
+  try { localStorage.setItem(PIN_OFFSETS_KEY, JSON.stringify(offsets)); } catch {}
+}
+
 // Yellow to match the AI/sparkles badge in the toolbar
 const PIN_YELLOW = "#ffb800";
 const PIN_YELLOW_DARK = "#e0a200";
+const PIN_GREEN = "#14ae5c";
+const PIN_GREEN_DARK = "#0f9a4d";
+const PIN_GREY = "#6b6b6b";
+const PIN_GREY_DARK = "#555";
 const PIN_SIZE = 20;
+const CLUSTER_DISTANCE = PIN_SIZE * 1.5;
 
 interface PinPosition {
   annotation: Annotation;
@@ -33,8 +63,41 @@ interface PinPosition {
   tagName: string;
 }
 
+/** Pick the corner with most empty space around it to avoid covering content. */
+function pickBestCorner(
+  elRect: { left: number; top: number; width: number; height: number },
+  existingPins: PinPosition[],
+): { x: number; y: number } {
+  const pad = PIN_SIZE / 2 + 4;
+  const corners = [
+    { x: elRect.left + elRect.width + pad,  y: elRect.top - pad },           // top-right (default)
+    { x: elRect.left - pad,                  y: elRect.top - pad },           // top-left
+    { x: elRect.left + elRect.width + pad,  y: elRect.top + elRect.height + pad }, // bottom-right
+    { x: elRect.left - pad,                  y: elRect.top + elRect.height + pad }, // bottom-left
+  ];
+
+  let best = corners[0];
+  let bestScore = -Infinity;
+
+  for (const c of corners) {
+    // Prefer corners inside the viewport
+    let score = 0;
+    if (c.x > PIN_SIZE && c.x < window.innerWidth - PIN_SIZE) score += 50;
+    if (c.y > PIN_SIZE && c.y < window.innerHeight - PIN_SIZE) score += 50;
+
+    // Penalise proximity to existing pins
+    for (const p of existingPins) {
+      const dist = Math.hypot(p.x - c.x, p.y - c.y);
+      if (dist < CLUSTER_DISTANCE * 2) score -= (CLUSTER_DISTANCE * 2 - dist);
+    }
+
+    if (score > bestScore) { bestScore = score; best = c; }
+  }
+  return best;
+}
+
 /** Compute the pin position (viewport coords) for an element. */
-function computePinPosition(el: HTMLElement, a: Annotation): PinPosition | null {
+function computePinPosition(el: HTMLElement, a: Annotation, existingPins: PinPosition[]): PinPosition | null {
   const rect = el.getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) return null;
 
@@ -55,56 +118,129 @@ function computePinPosition(el: HTMLElement, a: Annotation): PinPosition | null 
   const top = rect.top * scale + offsetY;
   const width = rect.width * scale;
   const height = rect.height * scale;
+  const elRect = { left, top, width, height };
 
-  // Anchor pin to the top-right corner, slightly outside the element
-  const x = left + width - PIN_SIZE / 2 + 6;
-  const y = top - PIN_SIZE / 2 - 4;
+  const corner = pickBestCorner(elRect, existingPins);
 
-  return {
-    annotation: a,
-    x, y,
-    elementRect: { left, top, width, height },
-    tagName: el.tagName.toLowerCase(),
-  };
+  // Apply persisted drag offset if any
+  const offsets = readPinOffsets();
+  const offset = offsets[a.id];
+  const x = corner.x + (offset?.dx ?? 0);
+  const y = corner.y + (offset?.dy ?? 0);
+
+  return { annotation: a, x, y, elementRect: elRect, tagName: el.tagName.toLowerCase() };
+}
+
+/** Get pin colors based on annotation status. */
+function pinColors(status: string | undefined): { bg: string; bgHover: string } {
+  if (status === "resolved") return { bg: PIN_GREEN, bgHover: PIN_GREEN_DARK };
+  if (status === "dismissed") return { bg: PIN_GREY, bgHover: PIN_GREY_DARK };
+  return { bg: PIN_YELLOW, bgHover: PIN_YELLOW_DARK };
 }
 
 interface PinProps {
   position: PinPosition;
   number: number;
   isOpen: boolean;
+  isFocused: boolean;
+  isNew: boolean;
   onClick: () => void;
   onHover: (hovered: boolean) => void;
+  onDismiss: () => void;
   isHovered: boolean;
 }
 
-const Pin = React.memo(function Pin({ position, number, isOpen, onClick, onHover, isHovered }: PinProps) {
+const SNAP_DISTANCE = 12;
+
+const Pin = React.memo(function Pin({ position, number, isOpen, isFocused, isNew, onClick, onHover, onDismiss, isHovered }: PinProps) {
+  const status = position.annotation.status;
+  const colors = pinColors(status);
+  const dragRef = useRef<{ startX: number; startY: number; pinX: number; pinY: number; moved: boolean } | null>(null);
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return; // left click only
+    dragRef.current = { startX: e.clientX, startY: e.clientY, pinX: position.x, pinY: position.y, moved: false };
+
+    function onMove(ev: MouseEvent) {
+      const d = dragRef.current;
+      if (!d) return;
+      const dx = ev.clientX - d.startX;
+      const dy = ev.clientY - d.startY;
+      if (!d.moved && Math.hypot(dx, dy) < 4) return; // dead zone
+      d.moved = true;
+      setDragPos({ x: d.pinX + dx, y: d.pinY + dy });
+    }
+
+    function onUp(ev: MouseEvent) {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      const d = dragRef.current;
+      dragRef.current = null;
+      if (!d || !d.moved) { setDragPos(null); return; }
+
+      const finalX = d.pinX + (ev.clientX - d.startX);
+      const finalY = d.pinY + (ev.clientY - d.startY);
+      const totalOffset = Math.hypot(finalX - d.pinX, finalY - d.pinY);
+
+      // Snap back to default if dropped near origin
+      if (totalOffset < SNAP_DISTANCE) {
+        clearPinOffset(position.annotation.id);
+      } else {
+        // Read existing offset base and add the delta
+        const offsets = readPinOffsets();
+        const prev = offsets[position.annotation.id];
+        const prevDx = prev?.dx ?? 0;
+        const prevDy = prev?.dy ?? 0;
+        writePinOffset(position.annotation.id, prevDx + (ev.clientX - d.startX), prevDy + (ev.clientY - d.startY));
+      }
+      setDragPos(null);
+    }
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [position.x, position.y, position.annotation.id]);
+
+  const displayX = dragPos ? dragPos.x : position.x;
+  const displayY = dragPos ? dragPos.y : position.y;
+  const isDragging = dragPos !== null;
+
   return (
     <button
-      onClick={onClick}
+      onClick={(e) => { if (!dragRef.current?.moved) onClick(); }}
+      onMouseDown={handleMouseDown}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onDismiss(); }}
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
       style={{
         position: "fixed",
-        left: position.x - PIN_SIZE / 2,
-        top: position.y - PIN_SIZE / 2,
+        left: displayX - PIN_SIZE / 2,
+        top: displayY - PIN_SIZE / 2,
         width: PIN_SIZE, height: PIN_SIZE,
         borderRadius: "50%",
-        background: isHovered || isOpen ? PIN_YELLOW_DARK : PIN_YELLOW,
+        background: isHovered || isOpen ? colors.bgHover : colors.bg,
         border: "none",
         color: "#000",
         fontSize: 10, fontWeight: 700, fontFamily: C.font,
         display: "flex", alignItems: "center", justifyContent: "center",
-        cursor: "pointer",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05)",
+        cursor: isDragging ? "grabbing" : "grab",
+        boxShadow: isDragging
+          ? "0 4px 16px rgba(0,0,0,0.4), 0 0 0 2px rgba(255,184,0,0.5)"
+          : isFocused
+          ? "0 0 0 3px #fff, 0 0 0 5px " + colors.bg + ", 0 2px 8px rgba(0,0,0,0.3)"
+          : "0 2px 8px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05)",
         zIndex: 2147483646,
-        transition: `background ${DURATION.small}ms ${EASE.snappy}, transform ${DURATION.small}ms ${EASE.snappy}`,
-        transform: isHovered ? "scale(1.08)" : "scale(1)",
+        transition: isDragging
+          ? "none"
+          : `background ${DURATION.small}ms ${EASE.snappy}, transform ${DURATION.small}ms ${EASE.snappy}`,
+        transform: isDragging ? "scale(1.15)" : isHovered ? "scale(1.08)" : "scale(1)",
         pointerEvents: "auto",
         padding: 0,
+        animation: isNew ? "canvasPinPulse 2s ease-out" : undefined,
       }}
-      title={position.annotation.comment}
+      title={`${position.annotation.comment}\nDrag to reposition · Right-click to dismiss`}
     >
-      {isHovered ? <Pencil size={10} /> : number}
+      {isHovered && !isDragging ? <Pencil size={10} /> : number}
     </button>
   );
 });
@@ -132,6 +268,7 @@ interface PinPopoverProps {
   position: PinPosition;
   onClose: () => void;
   onSent: () => void;
+  skipAutoFocus?: boolean;
 }
 
 interface ThreadEntry { role: string; content: string; timestamp?: number }
@@ -143,7 +280,7 @@ function statusColor(status: string | undefined) {
   return { bg: "rgba(255,184,0,0.18)", fg: PIN_YELLOW };
 }
 
-const PinPopover = React.memo(function PinPopover({ position, onClose, onSent }: PinPopoverProps) {
+const PinPopover = React.memo(function PinPopover({ position, onClose, onSent, skipAutoFocus }: PinPopoverProps) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -153,7 +290,7 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent }:
   const thread = ((position.annotation as unknown as { thread?: ThreadEntry[] }).thread) || [];
 
   useEffect(() => {
-    if (!isResolved) inputRef.current?.focus();
+    if (!isResolved && !skipAutoFocus) inputRef.current?.focus();
   }, [isResolved]);
 
   const send = useCallback(async (opts: { reopen?: boolean } = {}) => {
@@ -285,7 +422,7 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent }:
             cursor: "pointer", padding: 0, display: "flex",
           }}
         >
-          <X size={11} />
+          <X size={12} />
         </button>
       </div>
 
@@ -406,6 +543,75 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent }:
   );
 });
 
+// ── Clustering ──
+
+interface Cluster {
+  pins: PinPosition[];
+  x: number;
+  y: number;
+}
+
+/** Group pins that are within CLUSTER_DISTANCE into clusters. */
+function clusterPins(pins: PinPosition[]): { singles: PinPosition[]; clusters: Cluster[] } {
+  const clustered = new Set<number>();
+  const clusters: Cluster[] = [];
+
+  for (let i = 0; i < pins.length; i++) {
+    if (clustered.has(i)) continue;
+    const group = [i];
+    for (let j = i + 1; j < pins.length; j++) {
+      if (clustered.has(j)) continue;
+      const close = group.some(gi => Math.hypot(pins[gi].x - pins[j].x, pins[gi].y - pins[j].y) < CLUSTER_DISTANCE);
+      if (close) group.push(j);
+    }
+    if (group.length >= 3) {
+      for (const idx of group) clustered.add(idx);
+      const clusterPinsList = group.map(idx => pins[idx]);
+      const cx = clusterPinsList.reduce((s, p) => s + p.x, 0) / clusterPinsList.length;
+      const cy = clusterPinsList.reduce((s, p) => s + p.y, 0) / clusterPinsList.length;
+      clusters.push({ pins: clusterPinsList, x: cx, y: cy });
+    }
+  }
+
+  const singles = pins.filter((_, i) => !clustered.has(i));
+  return { singles, clusters };
+}
+
+const ClusterPin = React.memo(function ClusterPin({ cluster, onClick, isExpanded }: {
+  cluster: Cluster; onClick: () => void; isExpanded: boolean;
+}) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        position: "fixed",
+        left: cluster.x - PIN_SIZE / 2 - 2,
+        top: cluster.y - PIN_SIZE / 2 - 2,
+        width: PIN_SIZE + 4, height: PIN_SIZE + 4,
+        borderRadius: "50%",
+        background: hovered || isExpanded ? PIN_YELLOW_DARK : PIN_YELLOW,
+        border: "2px solid rgba(0,0,0,0.15)",
+        color: "#000",
+        fontSize: 10, fontWeight: 800, fontFamily: C.font,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        cursor: "pointer",
+        boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
+        zIndex: 2147483646,
+        transition: "all 0.12s ease",
+        transform: hovered ? "scale(1.1)" : "scale(1)",
+        pointerEvents: "auto",
+        padding: 0,
+      }}
+      title={`${cluster.pins.length} annotations — click to expand`}
+    >
+      {cluster.pins.length}
+    </button>
+  );
+});
+
 /**
  * Renders agentation-style numbered pins on the page for each pending
  * annotation. Hover → pencil icon. Click → popover for follow-up.
@@ -414,8 +620,14 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [positions, setPositions] = useState<PinPosition[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => getHiddenAnnotationIds());
+  const [expandedClusterIdx, setExpandedClusterIdx] = useState<number | null>(null);
+
+  // Track which annotation IDs we've already seen, so new ones get a pulse
+  const seenIdsRef = useRef<Set<string>>(new Set());
+  const [newIds, setNewIds] = useState<Set<string>>(new Set());
 
   // Poll annotations from server every 3s.
   // Keep all statuses on the current page — the render loop filters to
@@ -424,11 +636,27 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
   useEffect(() => {
     let cancelled = false;
     async function refresh() {
-      if (!currentSessionId()) return;
       try {
+        if (!currentSessionId()) await getOrCreateSession();
         const list = await listAnnotations();
         if (cancelled) return;
-        const filtered = list.filter(a => a.url === window.location.href);
+        const filtered = list;
+        // Detect newly appeared annotations for the pulse effect
+        const freshIds = new Set<string>();
+        for (const a of filtered) {
+          if (!seenIdsRef.current.has(a.id)) freshIds.add(a.id);
+          seenIdsRef.current.add(a.id);
+        }
+        if (freshIds.size > 0) {
+          setNewIds(prev => new Set([...prev, ...freshIds]));
+          setTimeout(() => {
+            setNewIds(prev => {
+              const next = new Set(prev);
+              for (const id of freshIds) next.delete(id);
+              return next;
+            });
+          }, 2000);
+        }
         setAnnotations(filtered);
       } catch { /* ignore */ }
     }
@@ -460,12 +688,13 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
       const next: PinPosition[] = [];
       for (const a of annotations) {
         if (hiddenIds.has(a.id)) continue;
-        if (a.status && a.status !== "pending") continue;
         const el = findElementForAnnotation(a);
         if (!el) continue;
-        const pos = computePinPosition(el, a);
+        const pos = computePinPosition(el, a, next);
         if (pos) next.push(pos);
       }
+      // Sort by annotation timestamp so pin numbers are stable across frames
+      next.sort((a, b) => a.annotation.timestamp - b.annotation.timestamp);
       setPositions(next);
       raf = requestAnimationFrame(tick);
     }
@@ -486,19 +715,36 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
     return () => window.removeEventListener("canvas:open-annotation-pin", onOpenRequest);
   }, []);
 
-  // Keep latest positions + openId in refs so the navigate listener below
+  // Keep latest positions + focusedId in refs so the navigate listener below
   // doesn't re-attach every frame.
   const positionsRef = useRef<PinPosition[]>([]);
-  const openIdRef = useRef<string | null>(null);
+  const focusedIdRef = useRef<string | null>(null);
   positionsRef.current = positions;
-  openIdRef.current = openId;
+  focusedIdRef.current = focusedId;
+
+  // Track whether the popover was opened via keyboard nav (don't auto-focus textarea)
+  const keyboardNavRef = useRef(false);
+
+  // Listen for focus-pin events (from keyboard navigation)
+  useEffect(() => {
+    function onFocus(e: Event) {
+      const id = (e as CustomEvent<{ annotationId: string }>).detail?.annotationId;
+      if (id) {
+        keyboardNavRef.current = true;
+        setFocusedId(id);
+        setOpenId(id);
+      }
+    }
+    window.addEventListener("canvas:focus-annotation-pin", onFocus);
+    return () => window.removeEventListener("canvas:focus-annotation-pin", onFocus);
+  }, []);
 
   // Listen for keyboard-triggered pin navigation (`[` / `]`).
+  // Focuses the pin (highlights it) instead of opening the popover.
   useEffect(() => {
     function onNavigate(e: Event) {
       const direction = (e as CustomEvent<{ direction: PinNavDirection }>).detail?.direction;
       if (!direction) return;
-      // Sort pins by vertical position so "next" moves down the page.
       const ordered = [...positionsRef.current].sort((a, b) => a.y - b.y);
       if (ordered.length === 0) return;
 
@@ -506,20 +752,18 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
       if (direction === "first") target = ordered[0];
       else if (direction === "last") target = ordered[ordered.length - 1];
       else {
-        const currentIdx = openIdRef.current
-          ? ordered.findIndex(p => p.annotation.id === openIdRef.current)
+        const currentIdx = focusedIdRef.current
+          ? ordered.findIndex(p => p.annotation.id === focusedIdRef.current)
           : -1;
         if (currentIdx === -1) {
-          // Nothing open — seed with the natural endpoint for the direction.
           target = direction === "next" ? ordered[0] : ordered[ordered.length - 1];
         } else {
           const nextIdx = direction === "next" ? currentIdx + 1 : currentIdx - 1;
-          // Wrap around so repeated presses cycle.
           const wrapped = ((nextIdx % ordered.length) + ordered.length) % ordered.length;
           target = ordered[wrapped];
         }
       }
-      if (target) scrollToAndOpenAnnotation(target.annotation);
+      if (target) scrollToAndFocusAnnotation(target.annotation);
     }
     window.addEventListener("canvas:navigate-pin", onNavigate);
     return () => window.removeEventListener("canvas:navigate-pin", onNavigate);
@@ -531,6 +775,13 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
     // effect above listens for and refreshes on — no manual refresh needed.
   }, []);
 
+  const handleDismiss = useCallback((id: string) => {
+    hideAnnotation(id);
+    setHiddenIds(getHiddenAnnotationIds());
+    if (openId === id) setOpenId(null);
+    useEditorStore.getState().showToast("Pin dismissed");
+  }, [openId]);
+
   // Resolve the open popover: prefer a pin position (pending annotation),
   // otherwise look up the annotation + compute its position on demand so
   // resolved/dismissed entries clicked from the history popover still show.
@@ -539,37 +790,80 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
     const a = annotations.find(x => x.id === openId);
     if (a) {
       const el = findElementForAnnotation(a);
-      if (el) openPosition = computePinPosition(el, a);
+      if (el) openPosition = computePinPosition(el, a, positions);
     }
   }
 
+  // Cluster nearby pins
+  const { singles, clusters } = clusterPins(positions);
+
+  // For expanded clusters, show their pins as singles
+  const expandedPins = expandedClusterIdx !== null && clusters[expandedClusterIdx]
+    ? clusters[expandedClusterIdx].pins : [];
+  const allVisiblePins = [...singles, ...expandedPins];
+
+  // Build a global numbering map from positions array order
+  const pinNumberMap = new Map<string, number>();
+  positions.forEach((p, i) => pinNumberMap.set(p.annotation.id, i + 1));
+
   return (
     <>
+      <style>{`
+        @keyframes canvasPinPulse {
+          0%, 100% { box-shadow: 0 2px 8px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05); }
+          25% { box-shadow: 0 0 0 8px rgba(255,184,0,0.4), 0 2px 8px rgba(0,0,0,0.25); }
+          50% { box-shadow: 0 2px 8px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05); }
+          75% { box-shadow: 0 0 0 6px rgba(255,184,0,0.3), 0 2px 8px rgba(0,0,0,0.25); }
+        }
+      `}</style>
+
       {/* Click-outside backdrop when popover is open */}
       {openId && (
         <div
           style={{ position: "fixed", inset: 0, zIndex: 2147483644, pointerEvents: "auto" }}
-          onClick={() => setOpenId(null)}
+          onClick={() => { setOpenId(null); setExpandedClusterIdx(null); }}
         />
       )}
 
-      {/* Highlight outline on the targeted element when hovering or open */}
-      {positions.map((p, i) => {
+      {/* Highlight outline on the targeted element when hovering, focused, or open */}
+      {allVisiblePins.map((p) => {
         const isHover = hoveredId === p.annotation.id;
         const isOpen = openId === p.annotation.id;
-        if (!isHover && !isOpen) return null;
+        const isFocus = focusedId === p.annotation.id;
+        if (!isHover && !isOpen && !isFocus) return null;
         return <PinHighlight key={`hl-${p.annotation.id}`} rect={p.elementRect} />;
       })}
 
-      {/* Pins */}
-      {positions.map((p, i) => (
+      {/* Cluster pins */}
+      {clusters.map((cluster, idx) => {
+        if (idx === expandedClusterIdx) return null; // expanded — show individual pins instead
+        return (
+          <ClusterPin
+            key={`cluster-${idx}`}
+            cluster={cluster}
+            isExpanded={false}
+            onClick={() => setExpandedClusterIdx(expandedClusterIdx === idx ? null : idx)}
+          />
+        );
+      })}
+
+      {/* Individual pins (singles + expanded cluster) */}
+      {allVisiblePins.map((p) => (
         <Pin
           key={p.annotation.id}
           position={p}
-          number={i + 1}
+          number={pinNumberMap.get(p.annotation.id) ?? 0}
           isOpen={openId === p.annotation.id}
-          onClick={() => setOpenId(openId === p.annotation.id ? null : p.annotation.id)}
+          isFocused={focusedId === p.annotation.id}
+          isNew={newIds.has(p.annotation.id)}
+          onClick={() => {
+            const id = p.annotation.id;
+            keyboardNavRef.current = false;
+            setOpenId(openId === id ? null : id);
+            setFocusedId(id);
+          }}
           onHover={(h) => setHoveredId(h ? p.annotation.id : null)}
+          onDismiss={() => handleDismiss(p.annotation.id)}
           isHovered={hoveredId === p.annotation.id}
         />
       ))}
@@ -580,8 +874,9 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
           <PinPopover
             key={openPosition.annotation.id}
             position={openPosition}
-            onClose={() => setOpenId(null)}
-            onSent={handleSent}
+            onClose={() => { setOpenId(null); keyboardNavRef.current = false; }}
+            onSent={() => { handleSent(); keyboardNavRef.current = false; }}
+            skipAutoFocus={keyboardNavRef.current}
           />
         )}
       </AnimatePresence>

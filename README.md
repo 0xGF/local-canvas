@@ -56,6 +56,7 @@ You can also put these in a `.local-canvas.json` file in your project root:
 - **HMR aware** — automatically re-selects elements after hot reload
 - **Animation pause** — freeze all CSS animations and transitions to inspect moving elements
 - **Interact mode** — hold Space to click through to your app (open modals, navigate, expand dropdowns) without leaving edit mode
+- **Annotations** — add annotations to any element via the annotate tool (`A`) or context menu. Annotations show as numbered pins that auto-pick the best corner, cluster when dense, pulse when new, and can be dragged or right-click dismissed
 
 ## Keyboard Shortcuts
 
@@ -70,8 +71,11 @@ You can also put these in a `.local-canvas.json` file in your project root:
 | `Alt+P` | Pause/resume animations |
 | `Space` (hold) | Interact mode — click through to your app |
 | `A` | Toggle annotate tool |
+| `[` / `]` | Navigate between annotation pins |
 | `Ctrl+Click` | Context menu |
 | `Double-click` | Edit text inline |
+| Drag pin | Reposition an annotation pin (persisted) |
+| Right-click pin | Dismiss an annotation pin |
 
 ## Setup with Vite
 

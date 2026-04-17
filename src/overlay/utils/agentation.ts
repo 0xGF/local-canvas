@@ -196,6 +196,21 @@ export function scrollToAndOpenAnnotation(a: Pick<Annotation, "id" | "elementPat
   dispatchOpenAnnotationPin(a.id);
 }
 
+/**
+ * Scroll the annotation's target element into view and focus (highlight) the
+ * pin without opening the popover. Used by keyboard navigation.
+ */
+export function scrollToAndFocusAnnotation(a: Pick<Annotation, "id" | "elementPath">) {
+  const el = findElementForAnnotation(a);
+  if (el) {
+    try { el.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    catch { el.scrollIntoView(); }
+  }
+  window.dispatchEvent(new CustomEvent("canvas:focus-annotation-pin", {
+    detail: { annotationId: a.id },
+  }));
+}
+
 // ── Keyboard-triggered navigation + popover toggles ──
 
 export type PinNavDirection = "prev" | "next" | "first" | "last";

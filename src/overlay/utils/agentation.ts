@@ -230,3 +230,44 @@ export function dispatchNavigatePin(direction: PinNavDirection) {
 export function dispatchToggleAIHistory() {
   window.dispatchEvent(new CustomEvent("canvas:toggle-ai-history"));
 }
+
+// ── Agent-undo (snapshot + restore for agent-driven edits) ──
+// These talk to the local-canvas editor server (same origin as the overlay),
+// not the agentation HTTP API.
+
+export interface AgentUndoEntry {
+  annotationId: string;
+  createdAt: string;
+  summary?: string;
+  files: string[];
+}
+
+/** List snapshots the editor server currently holds, newest first. */
+export async function listAgentUndoEntries(): Promise<AgentUndoEntry[]> {
+  try {
+    const res = await fetch("/__canvas/agent-undo");
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Restore the files for a given annotation. Returns the restored path list
+ *  on success, or null if no snapshot exists / the request failed. */
+export async function undoAgentChange(annotationId: string): Promise<{ restored: string[]; summary?: string } | null> {
+  try {
+    const res = await fetch("/__canvas/agent-undo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ annotationId }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data?.ok) return null;
+    return { restored: data.restored, summary: data.summary };
+  } catch {
+    return null;
+  }
+}

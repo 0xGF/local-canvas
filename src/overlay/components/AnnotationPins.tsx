@@ -679,15 +679,19 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
     return () => window.removeEventListener("canvas:hidden-annotations-changed", onChange);
   }, []);
 
-  // Recompute pin positions every frame (cheap for small N).
+  // Recompute pin positions every frame while there are pins to track.
   // Pins render for PENDING annotations only — resolved/dismissed don't
   // get a pin but can still be opened via the history popover or nav.
   useEffect(() => {
+    const visible = annotations.filter(a => !hiddenIds.has(a.id));
+    if (visible.length === 0) {
+      setPositions(prev => (prev.length ? [] : prev));
+      return;
+    }
     let raf = 0;
     function tick() {
       const next: PinPosition[] = [];
-      for (const a of annotations) {
-        if (hiddenIds.has(a.id)) continue;
+      for (const a of visible) {
         const el = findElementForAnnotation(a);
         if (!el) continue;
         const pos = computePinPosition(el, a, next);

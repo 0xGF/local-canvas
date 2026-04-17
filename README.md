@@ -63,7 +63,7 @@ You can also put these in a `.local-canvas.json` file in your project root:
 
 | Shortcut | Action |
 |----------|--------|
-| `V` | Edit mode (canvas with zoom/pan) |
+| `C` | Canvas mode (edit with zoom/pan) |
 | `N` | Navigate mode (interact with your app normally) |
 | `Cmd+Z` | Undo |
 | `Cmd+Shift+Z` | Redo |

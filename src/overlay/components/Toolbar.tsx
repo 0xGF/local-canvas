@@ -413,7 +413,7 @@ export const Toolbar = React.memo(function Toolbar() {
         style={{ ...barBase, left: 0, right: 0, margin: "0 auto", width: "fit-content", gap: 2 }}
       >
         <ToolBtn icon={<Pointer size={15} />} active={mode === "navigate"} onClick={setNavigateMode} title="Navigate (N)" shortcut="N" />
-        <ToolBtn icon={<Pencil size={15} />} active={false} onClick={setEditMode} title="Edit (V)" shortcut="V" />
+        <ToolBtn icon={<Pencil size={15} />} active={false} onClick={setEditMode} title="Canvas (C)" shortcut="C" />
 
         <Sep />
 
@@ -449,7 +449,7 @@ export const Toolbar = React.memo(function Toolbar() {
       data-canvas-overlay="true"
     >
       <ToolBtn icon={<Pointer size={15} />} active={false} onClick={setNavigateMode} title="Navigate (N)" shortcut="N" />
-      <ToolBtn icon={<Pencil size={15} />} active={true} onClick={setEditMode} title="Edit (V)" shortcut="V" />
+      <ToolBtn icon={<Pencil size={15} />} active={true} onClick={setEditMode} title="Canvas (C)" shortcut="C" />
 
       <Sep />
 

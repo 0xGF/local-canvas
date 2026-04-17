@@ -139,7 +139,7 @@ export function useKeyboard() {
         s.setMode("navigate");
         return;
       }
-      if (e.key === "v" && !isMeta) {
+      if (e.key === "c" && !isMeta) {
         s.setMode("edit");
         return;
       }

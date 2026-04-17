@@ -3,7 +3,7 @@ import lottie, { type AnimationItem } from "lottie-web";
 import animationData from "../assets/local-canvas.json";
 
 /**
- * Plays the logo animation once, waits 10 seconds, then plays again.
+ * Continuously loops the logo animation.
  */
 export function LocalCanvasLogo({ className }: { className?: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -14,25 +14,12 @@ export function LocalCanvasLogo({ className }: { className?: string }) {
     const anim: AnimationItem = lottie.loadAnimation({
       container: containerRef.current,
       renderer: "svg",
-      loop: false,
+      loop: true,
       autoplay: true,
       animationData,
     });
 
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const onComplete = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        anim.goToAndPlay(0, true);
-      }, 10_000);
-    };
-
-    anim.addEventListener("complete", onComplete);
-
     return () => {
-      if (timer) clearTimeout(timer);
-      anim.removeEventListener("complete", onComplete);
       anim.destroy();
     };
   }, []);

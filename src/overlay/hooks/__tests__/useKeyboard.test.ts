@@ -50,25 +50,14 @@ describe("useKeyboard shortcuts", () => {
     expect(useEditorStore.getState().selectedElement).toBeNull();
   });
 
-  it("V key switches to edit mode", async () => {
+  it("C key switches to canvas (edit) mode", async () => {
     useEditorStore.getState().setMode("navigate");
     expect(useEditorStore.getState().mode).toBe("navigate");
 
     const { useKeyboard } = await import("../useKeyboard.js");
     renderHook(() => useKeyboard());
 
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "v", bubbles: true }));
-
-    expect(useEditorStore.getState().mode).toBe("edit");
-  });
-
-  it("V key switches to edit mode", async () => {
-    expect(useEditorStore.getState().mode).toBe("navigate");
-
-    const { useKeyboard } = await import("../useKeyboard.js");
-    renderHook(() => useKeyboard());
-
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "v", bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "c", bubbles: true }));
 
     expect(useEditorStore.getState().mode).toBe("edit");
   });
@@ -81,7 +70,7 @@ describe("useKeyboard shortcuts", () => {
     const { useKeyboard } = await import("../useKeyboard.js");
     renderHook(() => useKeyboard());
 
-    const event = new KeyboardEvent("keydown", { key: "v", bubbles: true });
+    const event = new KeyboardEvent("keydown", { key: "c", bubbles: true });
     Object.defineProperty(event, "target", { value: input });
     document.dispatchEvent(event);
 

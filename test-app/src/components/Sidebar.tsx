@@ -1,5 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { Separator } from "./ui/separator";
+import { LocalCanvasLogo } from "./LocalCanvasLogo";
 
 const gettingStarted = [
   { href: "/overview", label: "Overview" },
@@ -68,7 +69,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className="pt-12 2xl:pb-[30px]">
         <Link to="/overview" className="flex items-center gap-2">
-          <img src="/logo.svg" alt="Local Canvas" className="2xl:mb-[29px] md:mb-[19px] 2xl:w-[152px] 2xl:h-[53px] md:w-[141px] md:h-[39px]" />
+          <LocalCanvasLogo className="2xl:mb-[29px] md:mb-[19px] 2xl:w-[152px] 2xl:h-[53px] md:w-[141px] md:h-[39px]" />
         </Link>
         <span className="text-[11px] text-[#a8a29e] mt-0.5 block">v0.1.0</span>
       </div>

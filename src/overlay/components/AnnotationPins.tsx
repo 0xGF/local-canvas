@@ -22,6 +22,28 @@ import { getEditorIframe } from "../utils/iframe-events.js";
 
 const C = THEME;
 
+// ── Persisted pin offsets (drag-to-reposition) ──
+const PIN_OFFSETS_KEY = "canvas:pin-offsets";
+
+function readPinOffsets(): Record<string, { dx: number; dy: number }> {
+  try {
+    const raw = localStorage.getItem(PIN_OFFSETS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function writePinOffset(id: string, dx: number, dy: number) {
+  const offsets = readPinOffsets();
+  offsets[id] = { dx, dy };
+  try { localStorage.setItem(PIN_OFFSETS_KEY, JSON.stringify(offsets)); } catch {}
+}
+
+function clearPinOffset(id: string) {
+  const offsets = readPinOffsets();
+  delete offsets[id];
+  try { localStorage.setItem(PIN_OFFSETS_KEY, JSON.stringify(offsets)); } catch {}
+}
+
 // Yellow to match the AI/sparkles badge in the toolbar
 const PIN_YELLOW = "#ffb800";
 const PIN_YELLOW_DARK = "#e0a200";
@@ -97,7 +119,13 @@ function computePinPosition(el: HTMLElement, a: Annotation, existingPins: PinPos
   const height = rect.height * scale;
   const elRect = { left, top, width, height };
 
-  const { x, y } = pickBestCorner(elRect, existingPins);
+  const corner = pickBestCorner(elRect, existingPins);
+
+  // Apply persisted drag offset if any
+  const offsets = readPinOffsets();
+  const offset = offsets[a.id];
+  const x = corner.x + (offset?.dx ?? 0);
+  const y = corner.y + (offset?.dy ?? 0);
 
   return { annotation: a, x, y, elementRect: elRect, tagName: el.tagName.toLowerCase() };
 }
@@ -120,20 +148,72 @@ interface PinProps {
   isHovered: boolean;
 }
 
+const SNAP_DISTANCE = 12;
+
 const Pin = React.memo(function Pin({ position, number, isOpen, isNew, onClick, onHover, onDismiss, isHovered }: PinProps) {
   const status = position.annotation.status;
   const colors = pinColors(status);
+  const dragRef = useRef<{ startX: number; startY: number; pinX: number; pinY: number; moved: boolean } | null>(null);
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return; // left click only
+    dragRef.current = { startX: e.clientX, startY: e.clientY, pinX: position.x, pinY: position.y, moved: false };
+
+    function onMove(ev: MouseEvent) {
+      const d = dragRef.current;
+      if (!d) return;
+      const dx = ev.clientX - d.startX;
+      const dy = ev.clientY - d.startY;
+      if (!d.moved && Math.hypot(dx, dy) < 4) return; // dead zone
+      d.moved = true;
+      setDragPos({ x: d.pinX + dx, y: d.pinY + dy });
+    }
+
+    function onUp(ev: MouseEvent) {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      const d = dragRef.current;
+      dragRef.current = null;
+      if (!d || !d.moved) { setDragPos(null); return; }
+
+      const finalX = d.pinX + (ev.clientX - d.startX);
+      const finalY = d.pinY + (ev.clientY - d.startY);
+      const totalOffset = Math.hypot(finalX - d.pinX, finalY - d.pinY);
+
+      // Snap back to default if dropped near origin
+      if (totalOffset < SNAP_DISTANCE) {
+        clearPinOffset(position.annotation.id);
+      } else {
+        // Read existing offset base and add the delta
+        const offsets = readPinOffsets();
+        const prev = offsets[position.annotation.id];
+        const prevDx = prev?.dx ?? 0;
+        const prevDy = prev?.dy ?? 0;
+        writePinOffset(position.annotation.id, prevDx + (ev.clientX - d.startX), prevDy + (ev.clientY - d.startY));
+      }
+      setDragPos(null);
+    }
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [position.x, position.y, position.annotation.id]);
+
+  const displayX = dragPos ? dragPos.x : position.x;
+  const displayY = dragPos ? dragPos.y : position.y;
+  const isDragging = dragPos !== null;
 
   return (
     <button
-      onClick={onClick}
+      onClick={(e) => { if (!dragRef.current?.moved) onClick(); }}
+      onMouseDown={handleMouseDown}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onDismiss(); }}
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
       style={{
         position: "fixed",
-        left: position.x - PIN_SIZE / 2,
-        top: position.y - PIN_SIZE / 2,
+        left: displayX - PIN_SIZE / 2,
+        top: displayY - PIN_SIZE / 2,
         width: PIN_SIZE, height: PIN_SIZE,
         borderRadius: "50%",
         background: isHovered || isOpen ? colors.bgHover : colors.bg,
@@ -141,18 +221,22 @@ const Pin = React.memo(function Pin({ position, number, isOpen, isNew, onClick, 
         color: "#000",
         fontSize: 10, fontWeight: 700, fontFamily: C.font,
         display: "flex", alignItems: "center", justifyContent: "center",
-        cursor: "pointer",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05)",
+        cursor: isDragging ? "grabbing" : "grab",
+        boxShadow: isDragging
+          ? "0 4px 16px rgba(0,0,0,0.4), 0 0 0 2px rgba(255,184,0,0.5)"
+          : "0 2px 8px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05)",
         zIndex: 2147483646,
-        transition: `background ${DURATION.small}ms ${EASE.snappy}, transform ${DURATION.small}ms ${EASE.snappy}`,
-        transform: isHovered ? "scale(1.08)" : "scale(1)",
+        transition: isDragging
+          ? "none"
+          : `background ${DURATION.small}ms ${EASE.snappy}, transform ${DURATION.small}ms ${EASE.snappy}`,
+        transform: isDragging ? "scale(1.15)" : isHovered ? "scale(1.08)" : "scale(1)",
         pointerEvents: "auto",
         padding: 0,
         animation: isNew ? "canvasPinPulse 2s ease-out" : undefined,
       }}
-      title={`${position.annotation.comment}\nRight-click to dismiss`}
+      title={`${position.annotation.comment}\nDrag to reposition · Right-click to dismiss`}
     >
-      {isHovered ? <Pencil size={10} /> : number}
+      {isHovered && !isDragging ? <Pencil size={10} /> : number}
     </button>
   );
 });

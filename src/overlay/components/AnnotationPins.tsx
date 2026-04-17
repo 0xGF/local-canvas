@@ -8,6 +8,7 @@ import {
   listAnnotations,
   postAnnotation,
   currentSessionId,
+  getOrCreateSession,
   getHiddenAnnotationIds,
   hideAnnotation,
   findElementForAnnotation,
@@ -152,14 +153,6 @@ const Pin = React.memo(function Pin({ position, number, isOpen, isNew, onClick, 
       title={`${position.annotation.comment}\nRight-click to dismiss`}
     >
       {isHovered ? <Pencil size={10} /> : number}
-      <style>{`
-        @keyframes canvasPinPulse {
-          0%, 100% { box-shadow: 0 2px 8px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05); }
-          25% { box-shadow: 0 0 0 6px rgba(255,184,0,0.35), 0 2px 8px rgba(0,0,0,0.25); }
-          50% { box-shadow: 0 2px 8px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05); }
-          75% { box-shadow: 0 0 0 6px rgba(255,184,0,0.25), 0 2px 8px rgba(0,0,0,0.25); }
-        }
-      `}</style>
     </button>
   );
 });
@@ -471,27 +464,27 @@ interface Cluster {
 
 /** Group pins that are within CLUSTER_DISTANCE into clusters. */
 function clusterPins(pins: PinPosition[]): { singles: PinPosition[]; clusters: Cluster[] } {
-  const used = new Set<number>();
+  const clustered = new Set<number>();
   const clusters: Cluster[] = [];
 
   for (let i = 0; i < pins.length; i++) {
-    if (used.has(i)) continue;
-    const group = [pins[i]];
-    used.add(i);
+    if (clustered.has(i)) continue;
+    const group = [i];
     for (let j = i + 1; j < pins.length; j++) {
-      if (used.has(j)) continue;
-      // Check distance to any member of the group
-      const close = group.some(g => Math.hypot(g.x - pins[j].x, g.y - pins[j].y) < CLUSTER_DISTANCE);
-      if (close) { group.push(pins[j]); used.add(j); }
+      if (clustered.has(j)) continue;
+      const close = group.some(gi => Math.hypot(pins[gi].x - pins[j].x, pins[gi].y - pins[j].y) < CLUSTER_DISTANCE);
+      if (close) group.push(j);
     }
     if (group.length >= 3) {
-      const cx = group.reduce((s, p) => s + p.x, 0) / group.length;
-      const cy = group.reduce((s, p) => s + p.y, 0) / group.length;
-      clusters.push({ pins: group, x: cx, y: cy });
+      for (const idx of group) clustered.add(idx);
+      const clusterPinsList = group.map(idx => pins[idx]);
+      const cx = clusterPinsList.reduce((s, p) => s + p.x, 0) / clusterPinsList.length;
+      const cy = clusterPinsList.reduce((s, p) => s + p.y, 0) / clusterPinsList.length;
+      clusters.push({ pins: clusterPinsList, x: cx, y: cy });
     }
   }
 
-  const singles = pins.filter((_, i) => !used.has(i));
+  const singles = pins.filter((_, i) => !clustered.has(i));
   return { singles, clusters };
 }
 
@@ -553,11 +546,11 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
   useEffect(() => {
     let cancelled = false;
     async function refresh() {
-      if (!currentSessionId()) return;
       try {
+        if (!currentSessionId()) await getOrCreateSession();
         const list = await listAnnotations();
         if (cancelled) return;
-        const filtered = list.filter(a => a.url === window.location.href);
+        const filtered = list;
         // Detect newly appeared annotations for the pulse effect
         const freshIds = new Set<string>();
         for (const a of filtered) {
@@ -610,6 +603,8 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
         const pos = computePinPosition(el, a, next);
         if (pos) next.push(pos);
       }
+      // Sort by annotation timestamp so pin numbers are stable across frames
+      next.sort((a, b) => a.annotation.timestamp - b.annotation.timestamp);
       setPositions(next);
       raf = requestAnimationFrame(tick);
     }
@@ -708,6 +703,15 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
 
   return (
     <>
+      <style>{`
+        @keyframes canvasPinPulse {
+          0%, 100% { box-shadow: 0 2px 8px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05); }
+          25% { box-shadow: 0 0 0 8px rgba(255,184,0,0.4), 0 2px 8px rgba(0,0,0,0.25); }
+          50% { box-shadow: 0 2px 8px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05); }
+          75% { box-shadow: 0 0 0 6px rgba(255,184,0,0.3), 0 2px 8px rgba(0,0,0,0.25); }
+        }
+      `}</style>
+
       {/* Click-outside backdrop when popover is open */}
       {openId && (
         <div

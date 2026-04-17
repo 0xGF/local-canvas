@@ -33,10 +33,69 @@ async function postAnnotation(opts: {
   comment: string;
   element: string;
   elementPath: string;
+  elementPaths?: string[];
   cssClasses?: string;
   intent?: "fix" | "change" | "question";
+  boundingBox?: { x: number; y: number; width: number; height: number };
 }) {
   return sharedPostAnnotation(opts);
+}
+
+/** Union of the viewport-coord rects of the given elements. Returns null if
+ *  the list is empty or every element is unreachable. */
+function unionBoundingBox(
+  elements: HTMLElement[],
+): { x: number; y: number; width: number; height: number } | null {
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  let any = false;
+  for (const el of elements) {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) continue;
+    left = Math.min(left, r.left);
+    top = Math.min(top, r.top);
+    right = Math.max(right, r.right);
+    bottom = Math.max(bottom, r.bottom);
+    any = true;
+  }
+  if (!any) return null;
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+/** Build the annotation payload for either a single- or multi-element
+ *  selection. Handles elementPaths, union bounding box, and the human-readable
+ *  element description + class list. Kept standalone so the Enter handler and
+ *  the Send button share exactly the same payload shape. */
+function buildAnnotationOpts(
+  prompt: string,
+  multi: Array<{ element: HTMLElement; source?: { filePath: string; line: number } | null; tagName: string; className: string }>,
+  fallbackSource: { filePath: string; line: number } | null | undefined,
+  fallbackTag: string,
+  fallbackClasses: string[],
+) {
+  if (multi.length > 1) {
+    const paths = multi
+      .map(s => s.source ? `${s.source.filePath}:${s.source.line}` : null)
+      .filter((p): p is string => !!p);
+    const union = unionBoundingBox(multi.map(s => s.element));
+    return {
+      comment: prompt,
+      element: `${multi.length} elements: ${multi.map(s => `<${s.tagName}>`).join(", ")}`,
+      // Comma-joined fallback so servers that strip elementPaths still
+      // roundtrip the full set — annotationPaths() parses it back.
+      elementPath: paths.length > 0 ? paths.join(", ") : multi[0].tagName,
+      elementPaths: paths.length > 1 ? paths : undefined,
+      cssClasses: multi.map(s => s.className).filter(Boolean).join(" | "),
+      intent: "change" as const,
+      boundingBox: union ?? undefined,
+    };
+  }
+  return {
+    comment: prompt,
+    element: `<${fallbackTag}>${fallbackClasses.length ? "." + fallbackClasses.join(".") : ""}`,
+    elementPath: fallbackSource ? `${fallbackSource.filePath}:${fallbackSource.line}` : fallbackTag,
+    cssClasses: fallbackClasses.join(" "),
+    intent: "change" as const,
+  };
 }
 
 export const ContextMenu = React.memo(function ContextMenu() {
@@ -123,12 +182,64 @@ export const ContextMenu = React.memo(function ContextMenu() {
 
   const isMulti = multiSelection.length > 1;
 
+  // Multi-select actions share a helper: fan out one mutation per member.
+  // `reverseBySource` applies in descending source-line order — use this for
+  // destructive or insertion-style mutations (delete, duplicate-element) so
+  // rewriting an earlier member doesn't shift the line numbers of later ones.
+  const fanOut = async (
+    build: (s: (typeof multiSelection)[number]) => Mutation | null,
+    reverseBySource = false,
+  ) => {
+    const store = useEditorStore.getState();
+    const members = reverseBySource
+      ? [...multiSelection].sort((a, b) => (b.source?.line ?? 0) - (a.source?.line ?? 0))
+      : multiSelection;
+    for (const s of members) {
+      const m = build(s);
+      if (!m) continue;
+      await sendMutation(m);
+      store.incrementPending();
+    }
+    close();
+  };
+
   const items: MenuItem[] = isMulti ? [
     {
       label: `${multiSelection.length} elements selected`,
       icon: <Layers size={13} />,
       disabled: true,
       action: () => {},
+      dividerAfter: true,
+    },
+    {
+      label: "Add annotation...",
+      icon: <MessageSquarePlus size={13} />,
+      action: () => setAiPromptOpen(true),
+      dividerAfter: true,
+    },
+    {
+      label: "Duplicate All",
+      icon: <Copy size={13} />,
+      disabled: multiSelection.every(s => !s.source),
+      action: () => {
+        useEditorStore.getState().showToast(`Duplicated ${multiSelection.length} elements`);
+        // Clear the selection after the fan-out — our stored source.line
+        // references are stale once the file has been rewritten N times,
+        // so the highlight would land on the wrong elements.
+        fanOut(s => s.source ? { type: "duplicate-element", source: s.source } : null, true)
+          .then(() => selectElement(null));
+      },
+    },
+    {
+      label: "Delete All",
+      icon: <Trash2 size={13} />,
+      danger: true,
+      disabled: multiSelection.every(s => !s.source),
+      action: () => {
+        useEditorStore.getState().showToast(`Deleted ${multiSelection.length} elements`);
+        fanOut(s => s.source ? { type: "delete", source: s.source } : null, true);
+        selectElement(null);
+      },
       dividerAfter: true,
     },
     {
@@ -140,6 +251,16 @@ export const ContextMenu = React.memo(function ContextMenu() {
         navigator.clipboard?.writeText(copiedClasses.join(" "));
         useEditorStore.getState().showToast(`Copied ${copiedClasses.length} classes`);
         close();
+      },
+    },
+    {
+      label: "Paste Classes to All",
+      icon: <ClipboardPaste size={13} />,
+      disabled: copiedClasses.length === 0 || multiSelection.every(s => !s.source),
+      action: () => {
+        if (copiedClasses.length === 0) return;
+        useEditorStore.getState().showToast(`Pasted to ${multiSelection.length} elements`);
+        fanOut(s => s.source ? { type: "modify-class", source: s.source, add: copiedClasses } : null);
       },
       dividerAfter: true,
     },
@@ -317,20 +438,8 @@ export const ContextMenu = React.memo(function ContextMenu() {
               if (e.key === "Enter" && !e.shiftKey && aiPrompt.trim()) {
                 e.preventDefault();
                 const prompt = aiPrompt.trim();
-                const multi = useEditorStore.getState().multiSelection;
-                const elementPath = multi.length > 1
-                  ? multi.map(s => s.source ? `${s.source.filePath}:${s.source.line}` : s.tagName).join(", ")
-                  : source ? `${source.filePath}:${source.line}` : tag;
-                const elementDesc = multi.length > 1
-                  ? `${multi.length} elements: ${multi.map(s => `<${s.tagName}>`).join(", ")}`
-                  : `<${tag}>${classes.length ? "." + classes.join(".") : ""}`;
-                postAnnotation({
-                  comment: prompt,
-                  element: elementDesc,
-                  elementPath,
-                  cssClasses: multi.length > 1 ? multi.map(s => s.className).filter(Boolean).join(" | ") : classes.join(" "),
-                  intent: "change",
-                }).then(() => {
+                const opts = buildAnnotationOpts(prompt, multiSelection, source, tag, classes);
+                postAnnotation(opts).then(() => {
                   useEditorStore.getState().showToast("Sent to agent");
                 }).catch(() => {
                   useEditorStore.getState().showToast("Agent not connected");
@@ -362,14 +471,8 @@ export const ContextMenu = React.memo(function ContextMenu() {
               onClick={() => {
                 const prompt = aiPrompt.trim();
                 if (!prompt) return;
-                const elementPath = source ? `${source.filePath}:${source.line}` : tag;
-                postAnnotation({
-                  comment: prompt,
-                  element: `<${tag}>${classes.length ? "." + classes.join(".") : ""}`,
-                  elementPath,
-                  cssClasses: classes.join(" "),
-                  intent: "change",
-                }).then(() => {
+                const opts = buildAnnotationOpts(prompt, multiSelection, source, tag, classes);
+                postAnnotation(opts).then(() => {
                   useEditorStore.getState().showToast("Sent to agent");
                 }).catch(() => {
                   useEditorStore.getState().showToast("Agent not connected");

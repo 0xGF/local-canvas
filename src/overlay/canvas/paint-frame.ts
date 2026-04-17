@@ -120,12 +120,25 @@ export function paintFrame(
   const badges: BadgeHit[] = [];
   let tagHit: TagBadgeHit | null = null;
 
+  // Frame-local rect cache so children that appear in both the hover and
+  // selection branches (e.g. a hovered child of the selected element) only
+  // pay one getBoundingClientRect call.
+  const rectCache = new WeakMap<HTMLElement, DOMRect>();
+  const getRect = (el: HTMLElement): DOMRect => {
+    let r = rectCache.get(el);
+    if (!r) {
+      r = el.getBoundingClientRect();
+      rectCache.set(el, r);
+    }
+    return r;
+  };
+
   // ── Hover highlight ──
   const hEl = hoveredElement;
   const sEl = selectedElement?.element;
   const ifs = iframeOffset.scale ?? 1;
   if (hEl && hEl !== sEl) {
-    const raw = hEl.getBoundingClientRect();
+    const raw = getRect(hEl);
     const ox = iframeOffset.x, oy = iframeOffset.y;
     const r = { left: raw.left * ifs + ox, top: raw.top * ifs + oy, width: raw.width * ifs, height: raw.height * ifs };
 
@@ -167,7 +180,7 @@ export function paintFrame(
       if (hrg > 0 || hcg > 0) {
         const children = Array.from(hEl.children).filter(c => c instanceof HTMLElement && getCachedStyle(c).position !== "absolute") as HTMLElement[];
         const childRects = children.map(c => {
-          const cr = c.getBoundingClientRect();
+          const cr = getRect(c);
           return { left: cr.left * ifs + ox, top: cr.top * ifs + oy, right: cr.right * ifs + ox, bottom: cr.bottom * ifs + oy };
         });
         ctx.save();
@@ -213,7 +226,7 @@ export function paintFrame(
   if (selectedElement) {
     const el = selectedElement.element;
     if (el.isConnected) {
-      const rawRect = el.getBoundingClientRect();
+      const rawRect = getRect(el);
       const ox = iframeOffset.x, oy = iframeOffset.y;
       const r = {
         left: rawRect.left * ifs + ox, top: rawRect.top * ifs + oy,
@@ -285,7 +298,7 @@ export function paintFrame(
         if (rg > 0 || cg > 0) {
           const children = Array.from(el.children).filter(c => c instanceof HTMLElement && getCachedStyle(c).position !== "absolute") as HTMLElement[];
           const childRects = children.map(c => {
-            const cr = c.getBoundingClientRect();
+            const cr = getRect(c);
             return { left: cr.left * ifs + ox, top: cr.top * ifs + oy, right: cr.right * ifs + ox, bottom: cr.bottom * ifs + oy, width: cr.width * ifs, height: cr.height * ifs };
           });
           const seen = new Set<string>();

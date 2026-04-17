@@ -26,7 +26,6 @@ export function useTextEdit() {
       if (!active) return;
       const { element, originalText } = active;
 
-      const newText = (element.textContent || "").trim();
       element.contentEditable = "false";
       element.style.outline = "";
       element.style.outlineOffset = "";
@@ -34,6 +33,10 @@ export function useTextEdit() {
       activeRef.current = null;
       useEditorStore.getState().setEditingText(false);
 
+      // Don't commit if the element was replaced by HMR during editing
+      if (!element.isConnected) return;
+
+      const newText = (element.textContent || "").trim();
       if (newText === originalText) return;
       const source = resolveSource(element);
       if (!source) return;

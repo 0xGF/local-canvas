@@ -689,6 +689,8 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
       return;
     }
     let raf = 0;
+    // Previous signature so we can skip the React update when nothing moved.
+    let prevKey = "";
     function tick() {
       const next: PinPosition[] = [];
       for (const a of visible) {
@@ -699,7 +701,11 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
       }
       // Sort by annotation timestamp so pin numbers are stable across frames
       next.sort((a, b) => a.annotation.timestamp - b.annotation.timestamp);
-      setPositions(next);
+      const key = next.map(p => `${p.annotation.id}:${p.x | 0}:${p.y | 0}`).join("|");
+      if (key !== prevKey) {
+        prevKey = key;
+        setPositions(next);
+      }
       raf = requestAnimationFrame(tick);
     }
     raf = requestAnimationFrame(tick);

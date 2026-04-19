@@ -8,13 +8,16 @@ interface SectionProps {
   title: string;
   children: React.ReactNode;
   defaultOpen?: boolean;
+  /** Optional hover-explained warning shown as a ⚠ next to the chevron. */
+  warning?: string;
 }
 
 import { THEME } from "../../theme.js";
 const C = THEME;
 
-export function Section({ title, children, defaultOpen = true }: SectionProps) {
+export function Section({ title, children, defaultOpen = true, warning }: SectionProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const [warningHovered, setWarningHovered] = useState(false);
 
   return (
     <div style={{ borderBottom: `1px solid ${C.borderLight}` }}>
@@ -29,13 +32,53 @@ export function Section({ title, children, defaultOpen = true }: SectionProps) {
         onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
       >
         <span style={{ fontSize: 11, fontWeight: 500, color: C.fgDim }}>{title}</span>
-        <motion.span
-          animate={{ rotate: open ? 90 : 0 }}
-          transition={TWEEN.small}
-          style={{ display: "flex", alignItems: "center" }}
-        >
-          <ChevronRight size={12} style={{ color: C.fgDim, flexShrink: 0 }} />
-        </motion.span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {warning && (
+            <span
+              onClick={(e) => e.stopPropagation()}
+              onMouseEnter={() => setWarningHovered(true)}
+              onMouseLeave={() => setWarningHovered(false)}
+              style={{
+                position: "relative",
+                fontSize: 12, lineHeight: 1, color: "#facc15",
+                cursor: "help", padding: "0 2px",
+              }}
+            >
+              ⚠
+              {warningHovered && (
+                <span
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    right: 0,
+                    marginTop: 4,
+                    background: "#18181b",
+                    color: "#fafafa",
+                    border: "1px solid #facc15",
+                    borderRadius: 4,
+                    padding: "6px 8px",
+                    fontSize: 10,
+                    lineHeight: 1.4,
+                    width: 220,
+                    zIndex: 100,
+                    fontWeight: 400,
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+                    pointerEvents: "none",
+                  }}
+                >
+                  {warning}
+                </span>
+              )}
+            </span>
+          )}
+          <motion.span
+            animate={{ rotate: open ? 90 : 0 }}
+            transition={TWEEN.small}
+            style={{ display: "flex", alignItems: "center" }}
+          >
+            <ChevronRight size={12} style={{ color: C.fgDim, flexShrink: 0 }} />
+          </motion.span>
+        </div>
       </div>
       <AnimatePresence initial={false}>
         {open && (

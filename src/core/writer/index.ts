@@ -3,6 +3,7 @@ import { resolve } from "path";
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "fs";
 import type { Mutation, MutationResult } from "../../server/types.js";
 import { modifyClassName } from "./class-modifier.js";
+import { modifyStyle } from "./style-modifier.js";
 import { reorderChildren } from "./reorder.js";
 import { insertComponent } from "./component-inserter.js";
 import { parseClass } from "../tailwind/parser.js";
@@ -141,6 +142,24 @@ export class MutationWriter {
             mutation.add,
             mutation.remove
           );
+          break;
+        }
+
+        case "modify-style": {
+          const applied = modifyStyle(
+            sourceFile,
+            mutation.source.line,
+            mutation.source.column,
+            mutation.property,
+            mutation.value === "" ? undefined : mutation.value,
+          );
+          if (!applied) {
+            return {
+              success: false,
+              error: `Inline style for "${mutation.property}" could not be mutated (dynamic value or non-object style).`,
+              filesModified: [],
+            };
+          }
           break;
         }
 

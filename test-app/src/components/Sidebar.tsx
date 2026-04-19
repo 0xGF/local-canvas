@@ -35,7 +35,7 @@ function NavSection({
           {title}
         </p>
       )}
-      <ul className="space-y-0">
+      <ul>
         {items.map((item) => {
           const isActive = pathname === item.href;
           return (
@@ -65,13 +65,13 @@ export function Sidebar() {
   const { pathname } = useLocation();
 
   return (
-    <aside className="hidden md:flex flex-col w-[180px] shrink-0 overflow-y-auto border-r border-neutral-100">
+    <aside className="hidden md:flex flex-col w-[180px] shrink-0 overflow-y-auto border-r border-neutral-100 px-3">
       {/* Logo */}
-      <div className="pt-12 2xl:pb-[30px]">
-        <Link to="/overview" className="flex items-center gap-2">
-          <LocalCanvasLogo className="2xl:mb-[29px] md:mb-[19px] 2xl:w-[152px] 2xl:h-[53px] md:w-[141px] md:h-[39px]" />
+      <div className="pt-12 pb-6">
+        <Link to="/overview" className="block">
+          <LocalCanvasLogo className="w-[120px] h-[39px]" />
         </Link>
-        <span className="text-[11px] text-[#a8a29e] mt-0.5 block">v0.1.0</span>
+        <span className="text-[11px] text-[#a8a29e] mt-1 block">v0.1.0</span>
       </div>
 
       {/* Nav */}
@@ -82,7 +82,7 @@ export function Sidebar() {
 
         <Separator className="my-3" />
 
-        <ul className="space-y-0">
+        <ul>
           <li>
             <a
               href="https://github.com"

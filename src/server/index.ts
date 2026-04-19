@@ -44,7 +44,17 @@ export async function createServer(options: ServerOptions) {
     }
 
     // Agent-undo endpoints — see src/server/agent-undo.ts for layout.
+    //
+    // These are same-origin only: the overlay is served by this same editor
+    // proxy, so its `fetch("/__canvas/…")` calls land here without CORS. We
+    // deliberately do NOT set Access-Control-Allow-Origin — with these
+    // endpoints writing/restoring project files, wildcard CORS would let any
+    // site the user visits drive them via a cross-origin POST. `isLocalSameOrigin`
+    // is belt-and-braces: it rejects cross-origin POSTs that carry an Origin or
+    // Referer pointing anywhere other than this server, catching preflight-less
+    // requests (simple content types) that otherwise slip past the browser.
     if (req.url === "/__canvas/agent-snapshot" && req.method === "POST") {
+      if (!isLocalSameOrigin(req, serverPort)) { res.writeHead(403).end(); return; }
       readJsonBody(req).then((raw) => {
         try {
           const body = (raw ?? {}) as Record<string, unknown>;
@@ -53,10 +63,10 @@ export async function createServer(options: ServerOptions) {
             files: Array.isArray(body.files) ? body.files as never : [],
             summary: typeof body.summary === "string" ? body.summary : undefined,
           });
-          res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+          res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: true, annotationId: snap.annotationId, createdAt: snap.createdAt }));
         } catch (err) {
-          res.writeHead(400, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+          res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: false, error: String(err) }));
         }
       }).catch(() => {
@@ -65,31 +75,33 @@ export async function createServer(options: ServerOptions) {
       return;
     }
     if (req.url === "/__canvas/agent-undo" && req.method === "GET") {
-      res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+      if (!isLocalSameOrigin(req, serverPort)) { res.writeHead(403).end(); return; }
+      res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(listSnapshots(projectRoot)));
       return;
     }
     if (req.url === "/__canvas/agent-simulate" && req.method === "POST") {
+      if (!isLocalSameOrigin(req, serverPort)) { res.writeHead(403).end(); return; }
       readJsonBody(req).then((raw) => {
         const body = (raw ?? {}) as Record<string, unknown>;
         const id = String(body.annotationId ?? "");
         const rel = String(body.filePath ?? "");
         if (!id || !rel) {
-          res.writeHead(400, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+          res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: false, error: "annotationId and filePath required" }));
           return;
         }
         try {
           const result = simulateAgentEdit(projectRoot, id, rel);
           if (!result) {
-            res.writeHead(404, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+            res.writeHead(404, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: false, error: "file not found or unsafe path" }));
             return;
           }
-          res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+          res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: true, ...result }));
         } catch (err) {
-          res.writeHead(400, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+          res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: false, error: String(err) }));
         }
       }).catch(() => {
@@ -98,21 +110,22 @@ export async function createServer(options: ServerOptions) {
       return;
     }
     if (req.url === "/__canvas/agent-undo" && req.method === "POST") {
+      if (!isLocalSameOrigin(req, serverPort)) { res.writeHead(403).end(); return; }
       readJsonBody(req).then((raw) => {
         const body = (raw ?? {}) as Record<string, unknown>;
         const id = String(body.annotationId ?? "");
         if (!id) {
-          res.writeHead(400, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+          res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: false, error: "annotationId required" }));
           return;
         }
         const result = applyUndo(projectRoot, id);
         if (!result) {
-          res.writeHead(404, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+          res.writeHead(404, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: false, error: "no snapshot for this annotation" }));
           return;
         }
-        res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+        res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, restored: result.restored, summary: result.summary }));
       }).catch(() => {
         res.writeHead(400).end();
@@ -144,6 +157,39 @@ export async function createServer(options: ServerOptions) {
     server.on("error", reject);
     server.listen(serverPort, () => resolve());
   });
+}
+
+/** Reject requests that originated from a different origin. Because we set
+ *  no Access-Control-Allow-Origin header, the browser already blocks the
+ *  response from being read cross-origin for preflighted requests — but a
+ *  simple request (POST with `text/plain` etc.) will still hit the server and
+ *  execute its side effect before the browser checks CORS. This function
+ *  rejects those: if the request has an Origin header, it must match our host;
+ *  if it has no Origin (e.g. a same-origin fetch in some browsers, or tools
+ *  like curl), we fall back to Referer — and allow the request only if the
+ *  host also matches, or if there's no Referer at all (curl, MCP clients). */
+function isLocalSameOrigin(req: import("http").IncomingMessage, serverPort: number): boolean {
+  const origin = req.headers.origin;
+  const referer = req.headers.referer;
+  const check = (urlStr: string | undefined): boolean | null => {
+    if (!urlStr) return null;
+    try {
+      const u = new URL(urlStr);
+      const portMatches = (u.port || (u.protocol === "https:" ? "443" : "80")) === String(serverPort);
+      const hostIsLocal = u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "[::1]";
+      return portMatches && hostIsLocal;
+    } catch {
+      return false;
+    }
+  };
+  const originCheck = check(origin);
+  if (originCheck !== null) return originCheck;
+  const refererCheck = check(referer);
+  if (refererCheck !== null) return refererCheck;
+  // No Origin and no Referer — almost always a non-browser caller (curl, MCP
+  // client, or a same-origin fetch without these headers). Browsers attach
+  // Origin to every cross-origin request, so the absence is safe to trust.
+  return true;
 }
 
 /** Read a JSON body from an incoming request, capped at 2 MB so a pathological

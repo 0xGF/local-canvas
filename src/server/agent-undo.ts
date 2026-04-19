@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { resolve, dirname, relative, sep } from "path";
+import { resolve, dirname, relative, sep, isAbsolute } from "path";
 
 /**
  * Per-project on-disk snapshot store for agent-driven edits.
@@ -60,9 +60,14 @@ function writeStore(projectRoot: string, entries: Snapshot[]) {
 /** Reject paths that try to escape the project root via `..` or an absolute path. */
 function isSafeRelativePath(projectRoot: string, relPath: string): boolean {
   if (!relPath) return false;
+  // Absolute inputs (Unix `/…`, Windows `C:\…` or `\\server\share`) are rejected
+  // outright — snapshots are keyed by project-relative paths only.
+  if (isAbsolute(relPath)) return false;
   const resolved = resolve(projectRoot, relPath);
   const r = relative(projectRoot, resolved);
-  return !!r && !r.startsWith("..") && !r.startsWith(sep + "..") && !resolve(relPath).startsWith(sep);
+  // `r` is empty when the caller passed the project root itself; `..` or
+  // `../…` means the resolved path escaped the root.
+  return !!r && !r.startsWith("..") && !r.startsWith(sep + "..");
 }
 
 /**

@@ -9,8 +9,13 @@ import {
   hideAnnotation,
   getHiddenAnnotationIds,
   scrollToAndOpenAnnotation,
+  listAgentUndoEntries,
+  undoAgentChange,
+  simulateAgentEdit,
   type Annotation,
+  type AgentUndoEntry,
 } from "../utils/agentation.js";
+import { useEditorStore } from "../stores/editor-store.js";
 
 const C = THEME;
 
@@ -42,9 +47,12 @@ interface HistoryRowProps {
   a: Annotation;
   onOpen: (a: Annotation) => void;
   onHide: (id: string) => void;
+  undoAvailable: boolean;
+  onUndo: (id: string) => void;
+  onSimulate: (a: Annotation) => void;
 }
 
-const HistoryRow = React.memo(function HistoryRow({ a, onOpen, onHide }: HistoryRowProps) {
+const HistoryRow = React.memo(function HistoryRow({ a, onOpen, onHide, undoAvailable, onUndo, onSimulate }: HistoryRowProps) {
   const [hovered, setHovered] = useState(false);
   const fileTail = a.elementPath?.split("/").pop() || a.elementPath;
   const tag = a.element?.match(/^<(\w+)>/)?.[1] || "?";
@@ -101,6 +109,39 @@ const HistoryRow = React.memo(function HistoryRow({ a, onOpen, onHide }: History
           {lastReply}
         </div>
       )}
+      <div style={{ marginTop: 6, marginLeft: 12, display: "flex", gap: 6 }}>
+        {undoAvailable ? (
+          <button
+            onClick={e => { e.stopPropagation(); onUndo(a.id); }}
+            style={{
+              fontSize: 10, color: C.warning,
+              background: "transparent",
+              border: `1px solid ${C.borderLight}`,
+              padding: "2px 8px", borderRadius: 3,
+              cursor: "pointer", fontFamily: C.mono,
+            }}
+            title="Restore the files as they were before the agent edited them"
+          >
+            Undo agent change
+          </button>
+        ) : (
+          a.elementPath && a.elementPath.includes(":") && (
+            <button
+              onClick={e => { e.stopPropagation(); onSimulate(a); }}
+              style={{
+                fontSize: 10, color: C.fgMuted,
+                background: "transparent",
+                border: `1px dashed ${C.borderLight}`,
+                padding: "2px 8px", borderRadius: 3,
+                cursor: "pointer", fontFamily: C.mono,
+              }}
+              title="Dev helper — writes a marker line at the top of this annotation's file so you can see Undo restore it"
+            >
+              Simulate agent edit
+            </button>
+          )
+        )}
+      </div>
     </div>
   );
 });
@@ -119,22 +160,59 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => getHiddenAnnotationIds());
   const [loading, setLoading] = useState(false);
+  const [undoEntries, setUndoEntries] = useState<AgentUndoEntry[]>([]);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const showToast = useEditorStore(s => s.showToast);
 
   const refresh = useCallback(async () => {
     if (!currentSessionId()) { setAnnotations([]); return; }
     setLoading(true);
     try {
-      const list = await listAnnotations();
+      const [list, undoList] = await Promise.all([
+        listAnnotations(),
+        listAgentUndoEntries(),
+      ]);
       // Newest first
       list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
       setAnnotations(list);
+      setUndoEntries(undoList);
     } catch {
       // Server unreachable — leave previous state
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const handleSimulate = useCallback(async (a: Annotation) => {
+    // Take the first path from comma-joined groups so the simulated edit
+    // targets a real file on disk.
+    const path = (a.elementPath || "").split(",")[0].trim();
+    const lastColon = path.lastIndexOf(":");
+    if (lastColon < 0) return;
+    const filePath = path.slice(0, lastColon);
+    const ok = await simulateAgentEdit(a.id, filePath);
+    if (ok) {
+      showToast(`Simulated agent edit to ${filePath.split("/").pop()}`);
+      refresh();
+    } else {
+      showToast("Couldn't simulate (file not resolvable?)");
+    }
+  }, [refresh, showToast]);
+
+  const handleUndo = useCallback(async (id: string) => {
+    const result = await undoAgentChange(id);
+    if (!result) {
+      showToast("Nothing to undo");
+      return;
+    }
+    const count = result.restored.length;
+    const summary = result.summary
+      ? `Undid: ${result.summary}`
+      : `Undid: ${count} file${count === 1 ? "" : "s"} restored`;
+    showToast(summary);
+    // Refresh right away so the Undo button disappears from the row.
+    refresh();
+  }, [refresh, showToast]);
 
   useEffect(() => {
     if (!open) {
@@ -183,6 +261,8 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
 
   const visible = annotations.filter(a => !hiddenIds.has(a.id));
   const pendingCount = visible.filter(a => a.status === "pending" || !a.status).length;
+  const undoIds = new Set(undoEntries.map(e => e.annotationId));
+  const latestUndoId = undoEntries[0]?.annotationId;
 
   return (
     <div style={{ position: "relative" }}>
@@ -233,6 +313,29 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
                 </button>
               </div>
 
+              {latestUndoId && (
+                <div style={{
+                  padding: "6px 12px",
+                  borderBottom: `1px solid ${C.borderLight}`,
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  fontSize: 10, color: C.fgMuted, fontFamily: C.mono,
+                }}>
+                  <span>{undoEntries.length} agent edit{undoEntries.length === 1 ? "" : "s"} recoverable</span>
+                  <button
+                    onClick={() => handleUndo(latestUndoId)}
+                    style={{
+                      background: "transparent",
+                      border: `1px solid ${C.borderLight}`,
+                      color: C.warning,
+                      padding: "2px 8px", borderRadius: 3,
+                      cursor: "pointer", fontFamily: C.mono, fontSize: 10,
+                    }}
+                  >
+                    Undo last
+                  </button>
+                </div>
+              )}
+
               <div style={{ flex: 1, overflowY: "auto" }}>
                 {visible.length === 0 ? (
                   <div style={{ padding: "24px 16px", textAlign: "center", color: C.fgMuted, fontSize: 11 }}>
@@ -250,6 +353,9 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
                       a={a}
                       onOpen={handleOpenAnnotation}
                       onHide={handleHide}
+                      undoAvailable={undoIds.has(a.id)}
+                      onUndo={handleUndo}
+                      onSimulate={handleSimulate}
                     />
                   ))
                 )}

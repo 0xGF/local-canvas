@@ -135,6 +135,35 @@ claude mcp add agentation -- npx agentation-mcp server
 
 The agentation HTTP server starts on `:4747` alongside Local Canvas (via `bin/start.sh`). When you ctrl-click an element → Ask AI → type a prompt, the overlay POSTs an annotation with the element's file path, line, tag, and classes. Your agent picks it up via MCP tools (`agentation_get_pending`, `agentation_resolve`, etc.) and makes the changes.
 
+### Agent workflow conventions
+
+The editor exposes two HTTP endpoints on the editor port (default `:6966`) so a connected agent can make its edits recoverable:
+
+- `POST /__canvas/agent-snapshot` — record pre-edit contents before writing
+  ```json
+  {
+    "annotationId": "…",
+    "files": [{ "path": "src/components/Header.tsx", "contentBefore": "…" }],
+    "summary": "Add text-blue-600 to h2 in Overview.tsx"
+  }
+  ```
+- `POST /__canvas/agent-undo` — body `{ "annotationId": "…" }`; restores the files and drops the snapshot.
+- `GET /__canvas/agent-undo` — lists recoverable entries (no file contents, just metadata).
+
+Snapshots live in `.canvas-undo/snapshots.json` at the project root (gitignored), FIFO-trimmed to the 10 most recent entries.
+
+Agents acting on annotations should:
+1. Call `agent-snapshot` with the pre-edit contents of every file they're about to touch.
+2. Make the edit.
+3. Call `agentation_resolve` with a short summary.
+4. Immediately call `agentation_dismiss` on the same annotation so the row leaves the user's queue.
+
+Group annotations (`elementPaths.length > 1`) follow the same dismissal flow — resolving once covers the whole group. For multi-file edits, include every affected file in a single `agent-snapshot` call so **Undo** restores them together.
+
+### Housekeeping
+
+`bin/purge-resolved.sh` removes resolved / dismissed annotations older than N days from `~/.agentation/store.db` (defaults to 14 days). Use `DRY_RUN=1 bin/purge-resolved.sh` to preview.
+
 ## License
 
 MIT

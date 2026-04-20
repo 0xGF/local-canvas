@@ -207,7 +207,13 @@ export async function createServer(options: ServerOptions) {
 
   return new Promise<void>((resolve, reject) => {
     server.on("error", reject);
-    server.listen(serverPort, () => resolve());
+    // Bind to loopback only — the editor exposes endpoints that read/write
+    // project files, so we never want it reachable from the LAN or through
+    // accidental port-forwards. Override with CANVAS_BIND if you deliberately
+    // need LAN access (e.g. testing on a phone); the same-origin gate in
+    // isLocalSameOrigin will still apply.
+    const host = process.env.CANVAS_BIND || "127.0.0.1";
+    server.listen(serverPort, host, () => resolve());
   });
 }
 

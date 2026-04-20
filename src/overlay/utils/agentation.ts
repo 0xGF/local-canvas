@@ -62,20 +62,39 @@ export interface PostAnnotationOpts {
 
 let _sessionId: string | null = null;
 let _sessionUrl: string | null = null;
+let _sessionPromise: Promise<string> | null = null;
 
-/** Get the current session id, or create one for the current page URL. */
+/** Identity key for a page — origin + path only. Intentionally ignores
+ *  hash and query params so in-page anchor clicks, tab-state query strings,
+ *  and routed SPAs don't each spawn a new session for every micro-navigation.
+ *  Without this, posting an annotation goes to session A while the history
+ *  popover polls session B, and the user sees an empty list even though the
+ *  server has their annotation. */
+function sessionKey(): string {
+  return `${window.location.origin}${window.location.pathname}`;
+}
+
+/** Get the current session id, or create one for the current page.
+ *  Requests in flight share the same in-flight promise so rapid-fire callers
+ *  (AnnotationPins + AskAIHistory mounting at the same time, a click handler
+ *  racing a poll tick) don't each open their own session against the server. */
 export async function getOrCreateSession(): Promise<string> {
-  if (_sessionId && _sessionUrl === window.location.href) return _sessionId;
-  const res = await fetch(`${BASE}/sessions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url: window.location.href }),
-  });
-  if (!res.ok) throw new Error(`agentation: ${res.status}`);
-  const session = await res.json();
-  _sessionId = session.id;
-  _sessionUrl = window.location.href;
-  return session.id;
+  const key = sessionKey();
+  if (_sessionId && _sessionUrl === key) return _sessionId;
+  if (_sessionPromise) return _sessionPromise;
+  _sessionPromise = (async () => {
+    const res = await fetch(`${BASE}/sessions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: key }),
+    });
+    if (!res.ok) throw new Error(`agentation: ${res.status}`);
+    const session = await res.json();
+    _sessionId = session.id;
+    _sessionUrl = key;
+    return session.id;
+  })().finally(() => { _sessionPromise = null; });
+  return _sessionPromise;
 }
 
 /** Returns the current session id without creating one. */

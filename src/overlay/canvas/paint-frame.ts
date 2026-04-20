@@ -449,10 +449,29 @@ export function paintFrame(
         const prefix = SIDE_PREFIX[type][side];
         // Hit area — always present for dragging
         const hitSize = Math.max(14, screenVal);
-        badges.push({ x: x - hitSize / 2, y: y - 7, w: hitSize, h: 14, type, side, value: cssVal, prefix });
+        const hx = x - hitSize / 2, hy = y - 7, hw = hitSize, hh = 14;
+        badges.push({ x: hx, y: hy, w: hw, h: hh, type, side, value: cssVal, prefix });
+        // Hover affordance: when the cursor is over the hit rect, scale the
+        // value badge up slightly so the user knows it's drag-ready. mousePos
+        // is iframe-doc coords (translated by the caller). Skip during an
+        // active drag of a DIFFERENT badge so only the one being dragged
+        // stays visually "active".
+        const hovered = !!mousePos &&
+          mousePos.x >= hx && mousePos.x <= hx + hw &&
+          mousePos.y >= hy && mousePos.y <= hy + hh &&
+          (!activeDrag || activeDrag.prefix === prefix);
         // Text badge — only when zoomed in enough to be readable and not overlap notches
         if (screenVal >= 24 && zoomScale >= 0.8) {
-          drawValueBadge(ctx, Math.round(cssVal), color, x, y);
+          if (hovered) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(1.2, 1.2);
+            ctx.translate(-x, -y);
+            drawValueBadge(ctx, Math.round(cssVal), color, x, y);
+            ctx.restore();
+          } else {
+            drawValueBadge(ctx, Math.round(cssVal), color, x, y);
+          }
         }
       };
 

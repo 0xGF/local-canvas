@@ -7,7 +7,7 @@ import { useViewportStore } from "../hooks/useViewport.js";
 import { useWebSocket } from "../hooks/useWebSocket.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
 import { getBreakpointPrefix } from "../../shared/breakpoints.js";
-import { attachToDocumentAndIframe, bind, getIframeDocument, getIframeOffset } from "../utils/iframe-events.js";
+import { attachToDocumentAndIframe, bind, getIframeDocument, getIframeOffset, getEditorIframe } from "../utils/iframe-events.js";
 import { markDragEnd } from "../utils/drag-state.js";
 import { setStyleProp } from "../utils/dom-style.js";
 import { sourceStyleHasProperty, camelToKebabCss } from "../utils/inline-style-source.js";
@@ -147,9 +147,22 @@ export function useSpacingDrag(
 
   // Badge + tag hit testing
   useEffect(() => {
+    // Badge hit rects live in iframe-doc coord space (the overlay canvas is a
+    // sibling of the iframe inside the transformed container — see CLAUDE.md).
+    // Cursor events here arrive in outer-screen coords via translateCoords:true.
+    // Translate the cursor into iframe-doc space before comparing to hit rects.
+    function toIframeDoc(x: number, y: number): { x: number; y: number } {
+      const iframe = getEditorIframe();
+      if (!iframe) return { x, y };
+      const off = getIframeOffset(iframe);
+      if (!off.scale) return { x, y };
+      return { x: (x - off.x) / off.scale, y: (y - off.y) / off.scale };
+    }
+
     function hitTestBadge(x: number, y: number): BadgeHit | null {
+      const p = toIframeDoc(x, y);
       for (const hit of badgeHitsRef.current) {
-        if (x >= hit.x && x <= hit.x + hit.w && y >= hit.y && y <= hit.y + hit.h) return hit;
+        if (p.x >= hit.x && p.x <= hit.x + hit.w && p.y >= hit.y && p.y <= hit.y + hit.h) return hit;
       }
       return null;
     }
@@ -157,15 +170,17 @@ export function useSpacingDrag(
     function hitTestTag(x: number, y: number): boolean {
       const t = tagBadgeHitRef.current;
       if (!t) return false;
-      if (!(x >= t.x && x <= t.x + t.w && y >= t.y && y <= t.y + t.h)) return false;
+      const p = toIframeDoc(x, y);
+      if (!(p.x >= t.x && p.x <= t.x + t.w && p.y >= t.y && p.y <= t.y + t.h)) return false;
       // Resize handles at top-left corner overlap the tag badge's bottom edge.
       // If the click also hits a handle, resize wins — reject the tag hit.
+      // Handles are stored in iframe-doc coords (same as badge hits).
       const handles = resizeHandlesRef?.current;
       if (handles) {
         const TOL = 4; // must match tolerance in use-resize-handles.ts
         for (const h of handles) {
-          if (x >= h.x - TOL && x <= h.x + h.w + TOL &&
-              y >= h.y - TOL && y <= h.y + h.h + TOL) {
+          if (p.x >= h.x - TOL && p.x <= h.x + h.w + TOL &&
+              p.y >= h.y - TOL && p.y <= h.y + h.h + TOL) {
             return false;
           }
         }

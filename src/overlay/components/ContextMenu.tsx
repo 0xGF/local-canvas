@@ -647,16 +647,19 @@ const AnnotatePill = React.memo(function AnnotatePill({
         display: "flex",
         // Center vertically so the placeholder/caret sits on the same axis
         // as the submit button at rest. When the textarea grows past one
-        // line the button stays centred — matches the Figma comment UI.
+        // line the button stays centred.
         alignItems: "center",
-        gap: 10,
-        padding: "8px 8px 8px 18px",
-        borderRadius: 28,
-        background: "rgba(32, 32, 36, 0.82)",
-        backdropFilter: "blur(24px) saturate(180%)",
-        WebkitBackdropFilter: "blur(24px) saturate(180%)",
+        gap: 8,
+        padding: "6px 6px 6px 12px",
+        // Match the rest of the overlay chrome (toolbar, context menu, popovers)
+        // — solid dark surface, subtle border, 10px radius, single consistent
+        // shadow. Previously a floating frosted pill that felt out of place
+        // against the rest of the UI.
+        borderRadius: 10,
+        background: C.bg,
+        border: `1px solid ${C.border}`,
         boxShadow:
-          "0 10px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06)",
+          "0 10px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3)",
         zIndex: 2147483647,
         opacity: pos ? 1 : 0, // hide until measured so it doesn't flicker at (-9999,-9999)
         transition: "opacity 100ms ease",
@@ -681,16 +684,16 @@ const AnnotatePill = React.memo(function AnnotatePill({
           // Match the circular send button height so both sit on the same
           // baseline when the input is a single line. Grows vertically
           // (capped by maxHeight) as the user types.
-          minHeight: 32,
+          minHeight: 28,
           maxHeight: 160,
           resize: "none",
           background: "transparent",
           border: "none",
           outline: "none",
-          color: "#f5f5f5",
-          fontSize: 14,
-          lineHeight: "22px",
-          padding: "5px 0",
+          color: C.fg,
+          fontSize: 13,
+          lineHeight: "20px",
+          padding: "4px 0",
           margin: 0,
           display: "block",
           fontFamily: C.font,
@@ -700,7 +703,7 @@ const AnnotatePill = React.memo(function AnnotatePill({
           const el = e.currentTarget;
           // Reset then set from scrollHeight so the box shrinks when the
           // user deletes text.
-          el.style.height = "32px";
+          el.style.height = "28px";
           el.style.height = Math.min(160, el.scrollHeight) + "px";
         }}
       />
@@ -710,12 +713,15 @@ const AnnotatePill = React.memo(function AnnotatePill({
         aria-label="Send"
         style={{
           flexShrink: 0,
-          width: 32,
-          height: 32,
-          borderRadius: "50%",
+          width: 28,
+          height: 28,
+          borderRadius: 6,
           border: "none",
-          background: canSend ? "#fff" : "rgba(255,255,255,0.12)",
-          color: canSend ? "#111" : "rgba(255,255,255,0.35)",
+          // Accent-blue send (matches the rest of the overlay's primary
+          // action treatment — toolbar, toggle group, etc.). Disabled state
+          // uses the same muted surface as other idle controls.
+          background: canSend ? C.accent : "rgba(255,255,255,0.06)",
+          color: canSend ? "#fff" : C.fgMuted,
           cursor: canSend ? "pointer" : "default",
           display: "flex",
           alignItems: "center",
@@ -725,11 +731,11 @@ const AnnotatePill = React.memo(function AnnotatePill({
         }}
         title={canSend ? "Send (↵)" : undefined}
       >
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
           <path
             d="M8 13V3M8 3l-4 4M8 3l4 4"
             stroke="currentColor"
-            strokeWidth="1.75"
+            strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
           />

@@ -106,7 +106,24 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
       const sd = spacingDragRef.current;
       const activeDrag = sd?.moved ? { prefix: sd.badge.prefix, value: sd.lastPx } : null;
 
-      const result = paintFrame(ctx!, canvas!, editor, viewport, iframeOffset, paintCtx, activeDrag, mousePosRef.current);
+      // mousePosRef is tracked in outer-screen coords. paintFrame's badge/hit
+      // rects are in iframe-doc coords (canvas sits inside the transformed
+      // container). Translate once here so the hover-scale feedback below can
+      // compare mouse against badge rects in the same space.
+      const iframe = getEditorIframe();
+      let mouseDoc: { x: number; y: number } | null = null;
+      if (mousePosRef.current) {
+        if (iframe) {
+          const off = getIframeOffset(iframe);
+          mouseDoc = off.scale
+            ? { x: (mousePosRef.current.x - off.x) / off.scale, y: (mousePosRef.current.y - off.y) / off.scale }
+            : mousePosRef.current;
+        } else {
+          mouseDoc = mousePosRef.current;
+        }
+      }
+
+      const result = paintFrame(ctx!, canvas!, editor, viewport, iframeOffset, paintCtx, activeDrag, mouseDoc);
 
       // Draw drag boundary line during active spacing drag
       if (sd?.moved && editorState.selectedElement) {

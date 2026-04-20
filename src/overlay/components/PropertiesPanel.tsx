@@ -398,6 +398,37 @@ const PadYGlyph = () => (
   </svg>
 );
 
+const RotateGlyph = () => (
+  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M10 5.5A4.5 4.5 0 1 1 5.5 1v2.5" />
+    <path d="M5.5 0.5L7 2L5.5 3.5" />
+  </svg>
+);
+const FlipHGlyph = () => (
+  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeLinejoin="round" aria-hidden>
+    <path d="M1 9.5h4.5V2.5L1 9.5z" />
+    <path d="M11 9.5H6.5V2.5L11 9.5z" />
+  </svg>
+);
+const FlipVGlyph = () => (
+  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeLinejoin="round" aria-hidden>
+    <path d="M9.5 1v4.5H2.5L9.5 1z" />
+    <path d="M9.5 11V6.5H2.5L9.5 11z" />
+  </svg>
+);
+const AngleGlyph = () => (
+  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M1 11 L11 11" />
+    <path d="M1 11 L9 3" />
+    <path d="M3.5 10.5 A5 5 0 0 0 5.3 8.3" />
+  </svg>
+);
+const MinusGlyph = () => (
+  <svg width="9" height="2" viewBox="0 0 9 2" fill="none" stroke="currentColor" aria-hidden>
+    <line x1="0" y1="1" x2="9" y2="1" strokeLinecap="round" />
+  </svg>
+);
+
 // ── Figma/Framer-style padding: 2-value (px/py) default, toggle to 4 individual sides.
 // Any individually-set side drops the matching axis class to keep Tailwind output clean.
 function FlexPadding({ h, sel, cs }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]>; cs: CSSStyleDeclaration | null }) {
@@ -550,8 +581,69 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
     h.set(prefix, v);
   }, [h]);
 
+  const flipX = !!h.has("-scale-x-100");
+  const flipY = !!h.has("-scale-y-100");
+  const toggleScale = (cls: string) => {
+    if (h.has(cls)) {
+      h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: [h.actual(cls) || cls] });
+    } else {
+      h.sendPrefixed({ type: "modify-class", source: sel.source!, add: [cls] });
+    }
+  };
+  const rotateBy90 = () => {
+    const cur = h.get("rotate");
+    const n = parseInt(cur, 10) || 0;
+    const next = (n + 90) % 360;
+    h.set("rotate", next === 0 ? "" : String(next));
+  };
+
   return (
     <Section title="Layout" defaultOpen>
+      <div className="grid grid-cols-3 gap-1.5">
+        <CompactField icon="X">
+          <ValueInput value={h.get("translate-x")} strategy={LENGTH} placeholder="0"
+            onChange={v => h.set("translate-x", v)} />
+        </CompactField>
+        <CompactField icon="Y">
+          <ValueInput value={h.get("translate-y")} strategy={LENGTH} placeholder="0"
+            onChange={v => h.set("translate-y", v)} />
+        </CompactField>
+        <CompactField icon={<AngleGlyph />}>
+          <ValueInput value={h.get("rotate")} strategy={ANGLE} placeholder="0°"
+            onChange={v => h.set("rotate", v)} />
+        </CompactField>
+      </div>
+      <div className="grid grid-cols-[1fr_1fr_auto] gap-1.5 mt-1.5">
+        <CompactField icon="W">
+          <ValueInput value={h.get("w")} presets={SIZE_PRESETS} strategy={LENGTH}
+            placeholder={phPx(cs?.width, "auto")}
+            onChange={v => h.set("w", v)} />
+        </CompactField>
+        <CompactField icon="H">
+          <ValueInput value={h.get("h")} presets={SIZE_PRESETS} strategy={LENGTH}
+            placeholder={phPx(cs?.height, "auto")}
+            onChange={v => h.set("h", v)} />
+        </CompactField>
+        <div className="flex items-center gap-0.5">
+          <Button variant="ghost" size="icon" className="size-6 text-canvas-muted-fg"
+            title="Rotate 90°" onClick={rotateBy90}>
+            <RotateGlyph />
+          </Button>
+          <Button variant="ghost" size="icon"
+            aria-pressed={flipX}
+            className={cn("size-6", flipX ? "text-canvas-accent" : "text-canvas-muted-fg")}
+            title="Flip horizontal" onClick={() => toggleScale("-scale-x-100")}>
+            <FlipHGlyph />
+          </Button>
+          <Button variant="ghost" size="icon"
+            aria-pressed={flipY}
+            className={cn("size-6", flipY ? "text-canvas-accent" : "text-canvas-muted-fg")}
+            title="Flip vertical" onClick={() => toggleScale("-scale-y-100")}>
+            <FlipVGlyph />
+          </Button>
+        </div>
+      </div>
+
       <SubLabel>Display Mode</SubLabel>
       <ToggleGroup
         value={display}
@@ -572,7 +664,18 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
         }}
       />
       {isFlex && (
-        <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
+        <div style={{ display: "grid", gap: 6, marginTop: 10 }}>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-canvas-fg">Flex</span>
+            <Button variant="ghost" size="icon" className="size-5 text-canvas-muted-fg"
+              title="Remove flex"
+              onClick={() => {
+                const actualFlex = h.actual("flex") || "flex";
+                h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: [actualFlex] });
+              }}>
+              <MinusGlyph />
+            </Button>
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, alignItems: "stretch" }}>
             <ToggleGroup
               value={flexDirVal.startsWith("col") ? "col" : "row"}

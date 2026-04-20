@@ -47,12 +47,28 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
 
   // ── Paint loop with dirty-checking ──
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    // Look up the in-container overlay canvas each frame — it only mounts
+    // once ResponsiveFrame has rendered, and remounts on breakpoint change.
+    function findTargetCanvas(): HTMLCanvasElement | null {
+      const host = document.getElementById("local-canvas-host");
+      const shadow = host?.shadowRoot;
+      return (shadow?.querySelector("[data-canvas-overlay-target='true']") as HTMLCanvasElement | null) ?? null;
+    }
+
+    let canvas: HTMLCanvasElement | null = findTargetCanvas();
+    let ctx: CanvasRenderingContext2D | null = canvas?.getContext("2d") ?? null;
 
     function frame() {
+      // Re-resolve the canvas if it wasn't ready on mount OR has been
+      // replaced (breakpoint switch, React structural change).
+      if (!canvas || !ctx || !canvas.isConnected) {
+        canvas = findTargetCanvas();
+        ctx = canvas?.getContext("2d") ?? null;
+        if (!canvas || !ctx) {
+          rafRef.current = requestAnimationFrame(frame);
+          return;
+        }
+      }
       const editorState = useEditorStore.getState();
       const editor = {
         selectedElement: editorState.selectedElement,
@@ -80,9 +96,11 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
       const changedFiles = new Set(changes.map(c => `${c.filePath}:${c.line}`));
       const paintCtx: PaintContext = { changedFiles };
 
-      // Compute iframe offset from shadow DOM — works for hover (no selection) too.
-      const iframeEl = getEditorIframe();
-      const iframeOffset = iframeEl ? getIframeOffset(iframeEl) : { x: 0, y: 0, scale: 1 };
+      // Canvas is now inside the transformed container — its coord space IS
+      // iframe-doc space, so every draw happens at raw rect coords with no
+      // offset/scale math. `getIframeOffset` is still used elsewhere (e.g.
+      // event coord translation) but paint/overlay rendering doesn't need it.
+      const iframeOffset = { x: 0, y: 0, scale: 1 };
 
       // Pass active drag state so spacing zones update in real-time during drag
       const sd = spacingDragRef.current;
@@ -100,7 +118,9 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
           left: rawRect.left * ifs2 + ox2, top: rawRect.top * ifs2 + oy2,
           width: rawRect.width * ifs2, height: rawRect.height * ifs2,
         };
-        const dragPx = sd.lastPx * viewport.zoom;
+        // Canvas is iframe-doc space → drag distance is in iframe-doc CSS
+        // pixels directly; no * viewport.zoom needed.
+        const dragPx = sd.lastPx;
         const side = sd.badge.side;
         const isPadding = sd.badge.type === "padding";
         const color = isPadding ? COL.padding : COL.margin;

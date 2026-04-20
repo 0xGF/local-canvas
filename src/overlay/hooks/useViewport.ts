@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 import { create } from "zustand";
 import { useEditorStore } from "../stores/editor-store.js";
 import { syncToStorage } from "../utils/persist-state.js";
-import { _setViewportZoomGetter } from "../utils/iframe-events.js";
 
 // ── Viewport store ───────────────────────────────────────────────────────────
 
@@ -64,10 +63,6 @@ export const useViewportStore = create<ViewportState>((set, get) => ({
 
 // Persist viewport state
 syncToStorage(useViewportStore, ["zoom", "panX", "panY"], "viewport", 300);
-
-// Expose current zoom to iframe-events helpers so `iframeRectToScreen*` and
-// `getIframeOffset` can read the source of truth without a circular import.
-_setViewportZoomGetter(() => useViewportStore.getState().zoom);
 
 // ── Restoration (persistence) ────────────────────────────────────────────────
 

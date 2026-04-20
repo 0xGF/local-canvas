@@ -234,9 +234,9 @@ export const LayersPanel = React.memo(function LayersPanel() {
     window.addEventListener("mouseup", onUp);
   }, [width, setWidth]);
 
-  if (!open) return null;
-
-  const handleRowClick = (node: TreeNode, event: React.MouseEvent) => {
+  // Stable row callbacks — taken as deps by the memoized `Row`, so inline
+  // closures would defeat the memo.
+  const handleRowSelect = useCallback((node: TreeNode, event: React.MouseEvent) => {
     if (!node.element.isConnected) return;
     const rect = node.element.getBoundingClientRect();
     // Match iframeRef like useSelection does — look up the current iframe if
@@ -278,7 +278,13 @@ export const LayersPanel = React.memo(function LayersPanel() {
     try {
       node.element.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
     } catch { /* old browsers */ }
-  };
+  }, [selectElement, setContextMenu]);
+
+  const handleRowHoverEnter = useCallback((el: HTMLElement) => {
+    setHovered(el);
+  }, [setHovered]);
+
+  if (!open) return null;
 
   return (
     <div style={panelStyle(width)} data-canvas-overlay="true" data-canvas-layer-panel="true">
@@ -380,9 +386,9 @@ export const LayersPanel = React.memo(function LayersPanel() {
               isExpanded={isExpanded}
               isSelected={isSelected}
               isHovered={isHovered}
-              onToggle={() => toggleExpanded(node.path)}
-              onSelect={(e) => handleRowClick(node, e)}
-              onHoverEnter={() => setHovered(node.element)}
+              onToggle={toggleExpanded}
+              onSelect={handleRowSelect}
+              onHoverEnter={handleRowHoverEnter}
             />
           );
         })}
@@ -409,9 +415,9 @@ interface RowProps {
   isExpanded: boolean;
   isSelected: boolean;
   isHovered: boolean;
-  onToggle: () => void;
-  onSelect: (event: React.MouseEvent) => void;
-  onHoverEnter: () => void;
+  onToggle: (path: string) => void;
+  onSelect: (node: TreeNode, event: React.MouseEvent) => void;
+  onHoverEnter: (el: HTMLElement) => void;
 }
 
 const Row = React.memo(function Row({
@@ -427,10 +433,10 @@ const Row = React.memo(function Row({
   return (
     <div
       data-layer-path={node.path}
-      onClick={onSelect}
+      onClick={(e) => onSelect(node, e)}
       // Right-click behaves like a Ctrl+click on the canvas — same menu
-      onContextMenu={(e) => { e.preventDefault(); onSelect(e); }}
-      onMouseEnter={onHoverEnter}
+      onContextMenu={(e) => { e.preventDefault(); onSelect(node, e); }}
+      onMouseEnter={() => onHoverEnter(node.element)}
       style={{
         position: "relative",
         display: "flex", alignItems: "center", gap: 6,
@@ -449,7 +455,7 @@ const Row = React.memo(function Row({
       )}
       {hasChildren ? (
         <button
-          onClick={(e) => { e.stopPropagation(); onToggle(); }}
+          onClick={(e) => { e.stopPropagation(); onToggle(node.path); }}
           style={{
             display: "flex", alignItems: "center", justifyContent: "center",
             width: 14, height: 14, padding: 0, marginLeft: -2,

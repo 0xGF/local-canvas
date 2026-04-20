@@ -92,7 +92,6 @@ import {
   FirstBracketIcon,
   Link01Icon,
 
-  // Added for files previously importing lucide-react directly
   AlertCircleIcon,
   Loading03Icon,
   Clock01Icon,
@@ -105,12 +104,11 @@ import {
   UserCircleIcon,
 } from "@hugeicons/core-free-icons";
 
-// Re-export HugeIcons icons under the same names the codebase used for
-// lucide-react. Each export is a small forwardRef wrapper so existing call
-// sites like `<Pencil size={14} />` keep working unchanged.
-// The wrapper renders a <span> around the SVG — typed against span-level
-// DOM props so click handlers/refs/style match the outer element, plus the
-// HugeIcons-specific appearance knobs (size, strokeWidth, color).
+// Re-export HugeIcons icons via small forwardRef wrappers so call sites like
+// `<Pencil size={14} />` keep working unchanged. The wrapper renders a <span>
+// around the SVG — typed against span-level DOM props so click
+// handlers/refs/style match the outer element, plus the HugeIcons-specific
+// appearance knobs (size, strokeWidth, color).
 type IconProps = React.HTMLAttributes<HTMLSpanElement> & {
   size?: HugeiconsProps["size"];
   strokeWidth?: HugeiconsProps["strokeWidth"];
@@ -127,8 +125,8 @@ const make = (icon: any, displayName: string) => {
   //      occupies exactly the requested footprint (no shrink, no drift).
   //   2. Force `display: block` on the SVG so no baseline whitespace leaks
   //      into the flex parent.
-  //   3. Default strokeWidth to 2 — lucide's weight, which the rest of the
-  //      UI was designed against.
+  //   3. Default strokeWidth to 2 — the weight the rest of the UI was
+  //      designed against.
   const Component = React.forwardRef<HTMLSpanElement, IconProps>(
     (
       {
@@ -267,7 +265,6 @@ export const MousePointerClick = make(CursorPointer02Icon, "MousePointerClick");
 export const Braces = make(FirstBracketIcon, "Braces");
 export const LinkIcon = make(Link01Icon, "LinkIcon");
 
-// Previously imported directly from lucide-react — now routed through the barrel
 export const AlertCircle = make(AlertCircleIcon, "AlertCircle");
 export const Loader2 = make(Loading03Icon, "Loader2");
 export const Clock = make(Clock01Icon, "Clock");

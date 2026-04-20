@@ -16,6 +16,11 @@ export function deepElementFromPoint(
 ): HTMLElement | null {
   const elements = targetDoc.elementsFromPoint(x, y);
 
+  // Remember the first valid (non-skipped) hit so we can fall back to it in
+  // zero-dim environments (jsdom / not-yet-laid-out DOM) where every rect is
+  // 0×0. Production browsers return a real element via the non-zero path.
+  let firstCandidate: HTMLElement | null = null;
+
   for (const raw of elements) {
     let el = raw as HTMLElement;
     if (isOverlayElement(el)) continue;
@@ -29,29 +34,21 @@ export function deepElementFromPoint(
       el = svg;
     }
 
-    // 0×0 elements have no draggable box — walk up until we find one with area.
-    // Guards against collapsed wrappers (empty <li>, display:contents children, etc.)
-    // causing phantom selection outlines at the page origin.
-    let cursor: HTMLElement | null = el;
-    while (cursor) {
-      const r = cursor.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0) break;
-      const next: HTMLElement | null = cursor.parentElement;
-      if (!next || SKIP_TAGS.has(next.tagName)) { cursor = null; break; }
-      if (next.id && SKIP_IDS.has(next.id)) { cursor = null; break; }
-      cursor = next;
-    }
-    if (!cursor) {
-      // No non-zero ancestor — fall back to the original hit so we don't
-      // silently drop every element in zero-dim environments (jsdom tests,
-      // not-yet-laid-out DOM). Production browsers hit the break above.
-      return el;
-    }
+    if (!firstCandidate) firstCandidate = el;
 
-    return cursor;
+    // Skip 0×0 elements (collapsed wrappers, display:contents children, empty
+    // text-node parents). They aren't visually under the cursor, so walking
+    // UP their parent chain would lock onto a giant ancestor and ignore the
+    // real visible element sitting right below them in hit-test order.
+    // Continuing lets `elementsFromPoint`'s own z-ordering pick the correct
+    // visible sibling instead.
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) continue;
+
+    return el;
   }
 
-  return null;
+  return firstCandidate;
 }
 
 export function isOverlayElement(element: HTMLElement): boolean {

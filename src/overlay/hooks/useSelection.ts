@@ -203,6 +203,16 @@ export function useSelection() {
     (e: MouseEvent) => {
       if (mode !== "edit") return;
       if (useEditorStore.getState().interacting) return;
+      // Iframe-origin mousemove events arrive here with iframe-local
+      // clientX/Y. `elementAtPoint` below assumes outer-screen/viewport coords
+      // and would re-translate them as if they were screen coords — landing
+      // on a totally different element in the iframe-doc (worse at zoom != 1).
+      // Symptom: hovering main content highlights an element in the sidebar.
+      // ResponsiveFrame's onMouseMove (attached directly to the iframe doc)
+      // already handles hover for iframe events with the correct iframe-local
+      // pick, so just bail out here.
+      const targetDoc = (e.target as Node | null)?.ownerDocument;
+      if (targetDoc && targetDoc !== document) return;
       // Layers panel owns hover state when the cursor is inside it — row
       // mouseEnter sets `hoveredElement` so the canvas can mirror-highlight
       // the corresponding DOM element. Don't touch it here.

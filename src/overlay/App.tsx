@@ -1,11 +1,19 @@
 import React, { Suspense, lazy, useEffect } from "react";
 import { CanvasOverlayLayer } from "./components/CanvasOverlayLayer.js";
 import { Toolbar } from "./components/Toolbar.js";
-import { PropertiesPanel } from "./components/PropertiesPanel.js";
-import { LayersPanel } from "./components/LayersPanel.js";
 import { ResponsiveFrame } from "./components/ResponsiveFrame.js";
-import { ContextMenu } from "./components/ContextMenu.js";
-// Only needed once the user is in edit mode and not mid-interaction.
+// Edit-mode-only panels — the user may spend most time in navigate mode, so
+// code-split them out of the initial overlay bundle. All share one Suspense
+// fallback below.
+const PropertiesPanel = lazy(() =>
+  import("./components/PropertiesPanel.js").then(m => ({ default: m.PropertiesPanel }))
+);
+const LayersPanel = lazy(() =>
+  import("./components/LayersPanel.js").then(m => ({ default: m.LayersPanel }))
+);
+const ContextMenu = lazy(() =>
+  import("./components/ContextMenu.js").then(m => ({ default: m.ContextMenu }))
+);
 const AnnotationPins = lazy(() =>
   import("./components/AnnotationPins.js").then(m => ({ default: m.AnnotationPins }))
 );
@@ -80,11 +88,11 @@ export function App() {
     <>
       <ResponsiveFrame />
       {mode === "edit" && !interacting && <CanvasOverlayLayer />}
-      {mode === "edit" && !interacting && <LayersPanel />}
-      {mode === "edit" && !interacting && <PropertiesPanel />}
-      {mode === "edit" && !interacting && <ContextMenu />}
       {mode === "edit" && !interacting && (
         <Suspense fallback={null}>
+          <LayersPanel />
+          <PropertiesPanel />
+          <ContextMenu />
           <AnnotationPins />
         </Suspense>
       )}

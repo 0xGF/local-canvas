@@ -70,9 +70,11 @@ describe("useKeyboard shortcuts", () => {
     const { useKeyboard } = await import("../useKeyboard.js");
     renderHook(() => useKeyboard());
 
-    const event = new KeyboardEvent("keydown", { key: "c", bubbles: true });
-    Object.defineProperty(event, "target", { value: input });
-    document.dispatchEvent(event);
+    // Dispatch on the input — matches real-world bubbling, and makes
+    // composedPath()[0] the input (isTyping uses composedPath first so it
+    // can see through shadow DOM; jsdom's composedPath ignores a manually
+    // re-defined .target, so we must dispatch where the event really originates).
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "c", bubbles: true }));
 
     // Should NOT have changed mode since we're typing
     expect(useEditorStore.getState().mode).toBe("navigate");

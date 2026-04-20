@@ -5,6 +5,7 @@ import { resolveSource } from "../../core/source-map/resolver.js";
 import { deepElementFromPoint } from "../utils/element-picker.js";
 import { wasDragRecent } from "../utils/drag-state.js";
 import { getIframeOffset } from "../utils/iframe-events.js";
+import { HAS_DRAW_ELEMENT, COL } from "../canvas/constants.js";
 import { BREAKPOINT_PRESETS } from "../../shared/breakpoints.js";
 import { THEME } from "../theme.js";
 
@@ -334,40 +335,104 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
         </span>
       </div>
 
-      {/* Frame */}
-      <div style={{
-        width,
-        background: "#fff",
-        borderRadius: 8,
-        boxShadow: "0 4px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06)",
-        overflow: "hidden",
-        position: "relative",
-      }}>
-        <iframe
-          ref={iframeRef}
-          src={frameUrl}
-          scrolling="no"
+      {/* Frame-and-overlay wrapper — creates a relative-positioned box
+          the canvas can absolute-position inside. The canvas MUST be a
+          sibling of the iframe's *parent* (not the iframe itself) —
+          iframes create their own compositing layer that stubbornly
+          paints on top of absolutely-positioned sibling elements even
+          with higher z-index. Hoisting the canvas up one level above
+          the iframe's frame-div works. */}
+      <div style={{ width, height, position: "relative" }}>
+        {/* Frame — holds the iframe. */}
+        <div style={{
+          width,
+          height,
+          background: "#fff",
+          borderRadius: 8,
+          boxShadow: "0 4px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06)",
+          overflow: "hidden",
+          position: "absolute",
+          inset: 0,
+        }}>
+          <iframe
+            ref={iframeRef}
+            src={frameUrl}
+            scrolling="no"
+            style={{
+              width,
+              height,
+              border: "none",
+              display: "block",
+              overflow: "hidden",
+              opacity: loaded ? 1 : 0,
+              transition: "opacity 0.3s",
+            }}
+            title={`${width}px preview`}
+          />
+          {!loaded && (
+            <div style={{
+              position: "absolute", inset: 0,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "#666", fontSize: 12, fontFamily: C.mono,
+            }}>
+              Loading...
+            </div>
+          )}
+        </div>
+
+        {/* Overlay canvas — sibling of the frame-div (not the iframe),
+            so it composites above the iframe. Shares the same CSS
+            transform chain as the iframe via the outer container, so
+            canvas draws at iframe-doc coords land on the right iframe
+            pixels without JS sub-pixel math.
+            `layoutsubtree` opts its HTML children into html-in-canvas
+            layout (Chromium `drawElementImage`). */}
+        <canvas
+          data-canvas-overlay-target="true"
+          {...(HAS_DRAW_ELEMENT ? { layoutsubtree: "" } : {})}
           style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
             width,
             height,
-            border: "none",
-            display: "block",
-            overflow: "hidden",
-            opacity: loaded ? 1 : 0,
-            transition: "opacity 0.3s",
+            pointerEvents: "none",
           }}
-          title={`${width}px preview`}
-        />
-
-        {!loaded && (
-          <div style={{
-            position: "absolute", inset: 0,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            color: "#666", fontSize: 12, fontFamily: C.mono,
-          }}>
-            Loading...
-          </div>
-        )}
+        >
+          {HAS_DRAW_ELEMENT && (
+            <>
+              <div data-canvas-template="hover-outline" style={{
+                position: "absolute",
+                left: -99999,
+                top: -99999,
+                pointerEvents: "none",
+                boxSizing: "border-box",
+                border: `1.5px dashed ${COL.blueDim}`,
+                background: "rgba(6, 182, 255, 0.06)",
+                borderRadius: 2,
+              }} />
+              <div data-canvas-template="hover-outline-annotate" style={{
+                position: "absolute",
+                left: -99999,
+                top: -99999,
+                pointerEvents: "none",
+                boxSizing: "border-box",
+                border: `2px solid ${COL.annotate}`,
+                background: "rgba(255, 184, 0, 0.08)",
+                borderRadius: 2,
+              }} />
+              <div data-canvas-template="select-outline" style={{
+                position: "absolute",
+                left: -99999,
+                top: -99999,
+                pointerEvents: "none",
+                boxSizing: "border-box",
+                border: `2px solid ${COL.blue}`,
+                borderRadius: 2,
+              }} />
+            </>
+          )}
+        </canvas>
       </div>
     </div>
   );

@@ -88,14 +88,38 @@ export function useWebSocket() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const url = `${protocol}//${window.location.host}/__canvas/ws`;
 
-    let reconnectTimer: ReturnType<typeof setTimeout>;
-    let ws: WebSocket;
+    const INITIAL_DELAY = 1000;
+    const MAX_DELAY = 30000;
+
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let ws: WebSocket | undefined;
+    let retries = 0;
+    let disposed = false;
+
+    function clearReconnectTimer() {
+      if (reconnectTimer !== undefined) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = undefined;
+      }
+    }
+
+    function scheduleReconnect() {
+      if (disposed) return;
+      if (typeof document !== "undefined" && document.hidden) return;
+      clearReconnectTimer();
+      const delay = Math.min(INITIAL_DELAY * 2 ** retries, MAX_DELAY);
+      retries += 1;
+      reconnectTimer = setTimeout(connect, delay);
+    }
 
     function connect() {
+      if (disposed) return;
+      clearReconnectTimer();
       ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = () => {
+        retries = 0;
         setConnected(true);
       };
 
@@ -110,18 +134,36 @@ export function useWebSocket() {
 
       ws.onclose = () => {
         setConnected(false);
-        reconnectTimer = setTimeout(connect, 2000);
+        scheduleReconnect();
       };
 
       ws.onerror = () => {
-        ws.close();
+        ws?.close();
       };
     }
 
+    function onVisibilityChange() {
+      if (disposed) return;
+      if (document.hidden) {
+        // Pause reconnect attempts while tab is hidden
+        clearReconnectTimer();
+      } else {
+        // Tab became visible — if disconnected, reconnect immediately
+        if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+          retries = 0;
+          clearReconnectTimer();
+          connect();
+        }
+      }
+    }
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
     connect();
 
     return () => {
-      clearTimeout(reconnectTimer);
+      disposed = true;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      clearReconnectTimer();
       ws?.close();
     };
   }, [setConnected]);

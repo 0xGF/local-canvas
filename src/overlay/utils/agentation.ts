@@ -313,7 +313,7 @@ export function dispatchNavigatePin(direction: PinNavDirection) {
   }));
 }
 
-/** Toggle the toolbar Ask AI history popover (for the `g h` keyboard chord). */
+/** Toggle the toolbar Ask AI history popover (bound to the `h` shortcut). */
 export function dispatchToggleAIHistory() {
   window.dispatchEvent(new CustomEvent("canvas:toggle-ai-history"));
 }

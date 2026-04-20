@@ -20,7 +20,7 @@ const AskAIHistory = lazy(() =>
 import { SettingsPopover } from "./SettingsPopover.js";
 
 import { THEME } from "../theme.js";
-import { PopFade, useSlideUp, ExpandX as ExpandCluster } from "../utils/motion-presets.js";
+import { PopFade, useSlideUp } from "../utils/motion-presets.js";
 import { EASE, DURATION } from "../utils/easings.js";
 
 const C = THEME;
@@ -28,8 +28,31 @@ const C = THEME;
 const isMac = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent);
 const MOD = isMac ? "\u2318" : "Ctrl+";
 
-// Re-export locally so existing JSX references (<ExpandX …>) keep working.
-const ExpandX = ExpandCluster;
+/**
+ * Wraps an edit-mode-only control so it stays mounted and in-flow at all
+ * times (preserving the toolbar's width) but visually fades + disables
+ * pointer events when not in edit mode. Cross-fades only — no width or
+ * layout animation, so neighbouring buttons don't shift around.
+ */
+function EditOnly({ active, children }: { active: boolean; children: React.ReactNode }) {
+  return (
+    <div
+      aria-hidden={!active}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 2,
+        opacity: active ? 1 : 0.35,
+        filter: active ? "none" : "saturate(0)",
+        pointerEvents: active ? "auto" : "none",
+        transition: `opacity 200ms ${EASE.smooth}, filter 200ms ${EASE.smooth}`,
+        flexShrink: 0,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
 
 // ── Custom hover tooltip ────────────────────────────────────────────────────
 // Native `title` attributes are slow to appear, unstyled, and get clipped by
@@ -506,7 +529,7 @@ const ChangesSaveButton = React.memo(function ChangesSaveButton({
         onClick={() => changes.length > 0 ? setOpen(!open) : onSave()}
         title="Save"
         shortcut={`${MOD}S`}
-        badge={pendingCount}
+        badge={changes.length}
         disabled={disabled}
       />
 
@@ -717,16 +740,15 @@ export const Toolbar = React.memo(function Toolbar() {
     >
       {/*
        * Functional grouping:
-       *   [Mode | Layers · Components] | [Undo Redo Save] | [Breakpoint Annotate History] | [Settings]
-       *            workspace                  history actions      viewport + annotate       config
+       *   [Mode | Layers] | [Undo Redo Save] | [Breakpoint Annotate History] | [Settings]
        *
-       * Workspace pill (Layers + Components view) mirrors the ModeSegment
-       * pill style so the two sit beside each other as one unified cluster
-       * visually — same height, same inset background, same padding.
-       *
-       * All edit-only content lives in ONE AnimatePresence with
-       * `mode="popLayout"` so the bar's `layout` animates width in parallel
-       * with the cluster fading. One cluster, one animation, no judder.
+       * The bar renders its full set of controls at all times. Edit-only
+       * controls (layers / breakpoint / annotate / history) are dimmed and
+       * disabled in Navigate mode rather than mounted/unmounted with a width
+       * animation. Avoiding the conditional render means the bar's width
+       * never changes — no per-frame layout shifts, no judder, no popovers
+       * being clipped mid-transition. Only opacity + colour cross-fade,
+       * which is cheap and looks planted.
        */}
 
       {/* ── Mode segment (Navigate / Edit) ── */}
@@ -736,8 +758,8 @@ export const Toolbar = React.memo(function Toolbar() {
         onEdit={setEditMode}
       />
 
-      {/* ── Workspace pill (edit only): Layers, matches ModeSegment look ── */}
-      <ExpandX open={isEdit}>
+      {/* ── Workspace pill: Layers (edit-only behaviour, always rendered) ── */}
+      <EditOnly active={isEdit}>
         <div
           style={{
             display: "flex", alignItems: "center",
@@ -755,7 +777,7 @@ export const Toolbar = React.memo(function Toolbar() {
             icon={<Layers size={14} />}
           />
         </div>
-      </ExpandX>
+      </EditOnly>
 
       <Sep />
 
@@ -764,11 +786,16 @@ export const Toolbar = React.memo(function Toolbar() {
       <ToolBtn icon={<Redo size={15} />} onClick={redo} title="Redo" shortcut={`${MOD}Y`} disabled={!canRedo} />
       <ChangesSaveButton onSave={handleSave} onReset={handleReset} pendingCount={pendingCount} disabled={pendingCount === 0} />
 
-      {/* ── Viewport + Annotation (edit only) ── */}
-      <ExpandX open={isEdit}>
-        <Sep />
+      <Sep />
+
+      {/* ── Viewport + Annotation (edit-only behaviour, always rendered) ── */}
+      <EditOnly active={isEdit}>
         <BreakpointSwitcher />
+      </EditOnly>
+      <EditOnly active={isEdit}>
         <AnnotateToolBtn />
+      </EditOnly>
+      <EditOnly active={isEdit}>
         <Suspense fallback={null}>
           <AskAIHistory
             renderButton={(open, count) => (
@@ -776,13 +803,13 @@ export const Toolbar = React.memo(function Toolbar() {
                 icon={<MessagesSquare size={15} />}
                 onClick={open}
                 title="Annotation history"
-                shortcut="G H"
+                shortcut="H"
                 badge={count}
               />
             )}
           />
         </Suspense>
-      </ExpandX>
+      </EditOnly>
 
       <Sep />
 

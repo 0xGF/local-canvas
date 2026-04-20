@@ -10,7 +10,7 @@
  * measurement, no layout prop, no AnimatePresence ordering games.
  */
 
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 const prefersReducedMotion =
   typeof window !== "undefined" &&
@@ -81,76 +81,6 @@ export function PopFade({
       }}
     >
       {children}
-    </div>
-  );
-}
-
-/**
- * Horizontal expand/collapse. Measures children's natural width via
- * ResizeObserver so the wrapper can animate `width: 0 → Npx` — smoother and
- * more consistent across browsers than the `grid-template-columns: 0fr/1fr`
- * trick, which stalls when siblings are animating simultaneously.
- *
- * When fully open (post-animation), the wrapper switches `overflow: visible`
- * so tooltips, dropdowns and popovers rendered by buttons inside this
- * cluster aren't clipped by the animation container.
- */
-export function ExpandX({
-  open,
-  children,
-  duration = 280,
-  style,
-}: {
-  open: boolean;
-  children: React.ReactNode;
-  duration?: number;
-  style?: React.CSSProperties;
-}) {
-  const reduce = prefersReducedMotion;
-  const innerRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
-  // `settled` flips true after the open animation finishes so the wrapper
-  // can drop `overflow: hidden` and stop clipping child popovers.
-  const [settled, setSettled] = useState(open);
-
-  useLayoutEffect(() => {
-    const el = innerRef.current;
-    if (!el) return;
-    const update = () => setWidth(el.scrollWidth);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (open) {
-      if (reduce) { setSettled(true); return; }
-      const t = setTimeout(() => setSettled(true), duration + 20);
-      return () => clearTimeout(t);
-    }
-    setSettled(false);
-  }, [open, duration, reduce]);
-
-  return (
-    <div
-      aria-hidden={!open}
-      style={{
-        width: open ? width : 0,
-        opacity: open ? 1 : 0,
-        pointerEvents: open ? "auto" : "none",
-        overflow: open && settled ? "visible" : "hidden",
-        transition: reduce
-          ? "none"
-          : `width ${duration}ms ${EASE_OUT}, opacity ${Math.round(duration * 0.7)}ms ease`,
-        flexShrink: 0,
-        willChange: "width, opacity",
-        ...style,
-      }}
-    >
-      <div ref={innerRef} style={{ display: "flex", alignItems: "center", gap: 2, whiteSpace: "nowrap" }}>
-        {children}
-      </div>
     </div>
   );
 }

@@ -33,65 +33,20 @@ export function getIframeDocument(): Document | null {
 /**
  * Current on-screen offset + scale of the iframe.
  *
- * Why not just `iframe.getBoundingClientRect()`? Under certain Chromium
- * conditions (iframe inside a Shadow DOM whose ancestor has a CSS
- * `transform`), the iframe's bounding rect can lag the browser's GPU
- * compositor by a frame — so the rect we read is from the *previous*
- * transform while the iframe is actually rendered at the current one. The
- * drift grows with zoom because the lag is a transform mismatch, not a
- * pixel offset.
- *
- * Robust approach: anchor to the transformed container's rect (which is
- * the element the transform is set on, so its rect is always consistent
- * with its own style), and compute the iframe's offset within the
- * container using `offsetLeft/offsetTop` — layout properties that are
- * *unaffected* by CSS transforms. Then apply the zoom/pan from the
- * zustand store (the source of truth) manually.
+ * Both `x/y` AND `scale` MUST come from the same snapshot of the iframe's
+ * bounding rect. Using `viewport.zoom` for scale while reading `ir.left`
+ * for offset can mismatch when the browser's iframe rect lags the applied
+ * transform by a frame — scale says "current zoom" but offset reflects
+ * "previous zoom", so the formula `innerX * scale + offset` drifts.
+ * Deriving scale from `ir.width / naturalWidth` keeps both values
+ * consistent with whatever rect snapshot we're looking at, which matches
+ * where the browser actually rendered the iframe in the same frame.
  */
 export function getIframeOffset(iframe: HTMLIFrameElement): { x: number; y: number; scale: number } {
-  const zoom = getViewportZoom();
-
-  // Find the transformed container (the element useViewport applies
-  // `transform: translate(panX, panY) scale(zoom)` to).
-  const root = iframe.getRootNode();
-  const container = root instanceof ShadowRoot
-    ? (root.getElementById("responsive-frame-container") as HTMLElement | null)
-    : null;
-
-  if (!container) {
-    // Outside the normal shadow-DOM editor context — fall back.
-    const ir = iframe.getBoundingClientRect();
-    return { x: ir.left, y: ir.top, scale: zoom };
-  }
-
-  // Walk offsetLeft/offsetTop chain from iframe up to (not including) the
-  // container. These are layout offsets in container-local, pre-transform
-  // CSS pixels.
-  let localX = 0, localY = 0;
-  let node: HTMLElement | null = iframe;
-  while (node && node !== container) {
-    localX += node.offsetLeft;
-    localY += node.offsetTop;
-    node = node.offsetParent as HTMLElement | null;
-  }
-
-  // Container's on-screen rect already reflects the transform applied to
-  // itself (browsers report this reliably; the quirk only affects
-  // transformed *descendants* like the iframe). Its top-left is the
-  // post-transform origin since `transform-origin: 0 0`.
-  const cr = container.getBoundingClientRect();
-  return {
-    x: cr.left + localX * zoom,
-    y: cr.top + localY * zoom,
-    scale: zoom,
-  };
-}
-
-// Indirection so tests / non-overlay consumers don't need a viewport store.
-let _viewportZoomGetter: (() => number) | null = null;
-export function _setViewportZoomGetter(fn: () => number): void { _viewportZoomGetter = fn; }
-function getViewportZoom(): number {
-  return _viewportZoomGetter ? _viewportZoomGetter() : 1;
+  const ir = iframe.getBoundingClientRect();
+  const naturalW = parseInt(iframe.style.width) || ir.width;
+  const scale = ir.width / naturalW;
+  return { x: ir.left, y: ir.top, scale };
 }
 
 /**

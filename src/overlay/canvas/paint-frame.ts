@@ -1,6 +1,7 @@
 import type { BadgeHit, TagBadgeHit, SpacingBox } from "./constants.js";
 import { COL, BADGE_FONT, FONT, SIDE_PREFIX } from "./constants.js";
 import { roundRect, drawDashedLine, drawDashedEdges, drawLabelBadge, drawValueBadge, drawHatchedRect, drawEdgeHandle, drawZeroNotch, drawResizeGrip } from "./draw-helpers.js";
+import { HAS_DRAW_ELEMENT } from "./constants.js";
 import type { SourceLocation } from "../../core/source-map/types.js";
 import { getCachedStyle } from "../utils/style-cache.js";
 
@@ -97,32 +98,42 @@ export function paintFrame(
   mousePos?: { x: number; y: number } | null,
 ): PaintResult {
   const dpr = window.devicePixelRatio || 1;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  // When zoomed out, the transformed page can extend beyond the viewport.
-  // Size the canvas to cover the full visible area.
-  const appRoot = document.getElementById("root");
-  let canvasW = vw;
-  let canvasH = vh;
-  if (appRoot && viewport.zoom < 1) {
-    const rootRect = appRoot.getBoundingClientRect();
-    canvasW = Math.max(vw, rootRect.right);
-    canvasH = Math.max(vh, rootRect.bottom);
-  }
+  // The overlay canvas lives inside #responsive-frame-container as a sibling
+  // of the iframe — its CSS size matches the iframe natural dimensions and
+  // its CSS transform is inherited from the container, which is the same
+  // transform applied to the iframe. So draws at iframe-doc coordinates
+  // composite onto the iframe pixels through the browser's single transform
+  // pipeline — no JS-math vs GPU-math drift.
+  //
+  // `iframeOffset` was computed for the old outer-canvas layout to convert
+  // element rects to outer screen coords. Here the canvas IS in iframe-doc
+  // coord space, so we force offset=0 and scale=1 for the drawing math.
+  // The same applies to `zoomScale` which was used as a CSS→screen
+  // multiplier; in iframe-doc space it collapses to 1. We still need
+  // `viewport.zoom` separately for visibility thresholds, so keep it.
+  iframeOffset = { x: 0, y: 0, scale: 1 };
+  const vz = viewport.zoom || 1;
+  const canvasW = parseInt(canvas.style.width) || canvas.clientWidth || 1;
+  const canvasH = parseInt(canvas.style.height) || canvas.clientHeight || 1;
   const tw = Math.round(canvasW * dpr);
   const th = Math.round(canvasH * dpr);
   if (canvas.width !== tw || canvas.height !== th) {
     canvas.width = tw;
     canvas.height = th;
-    canvas.style.width = canvasW + "px";
-    canvas.style.height = canvasH + "px";
   }
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, canvasW, canvasH);
 
   const { selectedElement, hoveredElement } = editor;
-  const zoomScale = viewport.zoom;
+  // Multiplier to convert CSS (iframe-doc) values to canvas draw coords.
+  // Canvas IS in iframe-doc space now, so identity. In the old outer-canvas
+  // architecture this was viewport.zoom.
+  const spaceScale = 1;
+  // Visible on-screen zoom — used for visibility thresholds ("is this badge
+  // readable?") and passed to helpers that size elements inversely with
+  // zoom so they stay screen-pixel-constant.
+  const zoomScale = vz;
   const badges: BadgeHit[] = [];
   let tagHit: TagBadgeHit | null = null;
 
@@ -150,7 +161,7 @@ export function paintFrame(
 
     // Compute margin/padding for hovered element
     const hcs = getCachedStyle(hEl);
-    const hz = (v: number) => v * zoomScale;
+    const hz = (v: number) => v * spaceScale;
     const hm = {
       top: hz(parseFloat(hcs.marginTop) || 0),
       right: hz(parseFloat(hcs.marginRight) || 0),
@@ -207,20 +218,40 @@ export function paintFrame(
       }
     }
 
-    // Element outline — switch to yellow annotate accent when the annotate
-    // tool is armed so the user can see what their next click will target.
+    // Hover element outline — use drawElementImage to rasterize an HTML
+    // template div (declared as a canvas child with `layoutsubtree`) into
+    // the canvas at the element's iframe-doc position. Browser lays out
+    // the template + rasterizes it, and because the canvas is inside the
+    // same transformed container as the iframe, compositing aligns
+    // pixel-for-pixel. No JS math predicting GPU output.
     const annotate = !!editor.annotateMode;
-    ctx.save();
-    ctx.setLineDash(annotate ? [] : [4, 4]);
-    ctx.strokeStyle = annotate ? COL.annotate : COL.blueDim;
-    ctx.lineWidth = annotate ? 2 : 1.5;
-    roundRect(ctx, r.left, r.top, r.width, r.height, 2);
-    ctx.stroke();
-    ctx.fillStyle = annotate ? COL.annotateBg : COL.blueFaint;
-    roundRect(ctx, r.left, r.top, r.width, r.height, 2);
-    ctx.fill();
-    ctx.setLineDash([]);
-    ctx.restore();
+    if (HAS_DRAW_ELEMENT) {
+      const templateName = annotate ? "hover-outline-annotate" : "hover-outline";
+      const template = canvas.querySelector(`[data-canvas-template="${templateName}"]`) as HTMLElement | null;
+      if (template) {
+        template.style.width = `${r.width}px`;
+        template.style.height = `${r.height}px`;
+        // `drawElementImage(el, dx, dy, dw, dh)` — rasterize the element
+        // into the canvas at (dx, dy) at the given size. Ctx is in CSS
+        // pixels (setTransform applied dpr above); canvas space IS
+        // iframe-doc CSS space here.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (ctx as any).drawElementImage(template, r.left, r.top, r.width, r.height);
+      }
+    } else {
+      // Fallback: no drawElementImage support — stroke/fill directly.
+      ctx.save();
+      ctx.setLineDash(annotate ? [] : [4, 4]);
+      ctx.strokeStyle = annotate ? COL.annotate : COL.blueDim;
+      ctx.lineWidth = annotate ? 2 : 1.5;
+      roundRect(ctx, r.left, r.top, r.width, r.height, 2);
+      ctx.stroke();
+      ctx.fillStyle = annotate ? COL.annotateBg : COL.blueFaint;
+      roundRect(ctx, r.left, r.top, r.width, r.height, 2);
+      ctx.fill();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
 
     // Tag label + dimensions
     const tag = hEl.tagName.toLowerCase();
@@ -245,7 +276,7 @@ export function paintFrame(
 
       // Scale factor: getComputedStyle returns CSS values, getBoundingClientRect returns screen values.
       // We scale CSS spacing to match screen coordinates.
-      const sz = (v: number) => v * zoomScale;
+      const sz = (v: number) => v * spaceScale;
 
       const isAutoH = cs.marginLeft === cs.marginRight &&
         (el.style.marginLeft === "auto" || el.style.marginRight === "auto" ||
@@ -319,7 +350,7 @@ export function paintFrame(
                   ctx.save(); ctx.fillStyle = COL.purpleBg; ctx.fillRect(gL, gT, gW, gB - gT);
                   drawDashedLine(ctx, gL, gT, gL, gB, COL.purple); drawDashedLine(ctx, gL + gW, gT, gL + gW, gB, COL.purple); ctx.restore();
                   // BUG FIX: gW is screen-space, divide by zoom to show CSS value
-                  if (zoomScale >= 0.8) drawValueBadge(ctx, Math.round(gW / zoomScale), COL.purple, gL + gW / 2, (gT + gB) / 2);
+                  if (zoomScale >= 0.8) drawValueBadge(ctx, Math.round(gW / spaceScale), COL.purple, gL + gW / 2, (gT + gB) / 2);
                 }
               }
               if (rg > 0 && b.top > a.bottom - 1 && a.right > b.left + 1 && a.left < b.right - 1) {
@@ -328,7 +359,7 @@ export function paintFrame(
                   ctx.save(); ctx.fillStyle = COL.purpleBg; ctx.fillRect(gL, gT, gR - gL, gH);
                   drawDashedLine(ctx, gL, gT, gR, gT, COL.purple); drawDashedLine(ctx, gL, gT + gH, gR, gT + gH, COL.purple); ctx.restore();
                   // BUG FIX: gH is screen-space, divide by zoom to show CSS value
-                  if (zoomScale >= 0.8) drawValueBadge(ctx, Math.round(gH / zoomScale), COL.purple, (gL + gR) / 2, gT + gH / 2);
+                  if (zoomScale >= 0.8) drawValueBadge(ctx, Math.round(gH / spaceScale), COL.purple, (gL + gR) / 2, gT + gH / 2);
                 }
               }
             }
@@ -336,14 +367,26 @@ export function paintFrame(
         }
       }
 
-      // ── Selection outline ──
-      ctx.save();
-      ctx.strokeStyle = COL.blue;
-      ctx.lineWidth = 2;
-      ctx.setLineDash([]);
-      roundRect(ctx, r.left, r.top, r.width, r.height, 2);
-      ctx.stroke();
-      ctx.restore();
+      // Selection outline — rasterized from an HTML <div> template via
+      // drawElementImage when available. Same alignment story as the hover
+      // outline above.
+      if (HAS_DRAW_ELEMENT) {
+        const template = canvas.querySelector(`[data-canvas-template="select-outline"]`) as HTMLElement | null;
+        if (template) {
+          template.style.width = `${r.width}px`;
+          template.style.height = `${r.height}px`;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (ctx as any).drawElementImage(template, r.left, r.top, r.width, r.height);
+        }
+      } else {
+        ctx.save();
+        ctx.strokeStyle = COL.blue;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([]);
+        roundRect(ctx, r.left, r.top, r.width, r.height, 2);
+        ctx.stroke();
+        ctx.restore();
+      }
 
       // ── Combined tag + dims badge (show CSS dimensions, not screen) ──
       let label = selectedElement.tagName;
@@ -542,7 +585,7 @@ export function paintFrame(
   prevSelectedEl = selectedElement?.element ?? null;
   prevHoveredEl = hoveredElement;
   prevAnnotateMode = !!editor.annotateMode;
-  prevZoom = zoomScale;
+  prevZoom = vz;
   prevPanX = viewport.panX;
   prevPanY = viewport.panY;
   lastPaintTime = performance.now();

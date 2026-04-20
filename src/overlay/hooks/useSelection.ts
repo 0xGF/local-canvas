@@ -111,10 +111,18 @@ function snapToChildMargin(target: HTMLElement, docX: number, docY: number): HTM
  * Find element at viewport coordinates. Checks both main document and iframe.
  * Returns the element and whether it was found inside the iframe.
  */
-function elementAtPoint(clientX: number, clientY: number): { target: HTMLElement | null; fromIframe: boolean; iframe: HTMLIFrameElement | null } {
-  // Try main document first
+export function elementAtPoint(clientX: number, clientY: number): { target: HTMLElement | null; fromIframe: boolean; iframe: HTMLIFrameElement | null } {
+  // Try main document first.
+  // The overlay's shadow host covers the viewport, so document.elementFromPoint
+  // will almost always return it when the user clicks anywhere visible. Treat
+  // it (and anything inside the shadow tree) as "no hit" so we fall through
+  // to iframe detection — otherwise annotate-clicks target overlay chrome.
+  const host = document.getElementById(OVERLAY_HOST_ID);
   const mainTarget = deepElementFromPoint(clientX, clientY, document);
-  if (mainTarget) {
+  const isOverlayHit =
+    mainTarget === host ||
+    (host?.shadowRoot && mainTarget?.getRootNode() === host.shadowRoot);
+  if (mainTarget && !isOverlayHit) {
     const snapped = snapToChildMargin(mainTarget, clientX, clientY);
     return { target: snapped, fromIframe: false, iframe: null };
   }
@@ -222,9 +230,21 @@ export function useSelection() {
       }
 
       // Annotate tool: when active, plain click on any element opens the
-      // Ask AI prompt directly. Checked early so isClickInsideOverlay
-      // (which can misread iframe coords) doesn't block it.
+      // Ask AI prompt directly.
+      //
+      // We DO bail when the click lands on overlay chrome (toolbar, panel,
+      // existing context menu). The previous version skipped this check on
+      // the theory that isClickInsideOverlay could misread iframe coords —
+      // but that check uses composedPath() and doesn't rely on coords, so
+      // it's safe. Skipping it caused clicks on the toolbar to annotate
+      // whatever happened to be under it, which is exactly the "selects
+      // stuff behind the bar" bug.
       if (useEditorStore.getState().annotateMode && !e.ctrlKey && !e.metaKey) {
+        // If the click lands on overlay chrome (toolbar, panel, menu),
+        // refuse to annotate — otherwise you'd be dropping a pin on a ghost
+        // target under the toolbar. elementAtPoint already skips the shadow
+        // host, but this catches the interactive-element case explicitly.
+        if (isClickInsideOverlay(e)) return;
         const { target, fromIframe, iframe } = elementAtPoint(e.clientX, e.clientY);
         if (!target) return;
         e.preventDefault();

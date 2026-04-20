@@ -57,18 +57,21 @@ export const CustomSelect = React.memo(function CustomSelect({
     });
   }, [open, options.length]);
 
-  // Close on outside click — use the shadow root if available
+  // Close on outside click. Use composedPath() so retargeting across the
+  // shadow boundary doesn't lie: a click on our trigger inside the Shadow
+  // DOM gets retargeted to the shadow host when observed from the
+  // document, so `e.target` would falsely look "outside" the trigger and
+  // close the dropdown before the button's click handler could toggle it
+  // — net effect: clicking the trigger never closes the menu. composedPath
+  // preserves the true origin element.
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      // Check if click is on the trigger button
-      if (ref.current && ref.current.contains(target)) return;
-      // Check if click is on the dropdown list (portaled)
-      if (listRef.current && listRef.current.contains(target)) return;
+      const path = e.composedPath();
+      if (ref.current && path.includes(ref.current)) return;
+      if (listRef.current && path.includes(listRef.current)) return;
       setOpen(false);
     };
-    // Listen on both document and the shadow root for click events
     document.addEventListener("mousedown", handler, true);
     const shadowRoot = portalContainer?.getRootNode();
     if (shadowRoot && shadowRoot !== document) {

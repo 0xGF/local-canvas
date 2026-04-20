@@ -106,13 +106,15 @@ export const ValueInput = React.memo(function ValueInput({
     setDropdownPos({ top, left: rect.left, width: rect.width });
   }, [open, presets.length]);
 
-  // Close dropdown on outside click
+  // Close dropdown on outside click. Use composedPath() — `e.target` is
+  // retargeted to the shadow host when we listen on document, which would
+  // falsely classify a click on our own trigger as "outside".
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (wrapperRef.current?.contains(target)) return;
-      if (listRef.current?.contains(target)) return;
+      const path = e.composedPath();
+      if (wrapperRef.current && path.includes(wrapperRef.current)) return;
+      if (listRef.current && path.includes(listRef.current)) return;
       setOpen(false);
     };
     document.addEventListener("mousedown", handler, true);

@@ -331,6 +331,18 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
     return () => {
       cancelAnimationFrame(rafRef.current);
       document.removeEventListener("mousemove", onMouseMove, true);
+      // The canvas lives inside ResponsiveFrame (sibling of the iframe), so
+      // it stays in the DOM after this component unmounts (e.g. when Space-
+      // held interact mode flips `interacting` on). Without this, the last
+      // painted frame — selection outlines, hover outlines, badges —
+      // freezes on top of the iframe while the user is trying to interact
+      // with their app. Wipe the backing store so the user sees their app
+      // cleanly.
+      const c = findTargetCanvas();
+      if (c) {
+        const cctx = c.getContext("2d");
+        if (cctx) cctx.clearRect(0, 0, c.width, c.height);
+      }
     };
   }, [reorderRef]);
 

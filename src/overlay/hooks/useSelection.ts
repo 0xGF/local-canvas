@@ -280,6 +280,15 @@ export function useSelection() {
         return;
       }
 
+      // Iframe-origin non-shift clicks: bail and let ResponsiveFrame.onClick
+      // handle them. It covers annotate, ctrl/meta-click, ancestor-near-child,
+      // and default selection — all with correct iframe-local coords. Running
+      // elementAtPoint here on iframe-local coords re-translates them as if
+      // they were outer-screen coords and selects a totally different element
+      // (same root cause as the hover bug; see handleMouseMove above).
+      const clickTargetDoc = (e.target as Node | null)?.ownerDocument;
+      if (clickTargetDoc && clickTargetDoc !== document) return;
+
       // Annotate tool: when active, plain click on any element opens the
       // Ask AI prompt directly.
       //
@@ -410,6 +419,12 @@ export function useSelection() {
       // Always block native context menu in edit mode
       e.preventDefault();
       e.stopPropagation();
+
+      // Iframe-origin right-clicks: ResponsiveFrame.onContextMenu handles
+      // them with correct iframe-local coords. Same re-translation bug as
+      // plain click if we let this fall through to elementAtPoint.
+      const ctxTargetDoc = (e.target as Node | null)?.ownerDocument;
+      if (ctxTargetDoc && ctxTargetDoc !== document) return;
 
       if (isClickInsideOverlay(e)) return;
 

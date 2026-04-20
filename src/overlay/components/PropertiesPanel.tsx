@@ -14,6 +14,9 @@ import { ColorPicker } from "./ui/color-picker.js";
 import { VariableSuggest } from "./ui/variable-suggest.js";
 import { ValueInput } from "./ui/value-input.js";
 import { SliderValueInput } from "./ui/slider-value-input.js";
+import { AlignmentPicker } from "./ui/alignment-picker.js";
+import { Button } from "./ui/button.js";
+import { cn } from "../lib/utils.js";
 import { LENGTH, INTEGER, GRID_COLS, KEYWORD, ANGLE, DURATION, NUMBER } from "./ui/value-input.parsers.js";
 import { THEME } from "../theme.js";
 import { PREFIX_TO_CSS } from "../canvas/constants.js";
@@ -51,6 +54,32 @@ import {
 } from "./icons.js";
 
 const C = THEME;
+
+/**
+ * After committing a class mutation, clear the inline preview style only
+ * AFTER the class list actually updates (via HMR). Clearing on the next
+ * animation frame — which is what we used to do — makes the element flash
+ * back to the old value for as many frames as HMR takes to land, then
+ * snap to the new value. Waiting for the class mutation means the inline
+ * value is held until the new class is in place, so the swap is invisible.
+ */
+function clearInlineAfterClassUpdate(el: HTMLElement, cssProp: string) {
+  let done = false;
+  const observer = new MutationObserver(() => {
+    if (done) return;
+    done = true;
+    setStyleProp(el, cssProp, "");
+    observer.disconnect();
+    clearTimeout(fallback);
+  });
+  observer.observe(el, { attributes: true, attributeFilter: ["class"] });
+  const fallback = setTimeout(() => {
+    if (done) return;
+    done = true;
+    setStyleProp(el, cssProp, "");
+    observer.disconnect();
+  }, 5000);
+}
 
 // ── Font-size presets (keyword + px label) ──
 const FONT_SIZE_PRESETS = [
@@ -248,7 +277,6 @@ export const PropertiesPanel = React.memo(function PropertiesPanel() {
         <BackgroundSection h={helpers} sel={sel} />
         <TransformsSection h={helpers} sel={sel} />
         <FiltersSection h={helpers} sel={sel} />
-        <BackdropFiltersSection h={helpers} sel={sel} />
         <TransitionsSection h={helpers} sel={sel} />
         <InteractivitySection h={helpers} sel={sel} />
         <SvgSection h={helpers} sel={sel} />
@@ -327,6 +355,169 @@ const PositionSection = React.memo(function PositionSection({ h, sel }: { h: Cla
   );
 });
 
+// Compact icon + input row. Unlike PropRow (52px label column), this gives
+// the input ~26px for the glyph and the rest of the row for the value —
+// much more usable at 280px panel width.
+function CompactField({ icon, children, iconWidth }: { icon: React.ReactNode; children: React.ReactNode; iconWidth?: "sm" | "md" }) {
+  return (
+    <div className="flex items-center gap-1 min-w-0">
+      <span
+        className={cn(
+          "text-[10px] text-canvas-muted-fg shrink-0 inline-flex items-center justify-center",
+          iconWidth === "md" ? "w-6" : "w-[18px]",
+        )}
+      >
+        {icon}
+      </span>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  );
+}
+
+const GapGlyph = () => (
+  <svg width="13" height="12" viewBox="0 0 13 12" fill="none" stroke="currentColor" aria-hidden>
+    <rect x="0.5" y="1.5" width="3" height="9" rx="0.5" />
+    <rect x="9.5" y="1.5" width="3" height="9" rx="0.5" />
+    <line x1="6.5" y1="0" x2="6.5" y2="12" strokeDasharray="1.5 1.5" />
+  </svg>
+);
+
+const PadXGlyph = () => (
+  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" aria-hidden>
+    <rect x="0.5" y="0.5" width="11" height="11" rx="1.5" />
+    <line x1="3.5" y1="3" x2="3.5" y2="9" />
+    <line x1="8.5" y1="3" x2="8.5" y2="9" />
+  </svg>
+);
+
+const PadYGlyph = () => (
+  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" aria-hidden>
+    <rect x="0.5" y="0.5" width="11" height="11" rx="1.5" />
+    <line x1="3" y1="3.5" x2="9" y2="3.5" />
+    <line x1="3" y1="8.5" x2="9" y2="8.5" />
+  </svg>
+);
+
+// ── Figma/Framer-style padding: 2-value (px/py) default, toggle to 4 individual sides.
+// Any individually-set side drops the matching axis class to keep Tailwind output clean.
+function FlexPadding({ h, sel, cs }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]>; cs: CSSStyleDeclaration | null }) {
+  const px = h.get("px");
+  const py = h.get("py");
+  const pt = h.get("pt");
+  const pr = h.get("pr");
+  const pb = h.get("pb");
+  const pl = h.get("pl");
+  const hasIndividual = !!(pt || pr || pb || pl);
+  const [mode, setMode] = useState<"linked" | "individual">(hasIndividual ? "individual" : "linked");
+
+  const phSide = (side: "Top" | "Right" | "Bottom" | "Left") => {
+    const v = cs ? (cs as unknown as Record<string, string>)[`padding${side}`] : undefined;
+    if (!v) return "0";
+    const n = parseFloat(v);
+    return Number.isFinite(n) && n !== 0 ? `${Math.round(n)}px` : "0";
+  };
+
+  const toggleBtn = (
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-pressed={mode === "individual"}
+      title={mode === "linked" ? "Individual sides" : "Linked sides"}
+      onClick={() => setMode(mode === "linked" ? "individual" : "linked")}
+      className="size-6 text-canvas-muted-fg"
+    >
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor">
+        <rect x="0.5" y="0.5" width="11" height="11" rx="1.5" />
+        {mode === "linked"
+          ? <rect x="3.5" y="3.5" width="5" height="5" />
+          : <>
+              <line x1="3.5" y1="1" x2="3.5" y2="11" />
+              <line x1="8.5" y1="1" x2="8.5" y2="11" />
+              <line x1="1" y1="3.5" x2="11" y2="3.5" />
+              <line x1="1" y1="8.5" x2="11" y2="8.5" />
+            </>}
+      </svg>
+    </Button>
+  );
+
+  if (mode === "linked") {
+    return (
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 6, alignItems: "center" }}>
+        <CompactField icon={<PadXGlyph />}>
+          <ValueInput value={px} strategy={LENGTH} placeholder="0"
+            onChange={v => h.set("px", v)} />
+        </CompactField>
+        <CompactField icon={<PadYGlyph />}>
+          <ValueInput value={py} strategy={LENGTH} placeholder="0"
+            onChange={v => h.set("py", v)} />
+        </CompactField>
+        {toggleBtn}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 6, rowGap: 4, alignItems: "center" }}>
+      <CompactField icon="T">
+        <ValueInput value={pt} strategy={LENGTH} placeholder={phSide("Top")}
+          onChange={v => h.set("pt", v)} />
+      </CompactField>
+      <CompactField icon="R">
+        <ValueInput value={pr} strategy={LENGTH} placeholder={phSide("Right")}
+          onChange={v => h.set("pr", v)} />
+      </CompactField>
+      <div style={{ gridRow: "1 / span 2" }}>{toggleBtn}</div>
+      <CompactField icon="B">
+        <ValueInput value={pb} strategy={LENGTH} placeholder={phSide("Bottom")}
+          onChange={v => h.set("pb", v)} />
+      </CompactField>
+      <CompactField icon="L">
+        <ValueInput value={pl} strategy={LENGTH} placeholder={phSide("Left")}
+          onChange={v => h.set("pl", v)} />
+      </CompactField>
+    </div>
+  );
+}
+
+// "Clip content" — bound to overflow-hidden. Full Overflow CustomSelect
+// remains available further down the Layout section for scroll/auto/visible.
+function ClipContent({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
+  const isClipping = !!h.has("overflow-hidden");
+  const toggle = () => {
+    if (isClipping) {
+      const actual = h.actual("overflow-hidden") || "overflow-hidden";
+      h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: [actual] });
+    } else {
+      h.sendPrefixed({ type: "modify-class", source: sel.source!, add: ["overflow-hidden"] });
+    }
+  };
+  return (
+    <label className="flex items-center gap-1.5 text-[11px] text-canvas-fg cursor-pointer select-none">
+      <span
+        role="checkbox"
+        aria-checked={isClipping}
+        tabIndex={0}
+        onClick={toggle}
+        onKeyDown={e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggle(); } }}
+        className={cn(
+          "inline-flex items-center justify-center size-3.5 rounded-[3px] shrink-0 border transition-colors",
+          isClipping
+            ? "border-canvas-accent bg-canvas-accent text-canvas-accent-fg"
+            : "border-canvas-border bg-transparent",
+        )}
+      >
+        {isClipping && (
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M1.75 5.75L4.2 8L8.25 2.25" />
+          </svg>
+        )}
+      </span>
+      Clip content
+      <span className="ml-auto text-[10px] text-canvas-muted-fg font-mono">⌥C</span>
+    </label>
+  );
+}
+
 const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
   const display = h.findCls(DISPLAY_OPTS);
   const isFlex = display === "flex" || display === "inline-flex";
@@ -335,6 +526,22 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
   const flexDirVal = flexDir ? flexDir.replace("flex-", "") : "row";
   const positionType = h.findCls(["relative","absolute","fixed","sticky"]);
   const isPositioned = positionType !== "";
+
+  // Computed-style placeholders: let the user see the real current value
+  // even when no Tailwind class is set.
+  const cs = sel.element ? getCachedStyle(sel.element) : null;
+  const phPx = (v: string | undefined, fallback = "0") => {
+    if (!cs || v === undefined) return fallback;
+    const n = parseFloat(v);
+    return Number.isFinite(n) && n !== 0 ? `${Math.round(n)}px` : fallback;
+  };
+  const phInset = (side: "top" | "right" | "bottom" | "left") => {
+    if (!cs) return "auto";
+    const v = cs[side];
+    if (v === "auto") return "auto";
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? `${Math.round(n)}px` : "auto";
+  };
 
   // h.set with isExact=false already concatenates `${prefix}-${value}`, so
   // bracket values like "[27px]" correctly emit `top-[27px]`. We only route
@@ -365,35 +572,42 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
         }}
       />
       {isFlex && (
-        <>
-          <SubLabel>Flex Direction</SubLabel>
-          <ToggleGroup
-            value={flexDirVal}
-            items={[
-              { value: "row", icon: <MoveRight size={14} />, label: "Row", title: "Flex: Row (horizontal)" },
-              { value: "col", icon: <MoveDown size={14} />, label: "Col", title: "Flex: Column (vertical)" },
-              { value: "row-reverse", icon: <MoveLeft size={14} />, title: "Flex: Row Reverse" },
-              { value: "col-reverse", icon: <MoveUp size={14} />, title: "Flex: Column Reverse" },
-            ]}
-            onChange={v => {
-              const oldActual = flexDir ? (h.actual(flexDir) || flexDir) : undefined;
-              h.sendPrefixed({
-                type: "modify-class", source: sel.source!,
-                remove: oldActual ? [oldActual] : undefined,
-                add: v && v !== "row" ? [`flex-${v}`] : undefined,
-              });
-            }}
-          />
-          <PropRow label="Justify">
-            <CustomSelect value={h.get("justify")} options={JUSTIFY_OPTIONS} onChange={v => h.set("justify", v)} />
-          </PropRow>
-          <PropRow label="Align">
-            <CustomSelect value={h.get("items")} options={ALIGN_OPTIONS} onChange={v => h.set("items", v)} />
-          </PropRow>
-          <PropRow label="Gap">
-            <ValueInput value={h.get("gap")} strategy={LENGTH} onChange={v => h.set("gap", v)} placeholder="0" />
-          </PropRow>
-        </>
+        <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, alignItems: "stretch" }}>
+            <ToggleGroup
+              value={flexDirVal.startsWith("col") ? "col" : "row"}
+              items={[
+                { value: "row", icon: <MoveRight size={14} />, title: "Row" },
+                { value: "col", icon: <MoveDown size={14} />, title: "Column" },
+              ]}
+              onChange={v => {
+                const oldActual = flexDir ? (h.actual(flexDir) || flexDir) : undefined;
+                h.sendPrefixed({
+                  type: "modify-class", source: sel.source!,
+                  remove: oldActual ? [oldActual] : undefined,
+                  add: v && v !== "row" ? [`flex-${v}`] : undefined,
+                });
+              }}
+            />
+            <AlignmentPicker
+              direction={flexDirVal.startsWith("col") ? "col" : "row"}
+              justify={h.get("justify")}
+              align={h.get("items")}
+              onChange={(j, a) => {
+                h.set("justify", j);
+                h.set("items", a);
+              }}
+            />
+          </div>
+          <CompactField icon={<GapGlyph />}>
+            <ValueInput value={h.get("gap")} presets={INSET_PRESETS} strategy={LENGTH}
+              onChange={v => h.set("gap", v)}
+              placeholder={phPx(cs?.gap, "0")}
+            />
+          </CompactField>
+          <FlexPadding h={h} sel={sel} cs={cs} />
+          <ClipContent h={h} sel={sel} />
+        </div>
       )}
       {isGrid && (
         <>
@@ -401,7 +615,10 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
             <ValueInput value={h.get("grid-cols")} presets={GRID_COLS_PRESETS} strategy={GRID_COLS} onChange={v => h.set("grid-cols", v)} />
           </PropRow>
           <PropRow label="Gap">
-            <ValueInput value={h.get("gap")} strategy={LENGTH} onChange={v => h.set("gap", v)} placeholder="0" />
+            <ValueInput value={h.get("gap")} presets={INSET_PRESETS} strategy={LENGTH}
+              onChange={v => h.set("gap", v)}
+              placeholder={phPx(cs?.gap, "0")}
+            />
           </PropRow>
         </>
       )}
@@ -413,14 +630,14 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
       </PropRow>
       {isPositioned && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-          <PropRow label="Top"><ValueInput value={h.get("top")} presets={INSET_PRESETS} strategy={LENGTH} onChange={v => setLengthClass("top", v)} placeholder="auto" /></PropRow>
-          <PropRow label="Right"><ValueInput value={h.get("right")} presets={INSET_PRESETS} strategy={LENGTH} onChange={v => setLengthClass("right", v)} placeholder="auto" /></PropRow>
-          <PropRow label="Bottom"><ValueInput value={h.get("bottom")} presets={INSET_PRESETS} strategy={LENGTH} onChange={v => setLengthClass("bottom", v)} placeholder="auto" /></PropRow>
-          <PropRow label="Left"><ValueInput value={h.get("left")} presets={INSET_PRESETS} strategy={LENGTH} onChange={v => setLengthClass("left", v)} placeholder="auto" /></PropRow>
+          <PropRow label="Top"><ValueInput value={h.get("top")} presets={INSET_PRESETS} strategy={LENGTH} onChange={v => setLengthClass("top", v)} placeholder={phInset("top")} /></PropRow>
+          <PropRow label="Right"><ValueInput value={h.get("right")} presets={INSET_PRESETS} strategy={LENGTH} onChange={v => setLengthClass("right", v)} placeholder={phInset("right")} /></PropRow>
+          <PropRow label="Bottom"><ValueInput value={h.get("bottom")} presets={INSET_PRESETS} strategy={LENGTH} onChange={v => setLengthClass("bottom", v)} placeholder={phInset("bottom")} /></PropRow>
+          <PropRow label="Left"><ValueInput value={h.get("left")} presets={INSET_PRESETS} strategy={LENGTH} onChange={v => setLengthClass("left", v)} placeholder={phInset("left")} /></PropRow>
         </div>
       )}
       <PropRow label="Z-Index">
-        <ValueInput value={h.get("z")} presets={Z_INDEX_PRESETS} strategy={INTEGER} onChange={v => h.set("z", v)} placeholder="auto" />
+        <ValueInput value={h.get("z")} presets={Z_INDEX_PRESETS} strategy={INTEGER} onChange={v => h.set("z", v)} placeholder={cs?.zIndex && cs.zIndex !== "auto" ? cs.zIndex : "auto"} />
       </PropRow>
       <PropRow label="Overflow">
         <CustomSelect value={h.get("overflow")} options={OVERFLOW_OPTIONS} onChange={v => h.set("overflow", v)} />
@@ -428,16 +645,6 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
       <PropRow label="Aspect">
         <ValueInput value={h.get("aspect")} presets={ASPECT_RATIO_PRESETS} strategy={KEYWORD}
           onChange={v => h.set("aspect", v)} placeholder="auto" />
-      </PropRow>
-      <PropRow label="Box">
-        <CustomSelect
-          value={["border","content"].find(c => h.has(`box-${c}`)) || ""}
-          options={BOX_SIZING_OPTIONS}
-          onChange={v => {
-            const oldActual = ["border","content"].map(c => h.actual(`box-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`box-${v}`] : undefined });
-          }}
-        />
       </PropRow>
       <PropRow label="Object fit">
         <CustomSelect
@@ -453,54 +660,31 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
         <ValueInput value={h.get("object")} presets={OBJECT_POSITION_PRESETS} strategy={KEYWORD}
           onChange={v => h.set("object", v)} placeholder="center" />
       </PropRow>
-      <PropRow label="Visibility">
-        <CustomSelect
-          value={["visible","invisible","collapse"].find(c => h.has(c)) || ""}
-          options={VISIBILITY_OPTIONS}
-          onChange={v => {
-            const oldActual = ["visible","invisible","collapse"].map(c => h.actual(c)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [v] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Float">
-        <CustomSelect
-          value={["left","right","start","end","none"].find(c => h.has(`float-${c}`)) || ""}
-          options={FLOAT_OPTIONS}
-          onChange={v => {
-            const oldActual = ["left","right","start","end","none"].map(c => h.actual(`float-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`float-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Clear">
-        <CustomSelect
-          value={["left","right","both","start","end","none"].find(c => h.has(`clear-${c}`)) || ""}
-          options={CLEAR_OPTIONS}
-          onChange={v => {
-            const oldActual = ["left","right","both","start","end","none"].map(c => h.actual(`clear-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`clear-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
     </Section>
   );
 });
 
 const SizeSection = React.memo(function SizeSection({ h }: { h: ClassHelpers }) {
+  const sel = useEditorStore(s => s.selectedElement);
+  const cs = sel?.element ? getCachedStyle(sel.element) : null;
+  const phPx = (v: string | undefined, fallback: string) => {
+    if (!cs || !v || v === "none") return fallback;
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? `${Math.round(n)}px` : fallback;
+  };
   return (
     <Section title="Size" defaultOpen={false}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-        <PropRow label="W"><ValueInput value={h.get("w")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("w", v)} placeholder="auto" /></PropRow>
-        <PropRow label="H"><ValueInput value={h.get("h")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("h", v)} placeholder="auto" /></PropRow>
+        <PropRow label="W"><ValueInput value={h.get("w")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("w", v)} placeholder={phPx(cs?.width, "auto")} /></PropRow>
+        <PropRow label="H"><ValueInput value={h.get("h")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("h", v)} placeholder={phPx(cs?.height, "auto")} /></PropRow>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginTop: 4 }}>
-        <PropRow label="Min W"><ValueInput value={h.get("min-w")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("min-w", v)} placeholder="0" /></PropRow>
-        <PropRow label="Max W"><ValueInput value={h.get("max-w")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("max-w", v)} placeholder="none" /></PropRow>
+        <PropRow label="Min W"><ValueInput value={h.get("min-w")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("min-w", v)} placeholder={phPx(cs?.minWidth, "0")} /></PropRow>
+        <PropRow label="Max W"><ValueInput value={h.get("max-w")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("max-w", v)} placeholder={phPx(cs?.maxWidth, "none")} /></PropRow>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginTop: 4 }}>
-        <PropRow label="Min H"><ValueInput value={h.get("min-h")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("min-h", v)} placeholder="0" /></PropRow>
-        <PropRow label="Max H"><ValueInput value={h.get("max-h")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("max-h", v)} placeholder="none" /></PropRow>
+        <PropRow label="Min H"><ValueInput value={h.get("min-h")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("min-h", v)} placeholder={phPx(cs?.minHeight, "0")} /></PropRow>
+        <PropRow label="Max H"><ValueInput value={h.get("max-h")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("max-h", v)} placeholder={phPx(cs?.maxHeight, "none")} /></PropRow>
       </div>
     </Section>
   );
@@ -547,24 +731,31 @@ const FlexItemSection = React.memo(function FlexItemSection({ h, sel }: { h: Cla
 //
 // Figma-style box-in-box diagram: outer rect = margin, inner rect = padding.
 // Each of the 8 sides gets a compact ValueInput straddling the matching
-// border. Click-and-drag the axis label (Top/Right/…) to scrub; type any
-// CSS value (27, 27px, 1.5rem, 50%, -12px, calc(...)) directly.
-const SPACING_OUTER_W = 256;
-const SPACING_OUTER_H = 170;
-const SPACING_INNER_W = 124;
-const SPACING_INNER_H = 72;
-const SPACING_INPUT_W = 54;
-const SPACING_INPUT_H = 22;
-const SPACING_SIDE_PAD_X = 22;                           // gap between container edge and outer box
-const SPACING_SIDE_PAD_Y = 24;                           // leaves room for the Mt label above and Mb label below
-const OUTER_X = SPACING_SIDE_PAD_X;
-const OUTER_Y = SPACING_SIDE_PAD_Y;
-const OUTER_RIGHT = OUTER_X + (SPACING_OUTER_W - 2 * SPACING_SIDE_PAD_X);
-const OUTER_BOTTOM = OUTER_Y + (SPACING_OUTER_H - 2 * SPACING_SIDE_PAD_Y);
-const INNER_X = OUTER_X + (OUTER_RIGHT - OUTER_X - SPACING_INNER_W) / 2;
-const INNER_Y = OUTER_Y + (OUTER_BOTTOM - OUTER_Y - SPACING_INNER_H) / 2;
-const INNER_RIGHT = INNER_X + SPACING_INNER_W;
-const INNER_BOTTOM = INNER_Y + SPACING_INNER_H;
+// border. Click-and-drag the input wrapper to scrub; type any CSS value
+// (27, 27px, 1.5rem, 50%, -12px, calc(...)) directly.
+//
+// Geometry note: the four "middle-row" inputs (ML/PL/PR/MR) are centered
+// ON the vertical borders, so they hang off by INPUT_W/2 on each side.
+// That means (gap between outer border and inner border) MUST be ≥ INPUT_W
+// or ML and PL collide, and PR and MR collide. The numbers below satisfy
+// that with room to spare.
+const SPACING_INPUT_W = 44;
+const SPACING_INPUT_H = 20;
+const OUTER_X = 24;
+const OUTER_Y = 24;
+const OUTER_W = 208;
+const OUTER_H = 132;
+const OUTER_RIGHT = OUTER_X + OUTER_W;
+const OUTER_BOTTOM = OUTER_Y + OUTER_H;
+// Inner box: leaves a 60-px margin strip on each side (OUTER_W - INNER_W)/2 ≥ INPUT_W.
+const INNER_W = 88;
+const INNER_H = 50;
+const INNER_X = OUTER_X + (OUTER_W - INNER_W) / 2;
+const INNER_Y = OUTER_Y + (OUTER_H - INNER_H) / 2;
+const INNER_RIGHT = INNER_X + INNER_W;
+const INNER_BOTTOM = INNER_Y + INNER_H;
+const SPACING_CONTAINER_W = OUTER_RIGHT + OUTER_X;            // 256 — symmetric
+const SPACING_CONTAINER_H = OUTER_BOTTOM + OUTER_Y;            // 180
 
 // Centered input positions (top-left x/y of the input element).
 const pos = {
@@ -586,6 +777,10 @@ function SpacingInput({
   onChange: (v: string) => void;
   title?: string;
 }) {
+  // Placeholder reflects the computed px so the user can always see the
+  // current value even when no Tailwind class is set (e.g. browser reset
+  // or inherited spacing from a parent rule).
+  const placeholder = initialPx > 0 ? `${initialPx}px` : (initialPx === 0 ? "0" : "auto");
   const startRef = useRef({ x: 0, base: 0 });
   const handleLabelMouseDown = useCallback((e: React.MouseEvent) => {
     // Only scrub when the user drags on the edge "grip" area — clicking the
@@ -631,9 +826,10 @@ function SpacingInput({
     >
       <ValueInput
         value={value}
+        presets={INSET_PRESETS}
         onChange={onChange}
         strategy={LENGTH}
-        placeholder="auto"
+        placeholder={placeholder}
         height={SPACING_INPUT_H}
         align="center"
         fontSize={10}
@@ -695,44 +891,39 @@ const SpacingSection = React.memo(function SpacingSection({ h, sel }: { h: Class
 
   return (
     <Section title="Spacing" defaultOpen>
-      <div style={{ position: "relative", width: SPACING_OUTER_W, height: SPACING_OUTER_H, margin: "0 auto" }}>
+      {/* Legend row — colored dots + labels above the visualizer so we don't
+          have to cram "MARGIN" / "PADDING" text inside the tiny inner box. */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 12,
+        padding: "0 4px 4px", fontSize: 9, color: C.fgDim,
+        fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase",
+      }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: "#fe7338" }} />
+          Margin
+        </span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: "#24ca71" }} />
+          Padding
+        </span>
+      </div>
+      <div style={{ position: "relative", width: SPACING_CONTAINER_W, height: SPACING_CONTAINER_H, margin: "0 auto" }}>
         {/* Margin box */}
         <div style={{
           position: "absolute",
           left: OUTER_X, top: OUTER_Y,
-          width: OUTER_RIGHT - OUTER_X, height: OUTER_BOTTOM - OUTER_Y,
-          border: `1px solid ${C.border}`, borderRadius: 6,
+          width: OUTER_W, height: OUTER_H,
+          border: "1px solid rgba(254, 115, 56, 0.45)", borderRadius: 6,
           background: "rgba(254, 115, 56, 0.05)",
         }} />
         {/* Padding box */}
         <div style={{
           position: "absolute",
           left: INNER_X, top: INNER_Y,
-          width: INNER_RIGHT - INNER_X, height: INNER_BOTTOM - INNER_Y,
-          border: `1px solid ${C.border}`, borderRadius: 5,
+          width: INNER_W, height: INNER_H,
+          border: "1px solid rgba(36, 202, 113, 0.5)", borderRadius: 5,
           background: "rgba(36, 202, 113, 0.07)",
         }} />
-        {/* Labels */}
-        <span style={{
-          position: "absolute",
-          left: OUTER_X + 6, top: OUTER_Y + 3,
-          fontSize: 9, color: "#fe7338",
-          fontWeight: 600, letterSpacing: "0.04em",
-          textTransform: "uppercase", userSelect: "none",
-          pointerEvents: "none",
-        }}>
-          Margin
-        </span>
-        <span style={{
-          position: "absolute",
-          left: INNER_X + 6, top: INNER_Y + 3,
-          fontSize: 9, color: "#24ca71",
-          fontWeight: 600, letterSpacing: "0.04em",
-          textTransform: "uppercase", userSelect: "none",
-          pointerEvents: "none",
-        }}>
-          Padding
-        </span>
 
         {/* 8 inputs */}
         {(["mt","mr","mb","ml","pt","pr","pb","pl"] as const).map(prefix => (
@@ -742,7 +933,7 @@ const SpacingSection = React.memo(function SpacingSection({ h, sel }: { h: Class
             y={pos[prefix].y}
             value={h.get(prefix)}
             initialPx={currentPx(prefix)}
-            title={`Drag label to scrub; shift for ×10. Type any value — px, rem, %, calc(), negatives.`}
+            title={`Drag to scrub (shift ×10); type any value — px, rem, %, calc(), negatives.`}
             onScrubStart={makeScrub(prefix)}
             onChange={v => commitCls(prefix, v)}
           />
@@ -779,8 +970,8 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
         strategy={LENGTH}
         encode={n => `[${n}px]`}
         onLivePreview={v => { if (sel.element) sel.element.style.fontSize = v + "px"; }}
-        onChange={v => { h.set("text", v, false, true); if (sel.element) requestAnimationFrame(() => { sel.element!.style.fontSize = ""; }); }}
-        placeholder="inherit"
+        onChange={v => { h.set("text", v, false, true); if (sel.element) clearInlineAfterClassUpdate(sel.element, "fontSize"); }}
+        placeholder={cs ? `${Math.round(parseFloat(cs.fontSize) || 16)}px` : "inherit"}
       />
       <SliderValueInput
         label="Weight"
@@ -791,8 +982,8 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
         strategy={KEYWORD}
         encode={n => `[${n}]`}
         onLivePreview={v => { if (sel.element) sel.element.style.fontWeight = String(v); }}
-        onChange={v => { h.set("font", v, false, true); if (sel.element) requestAnimationFrame(() => { sel.element!.style.fontWeight = ""; }); }}
-        placeholder="inherit"
+        onChange={v => { h.set("font", v, false, true); if (sel.element) clearInlineAfterClassUpdate(sel.element, "fontWeight"); }}
+        placeholder={cs ? String(parseInt(cs.fontWeight, 10) || 400) : "inherit"}
       />
       <SliderValueInput
         label="Leading"
@@ -803,8 +994,8 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
         strategy={KEYWORD}
         encode={n => `[${(n / 100).toFixed(2).replace(/\.?0+$/, "")}]`}
         onLivePreview={v => { if (sel.element) sel.element.style.lineHeight = String(v / 100); }}
-        onChange={v => { h.set("leading", v); if (sel.element) requestAnimationFrame(() => { sel.element!.style.lineHeight = ""; }); }}
-        placeholder="normal"
+        onChange={v => { h.set("leading", v); if (sel.element) clearInlineAfterClassUpdate(sel.element, "lineHeight"); }}
+        placeholder={cs ? `${Math.round((parseFloat(cs.lineHeight) / (parseFloat(cs.fontSize) || 16)) * 100) || 150}%` : "normal"}
         suffix="%"
       />
       <SliderValueInput
@@ -816,8 +1007,8 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
         strategy={KEYWORD}
         encode={n => `[${(n / 100).toFixed(3).replace(/\.?0+$/, "")}em]`}
         onLivePreview={v => { if (sel.element) sel.element.style.letterSpacing = `${v / 100}em`; }}
-        onChange={v => { h.set("tracking", v); if (sel.element) requestAnimationFrame(() => { sel.element!.style.letterSpacing = ""; }); }}
-        placeholder="normal"
+        onChange={v => { h.set("tracking", v); if (sel.element) clearInlineAfterClassUpdate(sel.element, "letterSpacing"); }}
+        placeholder={cs ? `${(parseFloat(cs.letterSpacing) || 0).toFixed(2)}px` : "normal"}
       />
       <PropRow label="Style">
         <CustomSelect value={h.has("italic") ? "italic" : h.has("not-italic") ? "not-italic" : ""} options={FONT_STYLE_OPTIONS} onChange={v => {
@@ -845,16 +1036,6 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
           }}
         />
       </PropRow>
-      <PropRow label="Deco style">
-        <CustomSelect
-          value={["decoration-solid","decoration-double","decoration-dotted","decoration-dashed","decoration-wavy"].map(c => c.replace("decoration-", "")).find(c => h.has(`decoration-${c}`)) || ""}
-          options={TEXT_DECORATION_STYLE_OPTIONS}
-          onChange={v => {
-            const oldActual = ["solid","double","dotted","dashed","wavy"].map(c => h.actual(`decoration-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`decoration-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
       <PropRow label="Overflow">
         <CustomSelect
           value={h.has("truncate") ? "truncate" : ["text-ellipsis","text-clip"].map(c => c.replace("text-","")).find(c => h.has(`text-${c}`)) || ""}
@@ -862,36 +1043,6 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
           onChange={v => {
             const oldActual = ["truncate","text-ellipsis","text-clip"].map(c => h.actual(c)).filter(Boolean) as string[];
             h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v === "truncate" ? ["truncate"] : v ? [`text-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Wrap">
-        <CustomSelect
-          value={["wrap","nowrap","balance","pretty"].find(c => h.has(`text-${c}`)) || ""}
-          options={TEXT_WRAP_OPTIONS}
-          onChange={v => {
-            const oldActual = ["wrap","nowrap","balance","pretty"].map(c => h.actual(`text-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`text-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Whitespace">
-        <CustomSelect
-          value={["normal","nowrap","pre","pre-line","pre-wrap","break-spaces"].find(c => h.has(`whitespace-${c}`)) || ""}
-          options={WHITE_SPACE_OPTIONS}
-          onChange={v => {
-            const oldActual = ["normal","nowrap","pre","pre-line","pre-wrap","break-spaces"].map(c => h.actual(`whitespace-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`whitespace-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Word break">
-        <CustomSelect
-          value={["normal","all","keep"].find(c => h.has(`break-${c}`)) || ""}
-          options={WORD_BREAK_OPTIONS}
-          onChange={v => {
-            const oldActual = ["normal","all","keep"].map(c => h.actual(`break-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`break-${v}`] : undefined });
           }}
         />
       </PropRow>
@@ -992,6 +1143,7 @@ const BorderSection = React.memo(function BorderSection({ h, sel }: { h: ClassHe
         ]}
         strategy={KEYWORD}
         encode={n => n === 0 ? "" : n === 1 ? "border" : [2,4,8].includes(n) ? `border-${n}` : `border-[${n}px]`}
+        placeholder={currentBorderPx > 0 ? `${currentBorderPx}px` : "0"}
         onLivePreview={v => { if (sel.element) setStyleProp(sel.element, "borderWidth", `${v}px`); }}
         onChange={v => {
           const bareBorder = h.classes.find(c => c === "border" || /^border-[0-9]+$/.test(c) || /^border-\[/.test(c));
@@ -1002,7 +1154,7 @@ const BorderSection = React.memo(function BorderSection({ h, sel }: { h: ClassHe
           else if (v === "border" || v === "") add = v || undefined;
           else if (v && !v.startsWith("border")) add = `border-${v.replace(/^\[(.+)\]$/, "[$1]")}`;
           h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: old ? [old] : undefined, add: add ? [add] : undefined });
-          if (sel.element) requestAnimationFrame(() => setStyleProp(sel.element!, "borderWidth", ""));
+          if (sel.element) clearInlineAfterClassUpdate(sel.element, "borderWidth");
         }}
         suffix="px"
       />
@@ -1060,8 +1212,9 @@ const OutlineSection = React.memo(function OutlineSection({ h, sel }: { h: Class
         min={0} max={16} step={1}
         strategy={INTEGER}
         encode={n => n === 0 ? "" : `[${n}px]`}
+        placeholder={outlineWidthPx > 0 ? `${outlineWidthPx}px` : "0"}
         onLivePreview={v => { if (sel.element) setStyleProp(sel.element, "outlineWidth", `${v}px`); }}
-        onChange={v => { h.set("outline", v); if (sel.element) requestAnimationFrame(() => setStyleProp(sel.element!, "outlineWidth", "")); }}
+        onChange={v => { h.set("outline", v); if (sel.element) clearInlineAfterClassUpdate(sel.element, "outlineWidth"); }}
         suffix="px"
       />
       <SliderValueInput
@@ -1071,8 +1224,9 @@ const OutlineSection = React.memo(function OutlineSection({ h, sel }: { h: Class
         min={-8} max={16} step={1}
         strategy={INTEGER}
         encode={n => n === 0 ? "" : `[${n}px]`}
+        placeholder={`${outlineOffsetPx}px`}
         onLivePreview={v => { if (sel.element) setStyleProp(sel.element, "outlineOffset", `${v}px`); }}
-        onChange={v => { h.set("outline-offset", v); if (sel.element) requestAnimationFrame(() => setStyleProp(sel.element!, "outlineOffset", "")); }}
+        onChange={v => { h.set("outline-offset", v); if (sel.element) clearInlineAfterClassUpdate(sel.element, "outlineOffset"); }}
         suffix="px"
       />
       <ColorPicker
@@ -1100,10 +1254,11 @@ const RadiusSection = React.memo(function RadiusSection({ h, sel }: { h: ClassHe
         presets={RADIUS_PRESETS}
         strategy={LENGTH}
         encode={n => n === 0 ? "none" : `[${n}px]`}
+        placeholder={computedRadius > 0 ? `${computedRadius}px` : "0"}
         onLivePreview={v => { if (sel.element) setStyleProp(sel.element, "borderRadius", `${v}px`); }}
         onChange={v => {
           h.set("rounded", v);
-          if (sel.element) requestAnimationFrame(() => setStyleProp(sel.element!, "borderRadius", ""));
+          if (sel.element) clearInlineAfterClassUpdate(sel.element, "borderRadius");
         }}
         suffix="px"
       />
@@ -1198,42 +1353,6 @@ const BackgroundSection = React.memo(function BackgroundSection({ h, sel }: { h:
         <ValueInput value={h.get("bg")} presets={BG_POSITION_PRESETS} strategy={KEYWORD}
           onChange={v => h.set("bg", v)} placeholder="center" />
       </PropRow>
-      <PropRow label="Attachment">
-        <CustomSelect value={["fixed","local","scroll"].find(c => h.has(`bg-${c}`)) || ""}
-          options={BG_ATTACHMENT_OPTIONS}
-          onChange={v => {
-            const oldActual = ["fixed","local","scroll"].map(c => h.actual(`bg-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`bg-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Clip">
-        <CustomSelect value={["border","padding","content","text"].find(c => h.has(`bg-clip-${c}`)) || ""}
-          options={BG_CLIP_OPTIONS}
-          onChange={v => {
-            const oldActual = ["border","padding","content","text"].map(c => h.actual(`bg-clip-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`bg-clip-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Origin">
-        <CustomSelect value={["border","padding","content"].find(c => h.has(`bg-origin-${c}`)) || ""}
-          options={BG_ORIGIN_OPTIONS}
-          onChange={v => {
-            const oldActual = ["border","padding","content"].map(c => h.actual(`bg-origin-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`bg-origin-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Blend">
-        <CustomSelect value={BLEND_MODE_OPTIONS.map(o => o.value).find(v => v && h.has(`bg-blend-${v}`)) || ""}
-          options={BLEND_MODE_OPTIONS}
-          onChange={v => {
-            const oldActual = BLEND_MODE_OPTIONS.map(o => o.value).filter(Boolean).map(c => h.actual(`bg-blend-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`bg-blend-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
     </Section>
   );
 });
@@ -1259,88 +1378,71 @@ function decodePx(v: string): number {
 }
 
 const TransformsSection = React.memo(function TransformsSection({ h, sel }: { h: ClassHelpers; sel: Sel }) {
-  void sel;
+  // Decode the computed transform matrix so the user sees the current
+  // rotation/scale/translation even if it came from somewhere other than
+  // a Tailwind class.
+  const cs = sel.element ? getCachedStyle(sel.element) : null;
+  const tx = cs?.transform;
+  let computedRotate = 0, computedScaleX = 1, computedScaleY = 1, computedTx = 0, computedTy = 0;
+  if (tx && tx !== "none") {
+    const m2d = tx.match(/matrix\(([^)]+)\)/);
+    if (m2d) {
+      const [a, b, c, d, e, f] = m2d[1].split(",").map(s => parseFloat(s));
+      computedRotate = Math.round(Math.atan2(b, a) * (180 / Math.PI));
+      computedScaleX = Math.round(Math.sqrt(a * a + b * b) * 100) / 100;
+      computedScaleY = Math.round(Math.sqrt(c * c + d * d) * 100) / 100;
+      computedTx = Math.round(e);
+      computedTy = Math.round(f);
+    }
+  }
+  const scaleAvg = Math.round(((computedScaleX + computedScaleY) / 2) * 100);
   return (
     <Section title="Transforms" defaultOpen={false}>
       <SliderValueInput
         label="Rotate"
         value={h.get("rotate")}
-        sliderValue={decodeAngle(h.get("rotate"))}
+        sliderValue={decodeAngle(h.get("rotate")) || computedRotate}
         min={-180} max={180} step={1}
         presets={ROTATE_PRESETS}
         strategy={ANGLE}
         encode={n => n === 0 ? "" : `[${n}deg]`}
+        placeholder={computedRotate !== 0 ? `${computedRotate}deg` : "0deg"}
         onChange={v => h.set("rotate", v)}
         suffix="deg"
       />
       <SliderValueInput
         label="Scale"
         value={h.get("scale")}
-        sliderValue={decodeScale(h.get("scale"))}
+        sliderValue={decodeScale(h.get("scale")) || scaleAvg || 100}
         min={0} max={200} step={1}
         presets={SCALE_PRESETS}
         strategy={NUMBER}
         encode={n => n === 100 ? "" : String(n)}
+        placeholder={scaleAvg !== 100 ? `${scaleAvg}%` : "100%"}
         onChange={v => h.set("scale", v)}
         suffix="%"
       />
       <SliderValueInput
-        label="Scale X"
-        value={h.get("scale-x")}
-        sliderValue={decodeScale(h.get("scale-x"))}
-        min={-200} max={200} step={1}
-        strategy={NUMBER}
-        encode={n => n === 100 ? "" : String(n)}
-        onChange={v => h.set("scale-x", v)}
-        suffix="%"
-      />
-      <SliderValueInput
-        label="Scale Y"
-        value={h.get("scale-y")}
-        sliderValue={decodeScale(h.get("scale-y"))}
-        min={-200} max={200} step={1}
-        strategy={NUMBER}
-        encode={n => n === 100 ? "" : String(n)}
-        onChange={v => h.set("scale-y", v)}
-        suffix="%"
-      />
-      <SliderValueInput
-        label="Skew X"
-        value={h.get("skew-x")}
-        sliderValue={decodeAngle(h.get("skew-x"))}
-        min={-45} max={45} step={1}
-        strategy={ANGLE}
-        encode={n => n === 0 ? "" : `[${n}deg]`}
-        onChange={v => h.set("skew-x", v)}
-        suffix="deg"
-      />
-      <SliderValueInput
-        label="Skew Y"
-        value={h.get("skew-y")}
-        sliderValue={decodeAngle(h.get("skew-y"))}
-        min={-45} max={45} step={1}
-        strategy={ANGLE}
-        encode={n => n === 0 ? "" : `[${n}deg]`}
-        onChange={v => h.set("skew-y", v)}
-        suffix="deg"
-      />
-      <SliderValueInput
         label="Translate X"
         value={h.get("translate-x")}
-        sliderValue={decodePx(h.get("translate-x"))}
+        sliderValue={decodePx(h.get("translate-x")) || computedTx}
         min={-200} max={200} step={1}
+        presets={INSET_PRESETS}
         strategy={LENGTH}
         encode={n => n === 0 ? "" : `[${n}px]`}
+        placeholder={computedTx !== 0 ? `${computedTx}px` : "0"}
         onChange={v => h.set("translate-x", v)}
         suffix="px"
       />
       <SliderValueInput
         label="Translate Y"
         value={h.get("translate-y")}
-        sliderValue={decodePx(h.get("translate-y"))}
+        sliderValue={decodePx(h.get("translate-y")) || computedTy}
         min={-200} max={200} step={1}
+        presets={INSET_PRESETS}
         strategy={LENGTH}
         encode={n => n === 0 ? "" : `[${n}px]`}
+        placeholder={computedTy !== 0 ? `${computedTy}px` : "0"}
         onChange={v => h.set("translate-y", v)}
         suffix="px"
       />
@@ -1384,51 +1486,29 @@ function FilterRow({
   );
 }
 
-function makeFilterSection(title: string, isBackdrop: boolean) {
-  const pfx = (p: string) => isBackdrop ? `backdrop-${p}` : p;
-  return React.memo(function _FilterSection({ h, sel }: { h: ClassHelpers; sel: Sel }) {
-    void sel;
-    return (
-      <Section title={title} defaultOpen={false}>
-        <FilterRow h={h} label="Blur"      prefix={pfx("blur")}       min={0} max={64} step={1}  suffix="px"  presets={BLUR_PRESETS}
-          encode={n => n === 0 ? "" : `[${n}px]`}
-          decode={v => { const m = v.match(/^\[(\d+)px\]$/); return m ? parseInt(m[1], 10) : 0; }}
-          defaultN={0} />
-        <FilterRow h={h} label="Bright"    prefix={pfx("brightness")} min={0} max={200} step={5} suffix="%" presets={FILTER_PERCENT_PRESETS}
-          encode={n => n === 100 ? "" : String(n)}
-          decode={v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 100; }}
-          defaultN={100} />
-        <FilterRow h={h} label="Contrast"  prefix={pfx("contrast")}   min={0} max={200} step={5} suffix="%" presets={FILTER_PERCENT_PRESETS}
-          encode={n => n === 100 ? "" : String(n)}
-          decode={v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 100; }}
-          defaultN={100} />
-        <FilterRow h={h} label="Saturate"  prefix={pfx("saturate")}   min={0} max={200} step={5} suffix="%" presets={FILTER_PERCENT_PRESETS}
-          encode={n => n === 100 ? "" : String(n)}
-          decode={v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 100; }}
-          defaultN={100} />
-        <FilterRow h={h} label="Gray"      prefix={pfx("grayscale")}  min={0} max={100} step={5} suffix="%"
-          encode={n => n === 0 ? "" : String(n)}
-          decode={v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 0; }}
-          defaultN={0} />
-        <FilterRow h={h} label="Invert"    prefix={pfx("invert")}     min={0} max={100} step={5} suffix="%"
-          encode={n => n === 0 ? "" : String(n)}
-          decode={v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 0; }}
-          defaultN={0} />
-        <FilterRow h={h} label="Sepia"     prefix={pfx("sepia")}      min={0} max={100} step={5} suffix="%"
-          encode={n => n === 0 ? "" : String(n)}
-          decode={v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 0; }}
-          defaultN={0} />
-        <FilterRow h={h} label="Hue"       prefix={pfx("hue-rotate")} min={-180} max={180} step={1} suffix="deg" presets={HUE_ROTATE_PRESETS}
-          encode={n => n === 0 ? "" : `[${n}deg]`}
-          decode={v => { const m = v.match(/^\[(-?\d+)deg\]$/); if (m) return parseInt(m[1], 10); const n = parseInt(v, 10); return Number.isFinite(n) ? n : 0; }}
-          defaultN={0} />
-      </Section>
-    );
-  });
-}
-
-const FiltersSection = makeFilterSection("Filters", false);
-const BackdropFiltersSection = makeFilterSection("Backdrop filters", true);
+const FiltersSection = React.memo(function FiltersSection({ h, sel }: { h: ClassHelpers; sel: Sel }) {
+  void sel;
+  return (
+    <Section title="Filters" defaultOpen={false}>
+      <FilterRow h={h} label="Blur"      prefix="blur"        min={0} max={64} step={1}  suffix="px"  presets={BLUR_PRESETS}
+        encode={n => n === 0 ? "" : `[${n}px]`}
+        decode={v => { const m = v.match(/^\[(\d+)px\]$/); return m ? parseInt(m[1], 10) : 0; }}
+        defaultN={0} />
+      <FilterRow h={h} label="Bright"    prefix="brightness"  min={0} max={200} step={5} suffix="%" presets={FILTER_PERCENT_PRESETS}
+        encode={n => n === 100 ? "" : String(n)}
+        decode={v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 100; }}
+        defaultN={100} />
+      <FilterRow h={h} label="Contrast"  prefix="contrast"    min={0} max={200} step={5} suffix="%" presets={FILTER_PERCENT_PRESETS}
+        encode={n => n === 100 ? "" : String(n)}
+        decode={v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 100; }}
+        defaultN={100} />
+      <FilterRow h={h} label="Saturate"  prefix="saturate"    min={0} max={200} step={5} suffix="%" presets={FILTER_PERCENT_PRESETS}
+        encode={n => n === 100 ? "" : String(n)}
+        decode={v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 100; }}
+        defaultN={100} />
+    </Section>
+  );
+});
 
 const TransitionsSection = React.memo(function TransitionsSection({ h, sel }: { h: ClassHelpers; sel: Sel }) {
   void sel;
@@ -1542,24 +1622,6 @@ const InteractivitySection = React.memo(function InteractivitySection({ h, sel }
           onChange={v => {
             const oldActual = ["resize","resize-none","resize-y","resize-x"].map(c => h.actual(c)).filter(Boolean) as string[];
             h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [v === "resize" ? "resize" : `resize-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Scroll">
-        <CustomSelect value={["auto","smooth"].find(c => h.has(`scroll-${c}`)) || ""}
-          options={SCROLL_BEHAVIOR_OPTIONS}
-          onChange={v => {
-            const oldActual = ["auto","smooth"].map(c => h.actual(`scroll-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`scroll-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Will change">
-        <CustomSelect value={WILL_CHANGE_OPTIONS.map(o => o.value).find(v => v && h.has(`will-change-${v}`)) || ""}
-          options={WILL_CHANGE_OPTIONS}
-          onChange={v => {
-            const oldActual = WILL_CHANGE_OPTIONS.map(o => o.value).filter(Boolean).map(c => h.actual(`will-change-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`will-change-${v}`] : undefined });
           }}
         />
       </PropRow>

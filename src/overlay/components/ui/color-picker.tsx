@@ -6,6 +6,9 @@ interface ColorPickerProps {
   prefix: string;
   classes: string[];
   onApply: (remove?: string[], add?: string[]) => void;
+  /** When set, the picker renders as disabled and won't open. Used to prevent
+   *  silent no-ops on elements whose color is already set via inline `style`. */
+  disabledReason?: string;
 }
 
 import { THEME } from "../../theme.js";
@@ -75,7 +78,7 @@ function getCSSVariables(): { name: string; value: string }[] {
 
 type Tab = "palette" | "variables" | "custom";
 
-export function ColorPicker({ label, prefix, classes, onApply }: ColorPickerProps) {
+export function ColorPicker({ label, prefix, classes, onApply, disabledReason }: ColorPickerProps) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("palette");
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
@@ -125,24 +128,31 @@ export function ColorPicker({ label, prefix, classes, onApply }: ColorPickerProp
     fontFamily: C.mono,
   });
 
+  const isDisabled = !!disabledReason;
+
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <span style={{ fontSize: 10, color: C.fgMuted, width: 44, flexShrink: 0 }}>{label}</span>
         <button
-          onClick={() => setOpen(!open)}
+          onClick={() => { if (!isDisabled) setOpen(!open); }}
+          disabled={isDisabled}
+          title={disabledReason}
           style={{
             display: "flex", alignItems: "center", flex: 1, height: 26,
             background: C.bgAlt, border: `1px solid ${open ? C.border : "transparent"}`,
-            borderRadius: 4, padding: "0 6px", cursor: "pointer", gap: 8,
+            borderRadius: 4, padding: "0 6px", cursor: isDisabled ? "not-allowed" : "pointer", gap: 8,
+            opacity: isDisabled ? 0.45 : 1,
           }}
-          onMouseEnter={e => (e.currentTarget.style.background = C.bgHover)}
-          onMouseLeave={e => (e.currentTarget.style.background = C.bgAlt)}
+          onMouseEnter={e => { if (!isDisabled) e.currentTarget.style.background = C.bgHover; }}
+          onMouseLeave={e => { if (!isDisabled) e.currentTarget.style.background = C.bgAlt; }}
         >
           <div style={{ width: 14, height: 14, borderRadius: 3, border: "1px solid rgba(255,255,255,0.12)", background: swatchBg, flexShrink: 0 }} />
-          <span style={{ fontSize: 10, fontFamily: C.mono, color: C.fg, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{display}</span>
+          <span style={{ fontSize: 10, fontFamily: C.mono, color: C.fg, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {isDisabled ? "inline style" : display}
+          </span>
         </button>
-        {current && (
+        {current && !isDisabled && (
           <button onClick={() => onApply([current], undefined)} style={{ width: 20, height: 20, background: "transparent", border: "none", color: C.fgMuted, cursor: "pointer", fontSize: 12, borderRadius: 3, display: "flex", alignItems: "center", justifyContent: "center" }} title="Remove">×</button>
         )}
       </div>

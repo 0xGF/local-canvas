@@ -17,6 +17,12 @@ export function LocalCanvasLogo({ className }: { className?: string }) {
       loop: true,
       autoplay: true,
       animationData,
+      rendererSettings: {
+        // Left-align the SVG inside its container — the default is xMidYMid meet
+        // which centers and leaves whitespace when the container is wider than
+        // the animation's aspect ratio.
+        preserveAspectRatio: "xMinYMid meet",
+      },
     });
 
     return () => {

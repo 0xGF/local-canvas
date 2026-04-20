@@ -12,6 +12,8 @@ import {
   getHiddenAnnotationIds,
   hideAnnotation,
   findElementForAnnotation,
+  findAllElementsForAnnotation,
+  annotationPaths,
   scrollToAndOpenAnnotation,
   scrollToAndFocusAnnotation,
   type Annotation,
@@ -61,6 +63,11 @@ interface PinPosition {
   y: number;
   elementRect: { left: number; top: number; width: number; height: number };
   tagName: string;
+  /** Set on group annotations (elementPaths.length > 1). `elementRect` is the
+   *  union box, `memberRects` are the per-element rects so hovering the pin
+   *  can outline every member individually. */
+  memberRects?: { left: number; top: number; width: number; height: number }[];
+  memberCount?: number;
 }
 
 /** Pick the corner with most empty space around it to avoid covering content. */
@@ -96,15 +103,12 @@ function pickBestCorner(
   return best;
 }
 
-/** Compute the pin position (viewport coords) for an element. */
-function computePinPosition(el: HTMLElement, a: Annotation, existingPins: PinPosition[]): PinPosition | null {
-  const rect = el.getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0) return null;
-
-  // If element lives in iframe, translate coords to parent viewport.
-  let scale = 1;
-  let offsetX = 0;
-  let offsetY = 0;
+/** Translate a DOM element's bounding rect from its owner document's
+ *  coordinate space into the parent viewport, accounting for the responsive
+ *  iframe transform. */
+function elementRectInViewport(el: HTMLElement) {
+  const r = el.getBoundingClientRect();
+  let scale = 1, offsetX = 0, offsetY = 0;
   const iframe = getEditorIframe();
   if (iframe && iframe.contentDocument && el.ownerDocument === iframe.contentDocument) {
     const ir = iframe.getBoundingClientRect();
@@ -113,22 +117,57 @@ function computePinPosition(el: HTMLElement, a: Annotation, existingPins: PinPos
     offsetX = ir.left;
     offsetY = ir.top;
   }
+  return {
+    left: r.left * scale + offsetX,
+    top: r.top * scale + offsetY,
+    width: r.width * scale,
+    height: r.height * scale,
+    zero: r.width === 0 && r.height === 0,
+  };
+}
 
-  const left = rect.left * scale + offsetX;
-  const top = rect.top * scale + offsetY;
-  const width = rect.width * scale;
-  const height = rect.height * scale;
-  const elRect = { left, top, width, height };
+/** Compute the pin position (viewport coords) for a single-element annotation. */
+function computePinPosition(el: HTMLElement, a: Annotation, existingPins: PinPosition[]): PinPosition | null {
+  const r = elementRectInViewport(el);
+  if (r.zero) return null;
 
+  const elRect = { left: r.left, top: r.top, width: r.width, height: r.height };
   const corner = pickBestCorner(elRect, existingPins);
-
-  // Apply persisted drag offset if any
-  const offsets = readPinOffsets();
-  const offset = offsets[a.id];
+  const offset = readPinOffsets()[a.id];
   const x = corner.x + (offset?.dx ?? 0);
   const y = corner.y + (offset?.dy ?? 0);
 
   return { annotation: a, x, y, elementRect: elRect, tagName: el.tagName.toLowerCase() };
+}
+
+/** Compute the pin position for a group annotation — union bounding box,
+ *  single anchor, per-member rects retained for hover outlines. */
+function computeGroupPinPosition(els: HTMLElement[], a: Annotation, existingPins: PinPosition[]): PinPosition | null {
+  if (els.length < 2) return null;
+  const rects = els.map(elementRectInViewport).filter(r => !r.zero);
+  if (rects.length === 0) return null;
+
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  for (const r of rects) {
+    left = Math.min(left, r.left);
+    top = Math.min(top, r.top);
+    right = Math.max(right, r.left + r.width);
+    bottom = Math.max(bottom, r.top + r.height);
+  }
+  const elRect = { left, top, width: right - left, height: bottom - top };
+  const corner = pickBestCorner(elRect, existingPins);
+  const offset = readPinOffsets()[a.id];
+  const x = corner.x + (offset?.dx ?? 0);
+  const y = corner.y + (offset?.dy ?? 0);
+
+  return {
+    annotation: a,
+    x, y,
+    elementRect: elRect,
+    tagName: els[0].tagName.toLowerCase(),
+    memberRects: rects.map(r => ({ left: r.left, top: r.top, width: r.width, height: r.height })),
+    memberCount: els.length,
+  };
 }
 
 /** Get pin colors based on annotation status. */
@@ -240,7 +279,11 @@ const Pin = React.memo(function Pin({ position, number, isOpen, isFocused, isNew
       }}
       title={`${position.annotation.comment}\nDrag to reposition · Right-click to dismiss`}
     >
-      {isHovered && !isDragging ? <Pencil size={10} /> : number}
+      {isHovered && !isDragging
+        ? <Pencil size={10} />
+        : position.memberCount && position.memberCount > 1
+          ? `×${position.memberCount}`
+          : number}
     </button>
   );
 });
@@ -694,6 +737,13 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
     function tick() {
       const next: PinPosition[] = [];
       for (const a of visible) {
+        const paths = annotationPaths(a);
+        if (paths.length > 1) {
+          const els = findAllElementsForAnnotation(a);
+          const pos = computeGroupPinPosition(els, a, next);
+          if (pos) next.push(pos);
+          continue;
+        }
         const el = findElementForAnnotation(a);
         if (!el) continue;
         const pos = computePinPosition(el, a, next);
@@ -835,12 +885,23 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
         />
       )}
 
-      {/* Highlight outline on the targeted element when hovering, focused, or open */}
+      {/* Highlight outline on the targeted element(s) when hovering, focused, or open.
+          Group annotations render one rect per member instead of just the union box
+          so the user can see exactly which elements are in the set. */}
       {allVisiblePins.map((p) => {
         const isHover = hoveredId === p.annotation.id;
         const isOpen = openId === p.annotation.id;
         const isFocus = focusedId === p.annotation.id;
         if (!isHover && !isOpen && !isFocus) return null;
+        if (p.memberRects && p.memberRects.length > 0) {
+          return (
+            <React.Fragment key={`hl-${p.annotation.id}`}>
+              {p.memberRects.map((r, i) => (
+                <PinHighlight key={`hl-${p.annotation.id}-${i}`} rect={r} />
+              ))}
+            </React.Fragment>
+          );
+        }
         return <PinHighlight key={`hl-${p.annotation.id}`} rect={p.elementRect} />;
       })}
 

@@ -20,6 +20,18 @@ export interface Annotation {
   comment: string;
   element: string;
   elementPath: string;
+  /** Populated when the annotation targets a group of elements (multi-select).
+   *  The primary elementPath is still the first entry for back-compat with
+   *  consumers that only read elementPath.
+   *
+   *  Agent-side convention:
+   *    - If the change is per-element (e.g. "give each card the same radius"),
+   *      fan out one mutation per path — reading each element's own file:line.
+   *    - If the change is structural (e.g. "wrap these in a grid"), treat the
+   *      paths as an ordered group and operate on the common parent / range.
+   *    - Resolving one annotation should still resolve it for the entire
+   *      group — don't create per-path resolution entries. */
+  elementPaths?: string[];
   cssClasses?: string;
   intent?: string;
   severity?: string;
@@ -38,6 +50,9 @@ export interface PostAnnotationOpts {
   comment: string;
   element: string;
   elementPath: string;
+  /** Supply when the annotation spans multiple elements — server stores the
+   *  full list alongside the primary elementPath and boundingBox. */
+  elementPaths?: string[];
   cssClasses?: string;
   intent?: "fix" | "change" | "question" | "undo";
   x?: number;
@@ -77,6 +92,11 @@ export async function postAnnotation(opts: PostAnnotationOpts): Promise<Annotati
       comment: opts.comment,
       element: opts.element,
       elementPath: opts.elementPath,
+      // Only include elementPaths for actual groups so single-element
+      // annotations stay wire-compatible with the old payload shape.
+      ...(opts.elementPaths && opts.elementPaths.length > 1
+        ? { elementPaths: opts.elementPaths }
+        : {}),
       cssClasses: opts.cssClasses,
       intent: opts.intent || "change",
       severity: "important",
@@ -159,6 +179,35 @@ export function dispatchOpenAnnotationPin(annotationId: string) {
  * element. Searches both the test-app iframe (if present) and the host
  * document, in that order.
  */
+/** All element paths an annotation targets — group paths if present, else
+ *  the single primary elementPath. The elementPaths field is the canonical
+ *  source, but we also accept a comma-joined string in elementPath as a
+ *  fallback for servers that strip unknown fields (the agentation-mcp HTTP
+ *  schema doesn't know about elementPaths yet). Empty array if neither is
+ *  set. */
+export function annotationPaths(a: Pick<Annotation, "elementPath" | "elementPaths">): string[] {
+  if (a.elementPaths && a.elementPaths.length > 0) return a.elementPaths;
+  if (a.elementPath && a.elementPath.includes(",")) {
+    const parts = a.elementPath.split(",").map(s => s.trim()).filter(Boolean);
+    if (parts.length > 1) return parts;
+  }
+  return a.elementPath ? [a.elementPath] : [];
+}
+
+/** Resolve every elementPath on a group annotation to a live DOM element.
+ *  Missing elements are skipped (the callee decides how to handle a partial
+ *  result — e.g. still render a pin if at least one member is present). */
+export function findAllElementsForAnnotation(
+  a: Pick<Annotation, "elementPath" | "elementPaths">,
+): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  for (const p of annotationPaths(a)) {
+    const el = findElementForAnnotation({ elementPath: p });
+    if (el) out.push(el);
+  }
+  return out;
+}
+
 export function findElementForAnnotation(a: Pick<Annotation, "elementPath">): HTMLElement | null {
   if (!a.elementPath) return null;
   const lastColon = a.elementPath.lastIndexOf(":");
@@ -229,4 +278,61 @@ export function dispatchNavigatePin(direction: PinNavDirection) {
 /** Toggle the toolbar Ask AI history popover (for the `g h` keyboard chord). */
 export function dispatchToggleAIHistory() {
   window.dispatchEvent(new CustomEvent("canvas:toggle-ai-history"));
+}
+
+// ── Agent-undo (snapshot + restore for agent-driven edits) ──
+// These talk to the local-canvas editor server (same origin as the overlay),
+// not the agentation HTTP API.
+
+export interface AgentUndoEntry {
+  annotationId: string;
+  createdAt: string;
+  summary?: string;
+  files: string[];
+}
+
+/** List snapshots the editor server currently holds, newest first. */
+export async function listAgentUndoEntries(): Promise<AgentUndoEntry[]> {
+  try {
+    const res = await fetch("/__canvas/agent-undo");
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Dev-only: pretend an agent just edited the file an annotation targets.
+ *  The server snapshots the current content, then prepends a visible marker
+ *  line so the user can watch Undo restore it. */
+export async function simulateAgentEdit(annotationId: string, filePath: string): Promise<boolean> {
+  try {
+    const res = await fetch("/__canvas/agent-simulate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ annotationId, filePath }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Restore the files for a given annotation. Returns the restored path list
+ *  on success, or null if no snapshot exists / the request failed. */
+export async function undoAgentChange(annotationId: string): Promise<{ restored: string[]; summary?: string } | null> {
+  try {
+    const res = await fetch("/__canvas/agent-undo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ annotationId }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data?.ok) return null;
+    return { restored: data.restored, summary: data.summary };
+  } catch {
+    return null;
+  }
 }

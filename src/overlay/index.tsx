@@ -3,7 +3,18 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App.js";
 import { PortalContainerProvider } from "./lib/portal-container.js";
 import { createOverlayContainer, injectStyles } from "./utils/shadow-dom.js";
+import { resetPaintCache } from "./canvas/paint-frame.js";
+import { clearAllCaches } from "./utils/style-cache.js";
 import styles from "./styles.css?inline";
+
+// Clear paint and style caches on every Vite HMR tick so we don't retain
+// references to elements the host page is about to swap out.
+function resetCachesForHMR() {
+  resetPaintCache();
+  clearAllCaches();
+}
+window.addEventListener("vite:beforeUpdate", resetCachesForHMR);
+window.addEventListener("vite:beforeFullReload", resetCachesForHMR);
 
 // Suppress ResizeObserver loop error — benign, caused by layout settling across frames
 window.addEventListener("error", (e) => {

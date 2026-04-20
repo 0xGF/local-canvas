@@ -58,7 +58,8 @@ export function createProxy(options: ProxyOptions) {
 }
 
 function injectOverlayScript(html: string): string {
-  const script = `<script src="/__canvas/overlay.js" defer></script>`;
+  // type="module" because the overlay ships as ES with dynamic chunks.
+  const script = `<script type="module" src="/__canvas/overlay.js"></script>`;
 
   // Inject before </body> or at the end
   if (html.includes("</body>")) {

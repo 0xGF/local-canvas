@@ -114,9 +114,21 @@ export const ContextMenu = React.memo(function ContextMenu() {
     if (!menu) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        // If AI prompt is open, first Escape returns to the menu;
-        // second Escape closes the whole thing.
-        if (aiPromptOpen) { e.stopPropagation(); setAiPromptOpen(false); return; }
+        if (aiPromptOpen) {
+          e.stopPropagation();
+          // Annotate-tool flow: the item list isn't what the user wanted
+          // either, so close the whole thing in one press AND drop annotate
+          // mode (otherwise the next click would re-open the prompt).
+          if (menu?.initialMode === "ai-prompt") {
+            useEditorStore.getState().setAnnotateMode(false);
+            setContextMenu(null);
+            setAiPromptOpen(false);
+            return;
+          }
+          // Right-click flow: first Esc returns to the item list.
+          setAiPromptOpen(false);
+          return;
+        }
         setContextMenu(null);
       }
     }
@@ -153,10 +165,20 @@ export const ContextMenu = React.memo(function ContextMenu() {
   // When the menu is opened with `initialMode: "ai-prompt"` (annotate-tool
   // click path), skip the main item list and open the Ask AI textarea.
   // Reset on dismiss so a subsequent right-click sees the full item list.
+  //
+  // IMPORTANT: depend only on `menu`, not on `aiPromptOpen`. If we also
+  // depend on `aiPromptOpen`, pressing Esc inside the prompt sets it to
+  // false — the effect then immediately re-opens it (menu.initialMode is
+  // still "ai-prompt"), creating an escape-proof loop. Menu identity is
+  // the only trigger that matters.
+  const lastMenuRef = useRef<typeof menu>(null);
   useEffect(() => {
-    if (menu?.initialMode === "ai-prompt" && !aiPromptOpen) setAiPromptOpen(true);
-    if (!menu && aiPromptOpen) setAiPromptOpen(false);
-  }, [menu, aiPromptOpen]);
+    if (menu !== lastMenuRef.current) {
+      lastMenuRef.current = menu;
+      if (menu?.initialMode === "ai-prompt") setAiPromptOpen(true);
+      else if (!menu) setAiPromptOpen(false);
+    }
+  }, [menu]);
 
   const close = useCallback(() => { setContextMenu(null); setAiPromptOpen(false); }, [setContextMenu]);
 

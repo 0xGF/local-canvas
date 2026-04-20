@@ -127,6 +127,11 @@ export const CustomSelect = React.memo(function CustomSelect({
   const dropdown = open && dropdownPos && (
     <div
       ref={listRef}
+      // Mark as overlay UI so the viewport wheel handler lets its native
+      // scroll through — otherwise scrolling a long option list either does
+      // nothing (zoom=1 branch silently ignores it) or pans the canvas
+      // (zoom!=1 branch preventDefaults the wheel).
+      data-canvas-overlay="true"
       style={{
         position: "fixed",
         top: dropdownPos.top,

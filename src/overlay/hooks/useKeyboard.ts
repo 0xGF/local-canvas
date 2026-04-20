@@ -53,16 +53,21 @@ export function useKeyboard() {
       const s = storeRef.current;
       const isMeta = e.metaKey || e.ctrlKey;
 
-      // Global shortcuts (work even while typing — except undo/redo during inline text editing)
+      // Global shortcuts — Cmd+S still saves while typing (convention across
+      // every text editor), but undo/redo must NOT fire while the user is in
+      // a text input, including the AskAI chat and any app-side input the
+      // user may have focused. The overlay-side inline editor tracks its own
+      // state via `editingText`, which we also honour.
       if (isMeta && e.key === "s") { e.preventDefault(); e.stopPropagation(); s.send({ type: "save" }); s.clearPending(); s.clearChanges(); return; }
-      if (!useEditorStore.getState().editingText) {
+      const typing = isTyping(e);
+      if (!typing && !useEditorStore.getState().editingText) {
         if (isMeta && e.key === "z" && !e.shiftKey) { e.preventDefault(); if (useEditorStore.getState().pendingCount <= 0) return; s.undo(); s.didUndo(); s.decrementPending(); useEditorStore.getState().showToast("↩ Undo"); return; }
         if (isMeta && e.key === "y") { e.preventDefault(); s.redo(); s.didRedo(); s.incrementPending(); useEditorStore.getState().showToast("↪ Redo"); return; }
         if (isMeta && e.key === "z" && e.shiftKey) { e.preventDefault(); s.redo(); s.didRedo(); s.incrementPending(); useEditorStore.getState().showToast("↪ Redo"); return; }
       }
 
       // Let inputs handle their own keystrokes (including Escape)
-      if (isTyping(e)) return;
+      if (typing) return;
 
       // Chord resolution: if `g` is armed, the next key finishes the chord.
       if (chordRef.current.leader === "g" && !isMeta) {
@@ -91,6 +96,14 @@ export function useKeyboard() {
         e.preventDefault();
         const on = useEditorStore.getState().annotateMode;
         useEditorStore.getState().setAnnotateMode(!on);
+        return;
+      }
+
+      // `l` in edit mode toggles the layers panel.
+      if (e.key === "l" && !isMeta && !e.shiftKey && !e.altKey &&
+          useEditorStore.getState().mode === "edit") {
+        e.preventDefault();
+        useEditorStore.getState().toggleLayers();
         return;
       }
 
@@ -144,8 +157,11 @@ export function useKeyboard() {
         return;
       }
 
-      // Alt+P — toggle animation pause
-      if (e.key === "p" && e.altKey && !isMeta && !e.shiftKey) {
+      // Alt+P — toggle animation pause (edit mode only).
+      // Use `e.code` because on macOS Alt+letter produces a special char
+      // (Alt+P → "π") which would make `e.key === "p"` always false.
+      if (e.code === "KeyP" && e.altKey && !isMeta && !e.shiftKey &&
+          useEditorStore.getState().mode === "edit") {
         e.preventDefault();
         useEditorStore.getState().toggleAnimationsPaused();
         const paused = useEditorStore.getState().animationsPaused;
@@ -168,10 +184,29 @@ export function useKeyboard() {
       }
     }
 
-    return attachToDocumentAndIframe([
+    // Defensive: if the user holds space, clicks a link, and the browser
+    // navigates — or any other flow moves focus out of our window — the
+    // keyup never arrives and `interacting` gets stuck on, which silently
+    // disables every overlay interaction (including the annotate flow).
+    // Reset on blur / visibility change / iframe navigation.
+    function resetInteracting() {
+      if (useEditorStore.getState().interacting) {
+        useEditorStore.getState().setInteracting(false);
+      }
+    }
+
+    window.addEventListener("blur", resetInteracting);
+    document.addEventListener("visibilitychange", resetInteracting);
+
+    const cleanup = attachToDocumentAndIframe([
       bind("keydown", handleKeyDown),
       bind("keyup", handleKeyUp),
     ]);
+    return () => {
+      cleanup();
+      window.removeEventListener("blur", resetInteracting);
+      document.removeEventListener("visibilitychange", resetInteracting);
+    };
   }, []);
 }
 

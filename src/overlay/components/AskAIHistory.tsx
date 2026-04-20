@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, X } from "./icons.js";
+import { Sparkles, X, Trash2, Reset } from "./icons.js";
 import { THEME } from "../theme.js";
-import { popoverEmerge } from "../utils/motion-presets.js";
+import { PopFade } from "../utils/motion-presets.js";
 import {
   listAnnotations,
   currentSessionId,
   hideAnnotation,
+  hideAllAnnotations,
+  unhideAllAnnotations,
   getHiddenAnnotationIds,
   scrollToAndOpenAnnotation,
   listAgentUndoEntries,
@@ -268,29 +269,25 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
     <div style={{ position: "relative" }}>
       {renderButton(() => setOpen(o => !o), pendingCount)}
 
-      <AnimatePresence>
-        {open && (
-          <>
-            <div
-              style={{ position: "fixed", inset: 0, zIndex: 2147483646 }}
-              onClick={() => setOpen(false)}
-            />
-            <motion.div
-              initial={popoverEmerge.initial}
-              animate={popoverEmerge.animate}
-              exit={popoverEmerge.exit}
-              transition={popoverEmerge.transition}
-              style={{
-                position: "absolute", bottom: "100%", right: 0,
-                marginBottom: 8,
-                background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10,
-                zIndex: 2147483647,
-                boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-                width: 340, maxHeight: 440,
-                display: "flex", flexDirection: "column",
-                fontFamily: C.font,
-              }}
-            >
+      {open && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 2147483646 }}
+          onClick={() => setOpen(false)}
+        />
+      )}
+      <PopFade
+        open={open}
+        style={{
+          position: "absolute", bottom: "100%", right: 0,
+          marginBottom: 8,
+          background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10,
+          zIndex: 2147483647,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+          width: 340, maxHeight: 440,
+          display: "flex", flexDirection: "column",
+          fontFamily: C.font,
+        }}
+      >
               <div style={{
                 display: "flex", alignItems: "center", justifyContent: "space-between",
                 padding: "10px 12px", borderBottom: `1px solid ${C.border}`,
@@ -360,10 +357,135 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
                   ))
                 )}
               </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+
+              <HistoryFooter
+                visibleCount={visible.length}
+                hiddenCount={hiddenIds.size}
+                onHideAll={async () => {
+                  const n = await hideAllAnnotations();
+                  setHiddenIds(getHiddenAnnotationIds());
+                  showToast(n === 0 ? "No annotations to hide" : `Hidden ${n} annotation${n === 1 ? "" : "s"}`);
+                }}
+                onUnhideAll={() => {
+                  unhideAllAnnotations();
+                  setHiddenIds(getHiddenAnnotationIds());
+                  showToast("Annotations restored");
+                }}
+              />
+      </PopFade>
     </div>
   );
 });
+
+/**
+ * Footer row inside the annotation popup. Holds the destructive "Hide all"
+ * action (non-destructive — local only) and, when something's hidden, an
+ * "Unhide" affordance to restore them. Only renders when there's at least
+ * one annotation to act on.
+ */
+function HistoryFooter({
+  visibleCount, hiddenCount, onHideAll, onUnhideAll,
+}: {
+  visibleCount: number;
+  hiddenCount: number;
+  onHideAll: () => void;
+  onUnhideAll: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  if (visibleCount === 0 && hiddenCount === 0) return null;
+
+  const handleConfirmHide = async () => {
+    setBusy(true);
+    try {
+      await onHideAll();
+      setConfirming(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{
+      borderTop: `1px solid ${C.border}`,
+      padding: confirming ? "8px 12px" : "6px 8px",
+      display: "flex", alignItems: "center", gap: 6,
+      background: "rgba(255,255,255,0.015)",
+    }}>
+      {confirming ? (
+        <>
+          <span style={{ flex: 1, fontSize: 10, color: C.fgMuted }}>
+            Hide all {visibleCount}? Non-destructive — you can unhide.
+          </span>
+          <button
+            onClick={handleConfirmHide}
+            disabled={busy}
+            style={{
+              height: 22, padding: "0 10px", border: "none", borderRadius: 4,
+              background: C.danger, color: "#fff",
+              fontFamily: C.font, fontSize: 10, fontWeight: 600,
+              cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1,
+            }}
+          >
+            {busy ? "Hiding…" : "Hide all"}
+          </button>
+          <button
+            onClick={() => setConfirming(false)}
+            disabled={busy}
+            style={{
+              height: 22, padding: "0 8px", borderRadius: 4,
+              border: `1px solid ${C.border}`, background: "transparent",
+              color: C.fgDim, fontFamily: C.font, fontSize: 10,
+              cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+        </>
+      ) : (
+        <>
+          {hiddenCount > 0 && (
+            <button
+              onClick={onUnhideAll}
+              style={{
+                display: "flex", alignItems: "center", gap: 4,
+                padding: "4px 8px", borderRadius: 4,
+                border: "none", background: "transparent",
+                color: C.fgDim, fontFamily: C.font, fontSize: 10, fontWeight: 500,
+                cursor: "pointer",
+                transition: "background-color 80ms, color 80ms",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = C.bgHover; e.currentTarget.style.color = C.fg; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = C.fgDim; }}
+              title="Restore hidden annotations"
+            >
+              <Reset size={11} />
+              Unhide ({hiddenCount})
+            </button>
+          )}
+          <div style={{ flex: 1 }} />
+          {visibleCount > 0 && (
+            <button
+              onClick={() => setConfirming(true)}
+              style={{
+                display: "flex", alignItems: "center", gap: 4,
+                padding: "4px 8px", borderRadius: 4,
+                border: "none", background: "transparent",
+                color: C.fgDim, fontFamily: C.font, fontSize: 10, fontWeight: 500,
+                cursor: "pointer",
+                transition: "background-color 80ms, color 80ms",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = "rgba(242,72,34,0.1)"; e.currentTarget.style.color = C.danger; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = C.fgDim; }}
+              title="Hide every annotation (can be unhidden)"
+            >
+              <Trash2 size={11} />
+              Hide all
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

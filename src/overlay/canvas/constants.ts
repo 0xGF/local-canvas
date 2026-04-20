@@ -16,6 +16,11 @@ export const COL = {
   paddingDash: "rgba(36, 202, 113, 0.5)",
   purple: "#874EFF",
   purpleBg: "rgba(135, 78, 255, 0.1)",
+  // Annotate-mode hover accent — matches the yellow `+` cursor so the user
+  // can see which element will receive their next annotate click.
+  annotate: "#ffb800",
+  annotateDim: "rgba(255, 184, 0, 0.8)",
+  annotateBg: "rgba(255, 184, 0, 0.1)",
 } as const;
 
 export const FONT = "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace";

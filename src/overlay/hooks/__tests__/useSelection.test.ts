@@ -76,6 +76,42 @@ describe("useSelection", () => {
     addSpy.mockRestore();
   });
 
+  it("does NOT clear hoveredElement when the mousemove is inside the Layers panel", async () => {
+    // Build a fake layers panel inside a shadow root that matches the real one
+    const host = document.createElement("div");
+    host.id = "local-canvas-host";
+    document.body.appendChild(host);
+    const shadow = host.attachShadow({ mode: "open" });
+    const panel = document.createElement("div");
+    panel.dataset.canvasLayerPanel = "true";
+    Object.assign(panel.style, { position: "fixed", top: "0px", left: "0px", width: "260px", height: "600px", pointerEvents: "auto" });
+    shadow.appendChild(panel);
+
+    // jsdom's shadow.elementFromPoint is a no-op by default; mock it to pretend
+    // the cursor is over the panel's root
+    shadow.elementFromPoint = (() => panel) as unknown as typeof shadow.elementFromPoint;
+
+    // Seed a hovered element — we assert it is NOT wiped by the mousemove
+    const target = document.createElement("section");
+    document.body.appendChild(target);
+    useEditorStore.setState({ hoveredElement: target });
+
+    renderHook(() => useSelection());
+
+    document.dispatchEvent(new MouseEvent("mousemove", {
+      clientX: 50, clientY: 50, bubbles: true,
+    }));
+
+    // Allow the RAF inside handleMouseMove to settle — but the guard returns
+    // BEFORE scheduling a RAF, so the state shouldn't change regardless.
+    await new Promise((r) => requestAnimationFrame(r));
+
+    expect(useEditorStore.getState().hoveredElement).toBe(target);
+
+    document.body.removeChild(host);
+    document.body.removeChild(target);
+  });
+
   it("cleans up listeners on unmount", () => {
     const removeSpy = vi.spyOn(document, "removeEventListener");
     const { unmount } = renderHook(() => useSelection());

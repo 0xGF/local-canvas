@@ -1,3 +1,4 @@
+// [canvas simulate] agent edit @ 2026-04-20T18:09:24.377Z
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { CodeBlock } from "../components/CodeBlock";
 

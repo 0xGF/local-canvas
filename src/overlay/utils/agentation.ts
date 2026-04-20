@@ -184,6 +184,25 @@ export function unhideAnnotation(id: string) {
   writeHidden(set);
 }
 
+/**
+ * Hide every currently-listed annotation. Non-destructive — entries remain
+ * on the server and can be brought back via `unhideAnnotation`. Returns the
+ * number of annotations hidden.
+ */
+export async function hideAllAnnotations(): Promise<number> {
+  const list = await listAnnotations();
+  if (list.length === 0) return 0;
+  const set = readHidden();
+  for (const a of list) set.add(a.id);
+  writeHidden(set);
+  return list.length;
+}
+
+/** Clear the hidden set — makes previously-hidden annotations visible again. */
+export function unhideAllAnnotations() {
+  writeHidden(new Set());
+}
+
 // ── Cross-component event: open a pin's popover ──
 export function dispatchOpenAnnotationPin(annotationId: string) {
   window.dispatchEvent(new CustomEvent("canvas:open-annotation-pin", {

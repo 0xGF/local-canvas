@@ -8,7 +8,8 @@ import {
   ArrowUp, ArrowDown, ArrowLeft, Layers, MessageSquarePlus, Sparkles,
 } from "./icons.js";
 import { THEME } from "../theme.js";
-import { getEditorIframe } from "../utils/iframe-events.js";
+import { getEditorIframe, iframeRectToScreenBox } from "../utils/iframe-events.js";
+import { useViewportStore } from "../hooks/useViewport.js";
 
 const C = THEME;
 
@@ -190,7 +191,10 @@ export const ContextMenu = React.memo(function ContextMenu() {
 
   if (!menu) return null;
 
-  const { x, y, element: el, source } = menu;
+  const { x, y, element: el, source, initialMode } = menu;
+  // Annotate flow passes x as the element's horizontal centre, not its left
+  // edge, so the menu opens centred over the element instead of at its side.
+  const anchorCentre = initialMode === "ai-prompt";
   const classes = (typeof el.className === "string" ? el.className : "").split(/\s+/).filter(Boolean);
   const tag = el.tagName.toLowerCase();
   const hasSource = !!source;
@@ -402,12 +406,41 @@ export const ContextMenu = React.memo(function ContextMenu() {
     },
   ];
 
-  const menuWidth = aiPromptOpen ? 320 : 220;
-  const menuHeight = aiPromptOpen ? 180 : items.length * 32 + 16;
-  // x,y is the anchor point (top of the element). Position the menu's bottom
-  // at that point so it floats above the element. Fall back to below if there
-  // isn't room above.
-  const posX = x + menuWidth > window.innerWidth ? Math.max(8, window.innerWidth - menuWidth - 8) : x;
+  // In annotate mode we render a dedicated Figma-style floating pill —
+  // not the menu chrome. It's anchored to the element (via iframe-rect
+  // translation upstream) and flips above/below based on room. The other
+  // path (right-click → "Add annotation") also lands in this branch.
+  if (aiPromptOpen) {
+    return (
+      <AnnotatePill
+        element={el}
+        fallbackX={x}
+        fallbackYTop={y}
+        elementTag={tag}
+        onClose={close}
+        onSubmit={(prompt) => {
+          const opts = buildAnnotationOpts(prompt, multiSelection, source, tag, classes);
+          postAnnotation(opts).then(() => {
+            useEditorStore.getState().showToast("Sent to agent");
+          }).catch(() => {
+            useEditorStore.getState().showToast("Agent not connected");
+          });
+          close();
+        }}
+      />
+    );
+  }
+
+  const menuWidth = 220;
+  const menuHeight = items.length * 32 + 16;
+  // x,y is the anchor point (top of the element, plus centre-x for annotate).
+  // Position the menu's bottom at y so it floats above the element, falling
+  // back below if there isn't room.
+  const rawX = anchorCentre ? x - menuWidth / 2 : x;
+  const posX = Math.min(
+    Math.max(8, rawX),
+    window.innerWidth - menuWidth - 8,
+  );
   const posY = y - menuHeight >= 8 ? y - menuHeight : Math.min(y + 12, window.innerHeight - menuHeight - 8);
 
   return (
@@ -427,95 +460,7 @@ export const ContextMenu = React.memo(function ContextMenu() {
         {source && <span style={{ marginLeft: 6, fontWeight: 400 }}>{source.filePath.split("/").pop()}:{source.line}</span>}
       </div>
 
-      {aiPromptOpen ? (
-        <div style={{ padding: 4 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-            <button
-              onClick={() => setAiPromptOpen(false)}
-              title="Back to menu (esc)"
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                background: "transparent", border: "none", padding: 2,
-                borderRadius: 4, color: C.fgMuted, cursor: "pointer",
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = C.bgHover; e.currentTarget.style.color = C.fg; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = C.fgMuted; }}
-            >
-              <ArrowLeft size={13} />
-            </button>
-            <MessageSquarePlus size={12} />
-            <div style={{ fontSize: 10, color: C.fgMuted, fontWeight: 600 }}>
-              {multiSelection.length > 1
-                ? `${multiSelection.length} elements: ${multiSelection.map(s => s.tagName).join(", ")}`
-                : "Add Annotation"}
-            </div>
-          </div>
-          <textarea
-            ref={aiInputRef}
-            value={aiPrompt}
-            onChange={e => setAiPrompt(e.target.value)}
-            onKeyDown={e => {
-              // Stop propagation so nothing upstream steals keystrokes
-              e.stopPropagation();
-              if (e.key === "Enter" && !e.shiftKey && aiPrompt.trim()) {
-                e.preventDefault();
-                const prompt = aiPrompt.trim();
-                const opts = buildAnnotationOpts(prompt, multiSelection, source, tag, classes);
-                postAnnotation(opts).then(() => {
-                  useEditorStore.getState().showToast("Sent to agent");
-                }).catch(() => {
-                  useEditorStore.getState().showToast("Agent not connected");
-                });
-                setAiPrompt(""); close();
-              }
-              if (e.key === "Escape") { e.preventDefault(); setAiPromptOpen(false); }
-            }}
-            placeholder={multiSelection.length > 1
-              ? "Feedback for this group of elements..."
-              : "Describe the change... (e.g. make this a 3-column responsive grid with 16px gap)"}
-            rows={4}
-            style={{
-              width: "100%", minHeight: 90, resize: "vertical",
-              background: C.bgAlt, border: `1px solid ${C.accent}`, borderRadius: 6,
-              color: C.fg, fontSize: 12, fontFamily: C.font,
-              padding: "8px 10px", outline: "none", boxSizing: "border-box",
-              lineHeight: 1.4,
-            }}
-          />
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6, gap: 8 }}>
-            <div style={{ fontSize: 9, color: C.fgMuted, fontFamily: C.mono }}>
-              <kbd style={{ padding: "1px 4px", borderRadius: 3, background: C.bgAlt, border: `1px solid ${C.borderLight}` }}>↵</kbd> send&nbsp;&nbsp;
-              <kbd style={{ padding: "1px 4px", borderRadius: 3, background: C.bgAlt, border: `1px solid ${C.borderLight}` }}>⇧↵</kbd> newline&nbsp;&nbsp;
-              <kbd style={{ padding: "1px 4px", borderRadius: 3, background: C.bgAlt, border: `1px solid ${C.borderLight}` }}>esc</kbd> cancel
-            </div>
-            <button
-              disabled={!aiPrompt.trim()}
-              onClick={() => {
-                const prompt = aiPrompt.trim();
-                if (!prompt) return;
-                const opts = buildAnnotationOpts(prompt, multiSelection, source, tag, classes);
-                postAnnotation(opts).then(() => {
-                  useEditorStore.getState().showToast("Sent to agent");
-                }).catch(() => {
-                  useEditorStore.getState().showToast("Agent not connected");
-                });
-                setAiPrompt(""); close();
-              }}
-              style={{
-                background: aiPrompt.trim() ? C.accent : C.bgAlt,
-                color: aiPrompt.trim() ? "#fff" : C.fgMuted,
-                border: "none", borderRadius: 5,
-                padding: "5px 12px", fontSize: 11, fontWeight: 600,
-                cursor: aiPrompt.trim() ? "pointer" : "default",
-                fontFamily: C.font,
-              }}
-            >
-              Send
-            </button>
-          </div>
-        </div>
-      ) : (
-        items.map((item, i) => (
+      {items.map((item, i) => (
           <React.Fragment key={i}>
             <div
               onClick={item.disabled ? undefined : item.action}
@@ -536,8 +481,264 @@ export const ContextMenu = React.memo(function ContextMenu() {
             </div>
             {item.dividerAfter && <div style={{ height: 1, background: C.borderLight, margin: "2px 4px" }} />}
           </React.Fragment>
-        ))
-      )}
+      ))}
     </div>
   );
 });
+
+// ── Figma-style annotate pill ─────────────────────────────────────────────
+/**
+ * Floating comment input anchored to the annotated element. Rendered
+ * instead of the ContextMenu chrome when the user is in annotate mode.
+ * Positions itself just below the element (flips above if no room),
+ * horizontally centered on the anchor and clamped to the viewport.
+ *
+ * The design goal is Figma's "Add a comment" affordance: one pill, no
+ * header, no kbd hints, with a soft dark background and a circular
+ * submit button at the right. The submit button is enabled once the
+ * input has non-empty text.
+ */
+const AnnotatePill = React.memo(function AnnotatePill({
+  element,
+  fallbackX,
+  fallbackYTop,
+  elementTag: _elementTag,
+  onClose,
+  onSubmit,
+}: {
+  /** The element being annotated. We track its rect so the pill stays
+   *  pinned to it when the iframe scrolls. */
+  element: HTMLElement;
+  /** Used on first paint before we've measured the element ourselves. */
+  fallbackX: number;
+  fallbackYTop: number;
+  elementTag: string;
+  onClose: () => void;
+  onSubmit: (prompt: string) => void;
+}) {
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  // Focus immediately on mount.
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  // Close on outside click or Escape.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        useEditorStore.getState().setAnnotateMode(false);
+        onClose();
+      }
+    };
+    const onDocClick = (e: MouseEvent) => {
+      const path = e.composedPath();
+      if (boxRef.current && !path.includes(boxRef.current)) onClose();
+    };
+    const timer = setTimeout(() => {
+      document.addEventListener("click", onDocClick, true);
+      try {
+        const iframeDoc = getEditorIframe()?.contentDocument;
+        if (iframeDoc) iframeDoc.addEventListener("click", onDocClick, true);
+      } catch {}
+    }, 50);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("click", onDocClick, true);
+      document.removeEventListener("keydown", onKey, true);
+      try {
+        const iframeDoc = getEditorIframe()?.contentDocument;
+        if (iframeDoc) iframeDoc.removeEventListener("click", onDocClick, true);
+      } catch {}
+    };
+  }, [onClose]);
+
+  // Pin the pill to the element. The anchor is re-derived from the
+  // element's current rect whenever the iframe content scrolls (or its
+  // contents reflow) so the pill follows the element rather than staying
+  // glued to an absolute viewport coordinate.
+  //
+  // Pill size is measured once and cached — re-anchoring while typing
+  // doesn't cause it to drift, because we only update `top/left`, not the
+  // height of the pill itself.
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!box) return;
+
+    const pillSize = box.getBoundingClientRect();
+    const pillW = pillSize.width;
+    const pillH = pillSize.height;
+
+    const place = () => {
+      const iframe = getEditorIframe();
+      // Prefer the live element rect so we track scroll/resize in the iframe.
+      let anchorX = fallbackX;
+      let anchorYTop = fallbackYTop;
+      if (element && element.isConnected) {
+        const rect = element.getBoundingClientRect();
+        if (iframe && element.ownerDocument === iframe.contentDocument) {
+          const screenBox = iframeRectToScreenBox(rect, iframe);
+          anchorX = screenBox.left + screenBox.width / 2;
+          anchorYTop = screenBox.top;
+        } else {
+          anchorX = rect.left + rect.width / 2;
+          anchorYTop = rect.top;
+        }
+      }
+
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const gap = 12;
+      const left = clamp(anchorX - pillW / 2, 8, vw - pillW - 8);
+      const belowTop = anchorYTop + 16 + gap;
+      const fitsBelow = belowTop + pillH <= vh - 8;
+      const top = fitsBelow
+        ? clamp(belowTop, 8, vh - pillH - 8)
+        : clamp(anchorYTop - pillH - gap, 8, vh - pillH - 8);
+      setPos({ left, top });
+    };
+
+    place();
+
+    const iframe = getEditorIframe();
+    const doc = iframe?.contentDocument;
+    const win = iframe?.contentWindow;
+    // `scroll` fires on both the scrolling element and window — capture-phase
+    // catches scrolls on any ancestor, including overflow containers.
+    doc?.addEventListener("scroll", place, true);
+    win?.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    // Canvas zoom / pan changes the element's on-screen position without
+    // firing a DOM scroll event — listen to the viewport store.
+    const unsubViewport = useViewportStore.subscribe(place);
+    return () => {
+      doc?.removeEventListener("scroll", place, true);
+      win?.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+      unsubViewport();
+    };
+  }, [element, fallbackX, fallbackYTop]);
+
+  const canSend = text.trim().length > 0 && !sending;
+  const submit = () => {
+    if (!canSend) return;
+    setSending(true);
+    onSubmit(text.trim());
+  };
+
+  return (
+    <div
+      ref={boxRef}
+      data-canvas-overlay="true"
+      style={{
+        position: "fixed",
+        left: pos?.left ?? -9999,
+        top: pos?.top ?? -9999,
+        width: 380,
+        maxWidth: "calc(100vw - 16px)",
+        display: "flex",
+        // Center vertically so the placeholder/caret sits on the same axis
+        // as the submit button at rest. When the textarea grows past one
+        // line the button stays centred — matches the Figma comment UI.
+        alignItems: "center",
+        gap: 10,
+        padding: "8px 8px 8px 18px",
+        borderRadius: 28,
+        background: "rgba(32, 32, 36, 0.82)",
+        backdropFilter: "blur(24px) saturate(180%)",
+        WebkitBackdropFilter: "blur(24px) saturate(180%)",
+        boxShadow:
+          "0 10px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06)",
+        zIndex: 2147483647,
+        opacity: pos ? 1 : 0, // hide until measured so it doesn't flicker at (-9999,-9999)
+        transition: "opacity 100ms ease",
+        fontFamily: C.font,
+      }}
+    >
+      <textarea
+        ref={inputRef}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            submit();
+          }
+        }}
+        placeholder="Ask AI to change this…"
+        rows={1}
+        style={{
+          flex: 1,
+          // Match the circular send button height so both sit on the same
+          // baseline when the input is a single line. Grows vertically
+          // (capped by maxHeight) as the user types.
+          minHeight: 32,
+          maxHeight: 160,
+          resize: "none",
+          background: "transparent",
+          border: "none",
+          outline: "none",
+          color: "#f5f5f5",
+          fontSize: 14,
+          lineHeight: "22px",
+          padding: "5px 0",
+          margin: 0,
+          display: "block",
+          fontFamily: C.font,
+          boxSizing: "border-box",
+        }}
+        onInput={(e) => {
+          const el = e.currentTarget;
+          // Reset then set from scrollHeight so the box shrinks when the
+          // user deletes text.
+          el.style.height = "32px";
+          el.style.height = Math.min(160, el.scrollHeight) + "px";
+        }}
+      />
+      <button
+        onClick={submit}
+        disabled={!canSend}
+        aria-label="Send"
+        style={{
+          flexShrink: 0,
+          width: 32,
+          height: 32,
+          borderRadius: "50%",
+          border: "none",
+          background: canSend ? "#fff" : "rgba(255,255,255,0.12)",
+          color: canSend ? "#111" : "rgba(255,255,255,0.35)",
+          cursor: canSend ? "pointer" : "default",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          transition: "background 120ms ease, color 120ms ease",
+          padding: 0,
+        }}
+        title={canSend ? "Send (↵)" : undefined}
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <path
+            d="M8 13V3M8 3l-4 4M8 3l4 4"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+    </div>
+  );
+});
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v));
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { elementAtPoint } from "../useSelection.js";
+import { elementAtPoint, isClickInsideOverlay } from "../useSelection.js";
 
 /**
  * Regression tests for the overlay-chrome exclusion in elementAtPoint.
@@ -80,5 +80,73 @@ describe("elementAtPoint — overlay host exclusion", () => {
 
     const result = elementAtPoint(100, 100);
     expect(result.target).toBeNull();
+  });
+});
+
+/**
+ * Regression test for the annotate-click-in-iframe bug.
+ *
+ * `isClickInsideOverlay` feeds `e.clientX/Y` into `shadow.elementFromPoint`.
+ * Events attached to the iframe document arrive with iframe-LOCAL coords
+ * (relative to the iframe viewport), not parent-document coords. At small
+ * iframe-local coords those land somewhere random in the parent viewport
+ * — frequently inside the LayersPanel at top:8 left:8 with pointerEvents:
+ * auto — which made the function falsely report iframe clicks as overlay
+ * chrome. That blocked the annotate branch in handleClick: clicks on
+ * iframe content stopped opening the Ask AI prompt.
+ *
+ * The fix short-circuits to false when the event's target ownerDocument is
+ * not the parent document, since overlay chrome only ever lives in the
+ * main doc's shadow root.
+ */
+describe("isClickInsideOverlay — iframe origin short-circuit", () => {
+  let shadowHost: HTMLDivElement;
+  let interactivePanel: HTMLDivElement;
+
+  beforeEach(() => {
+    shadowHost = document.createElement("div");
+    shadowHost.id = "local-canvas-host";
+    const shadow = shadowHost.attachShadow({ mode: "open" });
+    document.body.appendChild(shadowHost);
+
+    // Simulate the LayersPanel covering the top-left corner of the viewport.
+    interactivePanel = document.createElement("div");
+    interactivePanel.style.pointerEvents = "auto";
+    shadow.appendChild(interactivePanel);
+
+    shadow.elementFromPoint = vi.fn(() => interactivePanel);
+  });
+
+  afterEach(() => {
+    shadowHost.remove();
+  });
+
+  it("returns false for events originating inside the iframe document", () => {
+    const iframe = document.createElement("iframe");
+    document.body.appendChild(iframe);
+    const iframeDoc = iframe.contentDocument!;
+    const iframeTarget = iframeDoc.createElement("div");
+    iframeDoc.body.appendChild(iframeTarget);
+
+    // Without the fix, iframe-local coords (40, 40) treated as viewport
+    // coords would hit the interactive overlay panel and return true.
+    const e = new MouseEvent("click", { clientX: 40, clientY: 40 });
+    Object.defineProperty(e, "target", { value: iframeTarget, configurable: true });
+
+    expect(isClickInsideOverlay(e)).toBe(false);
+
+    iframe.remove();
+  });
+
+  it("still returns true for real main-doc clicks on overlay chrome", () => {
+    const mainTarget = document.createElement("div");
+    document.body.appendChild(mainTarget);
+
+    const e = new MouseEvent("click", { clientX: 40, clientY: 40 });
+    Object.defineProperty(e, "target", { value: mainTarget, configurable: true });
+
+    expect(isClickInsideOverlay(e)).toBe(true);
+
+    mainTarget.remove();
   });
 });

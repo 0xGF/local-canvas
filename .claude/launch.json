@@ -11,8 +11,8 @@
     {
       "name": "local-canvas",
       "runtimeExecutable": "/opt/homebrew/bin/node",
-      "runtimeArgs": ["dist/cli/index.js", "dev", "--target", "4200", "--port", "4400", "--root", "test-app"],
-      "port": 4400,
+      "runtimeArgs": ["dist/cli/index.js", "dev", "--target", "4200", "--port", "6966", "--root", "test-app"],
+      "port": 6966,
       "autoPort": false
     }
   ],

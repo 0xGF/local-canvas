@@ -12,6 +12,9 @@ interface EditorSnapshot {
     source?: SourceLocation | null;
   } | null;
   hoveredElement: HTMLElement | null;
+  /** When true, hover draws in the annotate-accent (yellow) so the user
+   *  can see exactly which element their next click will annotate. */
+  annotateMode?: boolean;
 }
 
 /** Extra context for drawing component badges and change indicators */
@@ -33,6 +36,7 @@ export interface PaintResult {
 // Dirty-checking cache to skip unnecessary repaints
 let prevSelectedEl: HTMLElement | null = null;
 let prevHoveredEl: HTMLElement | null = null;
+let prevAnnotateMode = false;
 let prevZoom = 1;
 let prevPanX = 0;
 let prevPanY = 0;
@@ -42,6 +46,7 @@ let lastPaintTime = 0;
 export function resetPaintCache() {
   prevSelectedEl = null;
   prevHoveredEl = null;
+  prevAnnotateMode = false;
   prevZoom = 1;
   prevPanX = 0;
   prevPanY = 0;
@@ -58,8 +63,9 @@ export function shouldRepaint(editor: EditorSnapshot, viewport: ViewportSnapshot
   const selEl = editor.selectedElement?.element ?? null;
   const hovEl = editor.hoveredElement;
 
-  // Always repaint if selection/hover changed
+  // Always repaint if selection/hover/annotate-mode changed
   if (selEl !== prevSelectedEl || hovEl !== prevHoveredEl) return true;
+  if (!!editor.annotateMode !== prevAnnotateMode) return true;
   if (viewport.zoom !== prevZoom || viewport.panX !== prevPanX || viewport.panY !== prevPanY) return true;
 
   // Check if selected element moved (scroll, layout shift)
@@ -201,14 +207,16 @@ export function paintFrame(
       }
     }
 
-    // Element outline
+    // Element outline — switch to yellow annotate accent when the annotate
+    // tool is armed so the user can see what their next click will target.
+    const annotate = !!editor.annotateMode;
     ctx.save();
-    ctx.setLineDash([4, 4]);
-    ctx.strokeStyle = COL.blueDim;
-    ctx.lineWidth = 1.5;
+    ctx.setLineDash(annotate ? [] : [4, 4]);
+    ctx.strokeStyle = annotate ? COL.annotate : COL.blueDim;
+    ctx.lineWidth = annotate ? 2 : 1.5;
     roundRect(ctx, r.left, r.top, r.width, r.height, 2);
     ctx.stroke();
-    ctx.fillStyle = COL.blueFaint;
+    ctx.fillStyle = annotate ? COL.annotateBg : COL.blueFaint;
     roundRect(ctx, r.left, r.top, r.width, r.height, 2);
     ctx.fill();
     ctx.setLineDash([]);
@@ -219,7 +227,7 @@ export function paintFrame(
     const hCssW = parseFloat(hcs.width) || r.width;
     const hCssH = parseFloat(hcs.height) || r.height;
     const hDims = `${Math.round(hCssW)} × ${Math.round(hCssH)}`;
-    drawLabelBadge(ctx, `${tag}  ${hDims}`, r.left, r.top - 22, COL.blue);
+    drawLabelBadge(ctx, `${tag}  ${hDims}`, r.left, r.top - 22, annotate ? COL.annotate : COL.blue);
   }
 
   // ── Selected element ──
@@ -533,6 +541,7 @@ export function paintFrame(
   // Update dirty-check cache
   prevSelectedEl = selectedElement?.element ?? null;
   prevHoveredEl = hoveredElement;
+  prevAnnotateMode = !!editor.annotateMode;
   prevZoom = zoomScale;
   prevPanX = viewport.panX;
   prevPanY = viewport.panY;

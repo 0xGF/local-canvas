@@ -4,6 +4,7 @@ import { useViewportStore } from "../hooks/useViewport.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
 import { deepElementFromPoint } from "../utils/element-picker.js";
 import { wasDragRecent } from "../utils/drag-state.js";
+import { getIframeOffset } from "../utils/iframe-events.js";
 import { BREAKPOINT_PRESETS } from "../../shared/breakpoints.js";
 import { THEME } from "../theme.js";
 
@@ -54,7 +55,7 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
 
   const frameUrl = `${location.origin}${location.pathname}?__canvas_no_overlay`;
 
-  // Fit to page after mount
+  // Fit to page after mount.
   useEffect(() => {
     requestAnimationFrame(() => useViewportStore.getState().fitToPage());
   }, [width]);
@@ -96,9 +97,13 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
       // Zoom/pan: forward wheel events from iframe to viewport store
       const onWheel = (e: WheelEvent) => {
         e.preventDefault();
-        const iframeRect = iframe!.getBoundingClientRect();
-        const cx = iframeRect.left + e.clientX * (iframeRect.width / width);
-        const cy = iframeRect.top + e.clientY * (iframeRect.height / heightRef.current);
+        // e.clientX/Y are iframe-doc coords; scale by viewport.zoom (source
+        // of truth) + iframe origin to get outer screen coords. The previous
+        // `iframeRect.width / width` formula was wrong in components mode
+        // where effectiveWidth != width.
+        const { x, y, scale } = getIframeOffset(iframe!);
+        const cx = x + e.clientX * scale;
+        const cy = y + e.clientY * scale;
         const vp = useViewportStore.getState();
         if (e.ctrlKey || e.metaKey) {
           const sens = Math.abs(e.deltaY) < 10 ? 0.02 : 0.08;
@@ -112,6 +117,10 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
 
       // Selection — CanvasOverlayLayer handles the highlight
       const onClick = (e: MouseEvent) => {
+        // While the user is holding Space (interact mode) we must let the
+        // underlying app receive its own clicks. Bail out *before* calling
+        // preventDefault — otherwise buttons/links in the iframe go dead.
+        if (useEditorStore.getState().interacting) return;
         e.preventDefault();
         e.stopPropagation();
         // Skip if a drag just ended (margin/resize/spacing)
@@ -119,6 +128,35 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
         // Shift+click is handled by useSelection's addToSelection — don't interfere
         // Alt+click comes from marquee select release — don't wipe multi-selection
         if (e.shiftKey || e.altKey) return;
+
+        // Annotate tool: plain click in annotate mode opens the Ask-AI
+        // prompt centred over the clicked element. Must run here (not in
+        // useSelection) because iframe clicks arrive with iframe-local
+        // coords, which useSelection.elementAtPoint can't decode.
+        if (useEditorStore.getState().annotateMode && !e.ctrlKey && !e.metaKey) {
+          const target = deepElementFromPoint(e.clientX, e.clientY, doc);
+          if (!target) return;
+          const source = resolveSource(target);
+          const rect = target.getBoundingClientRect();
+          const { x: ox, y: oy, scale } = getIframeOffset(iframe!);
+          selectElement({
+            element: target,
+            source,
+            rect,
+            className: typeof target.className === "string" ? target.className : "",
+            tagName: target.tagName.toLowerCase(),
+            iframeRef: iframe!,
+          });
+          // Anchor centred over the element (screen space).
+          const menuX = (rect.left + rect.width / 2) * scale + ox;
+          const menuY = rect.top * scale + oy;
+          useEditorStore.getState().setContextMenu({
+            x: menuX, y: menuY - 6,
+            element: target, source,
+            initialMode: "ai-prompt",
+          });
+          return;
+        }
         const target = deepElementFromPoint(e.clientX, e.clientY, doc);
         if (!target) return;
 
@@ -134,12 +172,10 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
             tagName: target.tagName.toLowerCase(),
             iframeRef: iframe!,
           });
-          const ir = iframe!.getBoundingClientRect();
-          const naturalW = parseInt(iframe!.style.width) || ir.width;
-          const scale = ir.width / naturalW;
+          const { x: ox, y: oy, scale } = getIframeOffset(iframe!);
           useEditorStore.getState().setContextMenu({
-            x: e.clientX * scale + ir.left,
-            y: e.clientY * scale + ir.top,
+            x: e.clientX * scale + ox,
+            y: e.clientY * scale + oy,
             element: target,
             source,
           });
@@ -170,6 +206,10 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
 
       // Hover — CanvasOverlayLayer reads from store
       const onMouseMove = (e: MouseEvent) => {
+        if (useEditorStore.getState().interacting) {
+          setHoveredElement(null);
+          return;
+        }
         const target = deepElementFromPoint(e.clientX, e.clientY, doc);
         setHoveredElement(target || null);
       };
@@ -181,26 +221,29 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
       // Forward mouse events from iframe to main document with translated coordinates
       // so spacing drag, resize handles, and cursor hints work on the canvas overlay
       const toScreen = (e: MouseEvent) => {
-        const ir = iframe!.getBoundingClientRect();
-        const naturalW = parseInt(iframe!.style.width) || ir.width;
-        const scale = ir.width / naturalW;
-        return { clientX: e.clientX * scale + ir.left, clientY: e.clientY * scale + ir.top };
+        const { x, y, scale } = getIframeOffset(iframe!);
+        return { clientX: e.clientX * scale + x, clientY: e.clientY * scale + y };
       };
       const forwardMouseDown = (e: MouseEvent) => {
+        if (useEditorStore.getState().interacting) return;
         const c = toScreen(e);
         document.dispatchEvent(new MouseEvent("mousedown", { clientX: c.clientX, clientY: c.clientY, button: e.button, bubbles: true, cancelable: true, altKey: e.altKey, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey }));
       };
       const forwardMouseMove = (e: MouseEvent) => {
+        if (useEditorStore.getState().interacting) return;
         const c = toScreen(e);
         document.dispatchEvent(new MouseEvent("mousemove", { clientX: c.clientX, clientY: c.clientY, bubbles: true, altKey: e.altKey, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey }));
       };
       const forwardMouseUp = (e: MouseEvent) => {
+        if (useEditorStore.getState().interacting) return;
         const c = toScreen(e);
         document.dispatchEvent(new MouseEvent("mouseup", { clientX: c.clientX, clientY: c.clientY, bubbles: true, altKey: e.altKey, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey }));
       };
 
       // Right-click context menu
       const onContextMenu = (e: MouseEvent) => {
+        // Same reasoning as onClick — during interact mode the app owns the event.
+        if (useEditorStore.getState().interacting) return;
         e.preventDefault();
         e.stopPropagation();
         const target = deepElementFromPoint(e.clientX, e.clientY, doc);
@@ -228,8 +271,12 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
         });
       };
 
-      // Prevent native drag on links/images
-      const blockDrag = (e: Event) => e.preventDefault();
+      // Prevent native drag on links/images (only in edit mode — interact mode
+      // lets the app use its own drag & drop).
+      const blockDrag = (e: Event) => {
+        if (useEditorStore.getState().interacting) return;
+        e.preventDefault();
+      };
 
       doc.addEventListener("click", onClick, true);
       doc.addEventListener("contextmenu", onContextMenu, true);

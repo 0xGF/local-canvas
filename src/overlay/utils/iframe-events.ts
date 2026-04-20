@@ -30,6 +30,104 @@ export function getIframeDocument(): Document | null {
   }
 }
 
+/**
+ * Current on-screen offset + scale of the iframe.
+ *
+ * Why not just `iframe.getBoundingClientRect()`? Under certain Chromium
+ * conditions (iframe inside a Shadow DOM whose ancestor has a CSS
+ * `transform`), the iframe's bounding rect can lag the browser's GPU
+ * compositor by a frame — so the rect we read is from the *previous*
+ * transform while the iframe is actually rendered at the current one. The
+ * drift grows with zoom because the lag is a transform mismatch, not a
+ * pixel offset.
+ *
+ * Robust approach: anchor to the transformed container's rect (which is
+ * the element the transform is set on, so its rect is always consistent
+ * with its own style), and compute the iframe's offset within the
+ * container using `offsetLeft/offsetTop` — layout properties that are
+ * *unaffected* by CSS transforms. Then apply the zoom/pan from the
+ * zustand store (the source of truth) manually.
+ */
+export function getIframeOffset(iframe: HTMLIFrameElement): { x: number; y: number; scale: number } {
+  const zoom = getViewportZoom();
+
+  // Find the transformed container (the element useViewport applies
+  // `transform: translate(panX, panY) scale(zoom)` to).
+  const root = iframe.getRootNode();
+  const container = root instanceof ShadowRoot
+    ? (root.getElementById("responsive-frame-container") as HTMLElement | null)
+    : null;
+
+  if (!container) {
+    // Outside the normal shadow-DOM editor context — fall back.
+    const ir = iframe.getBoundingClientRect();
+    return { x: ir.left, y: ir.top, scale: zoom };
+  }
+
+  // Walk offsetLeft/offsetTop chain from iframe up to (not including) the
+  // container. These are layout offsets in container-local, pre-transform
+  // CSS pixels.
+  let localX = 0, localY = 0;
+  let node: HTMLElement | null = iframe;
+  while (node && node !== container) {
+    localX += node.offsetLeft;
+    localY += node.offsetTop;
+    node = node.offsetParent as HTMLElement | null;
+  }
+
+  // Container's on-screen rect already reflects the transform applied to
+  // itself (browsers report this reliably; the quirk only affects
+  // transformed *descendants* like the iframe). Its top-left is the
+  // post-transform origin since `transform-origin: 0 0`.
+  const cr = container.getBoundingClientRect();
+  return {
+    x: cr.left + localX * zoom,
+    y: cr.top + localY * zoom,
+    scale: zoom,
+  };
+}
+
+// Indirection so tests / non-overlay consumers don't need a viewport store.
+let _viewportZoomGetter: (() => number) | null = null;
+export function _setViewportZoomGetter(fn: () => number): void { _viewportZoomGetter = fn; }
+function getViewportZoom(): number {
+  return _viewportZoomGetter ? _viewportZoomGetter() : 1;
+}
+
+/**
+ * Translate an iframe-local rect's top-left corner to parent viewport
+ * coordinates. Accounts for responsive-frame scaling (iframe rendered at
+ * a smaller size than its natural document width).
+ *
+ * `rect` is expected to come from an element inside the iframe's document
+ * (e.g. `getBoundingClientRect()` called from within the iframe).
+ */
+export function iframeRectToScreen(
+  rect: { left: number; top: number },
+  iframe: HTMLIFrameElement,
+): { x: number; y: number } {
+  const { x, y, scale } = getIframeOffset(iframe);
+  return { x: rect.left * scale + x, y: rect.top * scale + y };
+}
+
+/**
+ * Translate an iframe-local rect to parent viewport coordinates, preserving
+ * width and height (scaled). Useful when you need the full screen-space box
+ * of an iframe element — e.g. to anchor a menu to its horizontal center.
+ */
+export function iframeRectToScreenBox(
+  rect: { left: number; top: number; width: number; height: number },
+  iframe: HTMLIFrameElement,
+): { left: number; top: number; width: number; height: number } {
+  const { x, y, scale } = getIframeOffset(iframe);
+  return {
+    left: rect.left * scale + x,
+    top: rect.top * scale + y,
+    width: rect.width * scale,
+    height: rect.height * scale,
+  };
+}
+
 type EventName = keyof DocumentEventMap;
 type Listener<E extends EventName = EventName> = (e: DocumentEventMap[E]) => void;
 
@@ -123,12 +221,10 @@ export function attachToDocumentAndIframe(
       if (!(e instanceof MouseEvent)) { handler(e); return; }
       const iframe = getEditorIframe();
       if (!iframe) return;
-      const ir = iframe.getBoundingClientRect();
-      const naturalW = parseInt(iframe.style.width) || ir.width;
-      const scale = ir.width / naturalW;
+      const { x, y, scale } = getIframeOffset(iframe);
       const translated = new MouseEvent(e.type, {
-        clientX: e.clientX * scale + ir.left,
-        clientY: e.clientY * scale + ir.top,
+        clientX: e.clientX * scale + x,
+        clientY: e.clientY * scale + y,
         button: e.button,
         bubbles: e.bubbles,
         cancelable: e.cancelable,

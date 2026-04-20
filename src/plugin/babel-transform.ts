@@ -4,16 +4,26 @@ import { relative } from "path";
 interface PluginState {
   filename?: string;
   cwd?: string;
+  opts?: BabelPluginOptions;
 }
 
-export default function canvasEditorBabelPlugin({
-  types: t,
-}: {
-  types: typeof import("@babel/core").types;
-}): PluginObj<PluginState> {
+export interface BabelPluginOptions {
+  /** Absolute path to the project root. Defaults to `state.cwd`. */
+  projectRoot?: string;
+}
+
+export default function canvasEditorBabelPlugin(
+  api: {
+    types: typeof import("@babel/core").types;
+  },
+): PluginObj<PluginState> {
+  const { types: t } = api;
+
   return {
     name: "local-canvas-source-map",
     visitor: {
+      // Stamp every JSX opening element with source attrs so the overlay
+      // can map a DOM element back to the line of source that produced it.
       JSXOpeningElement(path, state) {
         const loc = path.node.loc;
         if (!loc) return;
@@ -29,7 +39,7 @@ export default function canvasEditorBabelPlugin({
           (attr) =>
             attr.type === "JSXAttribute" &&
             attr.name.type === "JSXIdentifier" &&
-            attr.name.name === "data-source-file"
+            attr.name.name === "data-source-file",
         );
         if (hasAttr) return;
 
@@ -52,16 +62,16 @@ export default function canvasEditorBabelPlugin({
         path.node.attributes.push(
           t.jsxAttribute(
             t.jsxIdentifier("data-source-file"),
-            t.stringLiteral(relativePath)
+            t.stringLiteral(relativePath),
           ),
           t.jsxAttribute(
             t.jsxIdentifier("data-source-line"),
-            t.stringLiteral(String(line))
+            t.stringLiteral(String(line)),
           ),
           t.jsxAttribute(
             t.jsxIdentifier("data-source-col"),
-            t.stringLiteral(String(col))
-          )
+            t.stringLiteral(String(col)),
+          ),
         );
       },
     },

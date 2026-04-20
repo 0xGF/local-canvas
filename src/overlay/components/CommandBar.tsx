@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Sparkles, Send, Loader2, X } from "lucide-react";
+import { Sparkles, Send, Loader2, X } from "./icons.js";
 import { Button } from "./ui/button.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useWebSocket } from "../hooks/useWebSocket.js";

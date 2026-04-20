@@ -5,13 +5,13 @@ import {
   Type,
   FormInput,
   ToggleLeft,
-  Image,
-  List,
+  ImageIcon,
+  ListIcon,
   CreditCard,
   SeparatorHorizontal,
   Tag,
   CircleUser,
-} from "lucide-react";
+} from "./icons.js";
 import { Button } from "./ui/button.js";
 import { Label } from "./ui/label.js";
 import { Separator } from "./ui/separator.js";
@@ -67,7 +67,7 @@ const SHADCN_COMPONENTS: PaletteItem[] = [
   {
     name: "Textarea",
     label: "Textarea",
-    icon: <List className="h-4 w-4" />,
+    icon: <ListIcon className="h-4 w-4" />,
     defaultProps: { placeholder: "Enter text..." },
   },
   {
@@ -78,7 +78,7 @@ const SHADCN_COMPONENTS: PaletteItem[] = [
   {
     name: "Skeleton",
     label: "Skeleton",
-    icon: <Image className="h-4 w-4" />,
+    icon: <ImageIcon className="h-4 w-4" />,
   },
 ];
 
@@ -89,7 +89,7 @@ const HTML_ELEMENTS: PaletteItem[] = [
   { name: "h1", label: "Heading 1", icon: <Type className="h-4 w-4" /> },
   { name: "h2", label: "Heading 2", icon: <Type className="h-4 w-4" /> },
   { name: "h3", label: "Heading 3", icon: <Type className="h-4 w-4" /> },
-  { name: "img", label: "Image", icon: <Image className="h-4 w-4" /> },
+  { name: "img", label: "Image", icon: <ImageIcon className="h-4 w-4" /> },
 ];
 
 export function ComponentPalette() {

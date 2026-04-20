@@ -127,7 +127,7 @@ const CANVAS_TOOLS = [
   },
 ];
 
-export async function startMCPServer(canvasPort = 4400) {
+export async function startMCPServer(canvasPort = 6966) {
   const server = new Server(
     {
       name: "local-canvas",

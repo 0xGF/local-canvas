@@ -3,7 +3,7 @@ import { useEditorStore } from "../stores/editor-store.js";
 import { useWebSocket } from "./useWebSocket.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
 import { deepElementFromPoint } from "../utils/element-picker.js";
-import { attachToDocumentAndIframe, bind, getEditorIframe, getIframeDocument } from "../utils/iframe-events.js";
+import { attachToDocumentAndIframe, bind, getEditorIframe, getIframeDocument, getIframeOffset } from "../utils/iframe-events.js";
 
 /**
  * Double-click on text elements to edit them inline.
@@ -125,8 +125,7 @@ export function useTextEdit() {
         // Only route to iframe if cursor is over it
         if (e.clientX >= ir.left && e.clientX <= ir.right &&
             e.clientY >= ir.top && e.clientY <= ir.bottom) {
-          const naturalW = parseInt(iframe.style.width) || ir.width;
-          const scale = ir.width / naturalW;
+          const { scale } = getIframeOffset(iframe);
           const localX = (e.clientX - ir.left) / scale;
           const localY = (e.clientY - ir.top) / scale;
           target = deepElementFromPoint(localX, localY, iframe.contentDocument);

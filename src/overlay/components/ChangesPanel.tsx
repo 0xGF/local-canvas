@@ -7,7 +7,7 @@ import {
   Trash2,
   FileCode,
   Clock,
-} from "lucide-react";
+} from "./icons.js";
 import { Button } from "./ui/button.js";
 import { Badge } from "./ui/badge.js";
 import { Separator } from "./ui/separator.js";

@@ -18,7 +18,9 @@ export default defineConfig({
     rollupOptions: {
       external: [],
       // Vite lib-mode ES silently skips minification — wire terser in directly.
-      plugins: [terser()],
+      // drop_console strips console.* calls from the prod bundle so debug logs
+      // don't leak into users' consoles on every page load.
+      plugins: [terser({ compress: { drop_console: true } })],
       output: {
         chunkFileNames: "chunk-[hash].js",
       },

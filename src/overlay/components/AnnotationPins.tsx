@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { PopFade } from "../utils/motion-presets.js";
 import { Pencil, X } from "./icons.js";
 import { THEME } from "../theme.js";
-import { popoverEmerge } from "../utils/motion-presets.js";
 import { EASE, DURATION } from "../utils/easings.js";
 import {
   listAnnotations,
@@ -21,7 +20,7 @@ import {
 } from "../utils/agentation.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { measureText } from "../utils/style-cache.js";
-import { getEditorIframe } from "../utils/iframe-events.js";
+import { getEditorIframe, getIframeOffset } from "../utils/iframe-events.js";
 
 const C = THEME;
 
@@ -111,11 +110,10 @@ function elementRectInViewport(el: HTMLElement) {
   let scale = 1, offsetX = 0, offsetY = 0;
   const iframe = getEditorIframe();
   if (iframe && iframe.contentDocument && el.ownerDocument === iframe.contentDocument) {
-    const ir = iframe.getBoundingClientRect();
-    const naturalW = parseInt(iframe.style.width) || ir.width;
-    scale = ir.width / naturalW;
-    offsetX = ir.left;
-    offsetY = ir.top;
+    const off = getIframeOffset(iframe);
+    scale = off.scale;
+    offsetX = off.x;
+    offsetY = off.y;
   }
   return {
     left: r.left * scale + offsetX,
@@ -405,11 +403,8 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent, s
   }
 
   return (
-    <motion.div
-      initial={popoverEmerge.initial}
-      animate={popoverEmerge.animate}
-      exit={popoverEmerge.exit}
-      transition={popoverEmerge.transition}
+    <PopFade
+      open={true}
       style={{
         position: "fixed",
         left: popX, top: popY,
@@ -582,7 +577,7 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent, s
           </div>
         </>
       )}
-    </motion.div>
+    </PopFade>
   );
 });
 
@@ -939,18 +934,16 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
         />
       ))}
 
-      {/* Popover for the open pin */}
-      <AnimatePresence>
-        {openPosition && (
-          <PinPopover
-            key={openPosition.annotation.id}
-            position={openPosition}
-            onClose={() => { setOpenId(null); keyboardNavRef.current = false; }}
-            onSent={() => { handleSent(); keyboardNavRef.current = false; }}
-            skipAutoFocus={keyboardNavRef.current}
-          />
-        )}
-      </AnimatePresence>
+      {/* Popover for the open pin — PopFade inside PinPopover handles enter animation. */}
+      {openPosition && (
+        <PinPopover
+          key={openPosition.annotation.id}
+          position={openPosition}
+          onClose={() => { setOpenId(null); keyboardNavRef.current = false; }}
+          onSent={() => { handleSent(); keyboardNavRef.current = false; }}
+          skipAutoFocus={keyboardNavRef.current}
+        />
+      )}
     </>
   );
 });

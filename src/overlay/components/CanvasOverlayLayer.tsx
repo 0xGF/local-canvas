@@ -9,7 +9,7 @@ import type { PaintContext } from "../canvas/paint-frame.js";
 import { useSpacingDrag } from "../canvas/use-spacing-drag.js";
 import { useTextEdit } from "../hooks/useTextEdit.js";
 import { computeHandles, paintHandles, useResizeHandles } from "../canvas/use-resize-handles.js";
-import { attachToDocumentAndIframe, bind, getEditorIframe } from "../utils/iframe-events.js";
+import { attachToDocumentAndIframe, bind, getEditorIframe, getIframeOffset } from "../utils/iframe-events.js";
 import type { ResizeHandle } from "../canvas/use-resize-handles.js";
 
 const SPACING_KEYS = ["margin-top","margin-right","margin-bottom","margin-left","padding-top","padding-right","padding-bottom","padding-left"];
@@ -57,6 +57,7 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
       const editor = {
         selectedElement: editorState.selectedElement,
         hoveredElement: editorState.hoveredElement,
+        annotateMode: editorState.annotateMode,
       };
       const viewport = useViewportStore.getState();
 
@@ -80,14 +81,8 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
       const paintCtx: PaintContext = { changedFiles };
 
       // Compute iframe offset from shadow DOM — works for hover (no selection) too.
-      let iframeOffset = { x: 0, y: 0, scale: 1 };
       const iframeEl = getEditorIframe();
-      if (iframeEl) {
-        const ir = iframeEl.getBoundingClientRect();
-        const naturalW = parseInt(iframeEl.style.width) || ir.width;
-        const scale = ir.width / naturalW;
-        iframeOffset = { x: ir.left, y: ir.top, scale };
-      }
+      const iframeOffset = iframeEl ? getIframeOffset(iframeEl) : { x: 0, y: 0, scale: 1 };
 
       // Pass active drag state so spacing zones update in real-time during drag
       const sd = spacingDragRef.current;

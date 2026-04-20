@@ -7,7 +7,7 @@ import { useViewportStore } from "../hooks/useViewport.js";
 import { useWebSocket } from "../hooks/useWebSocket.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
 import { getBreakpointPrefix } from "../../shared/breakpoints.js";
-import { attachToDocumentAndIframe, bind, getIframeDocument } from "../utils/iframe-events.js";
+import { attachToDocumentAndIframe, bind, getIframeDocument, getIframeOffset } from "../utils/iframe-events.js";
 import { markDragEnd } from "../utils/drag-state.js";
 import { setStyleProp } from "../utils/dom-style.js";
 import { sourceStyleHasProperty, camelToKebabCss } from "../utils/inline-style-source.js";
@@ -200,12 +200,7 @@ export function useSpacingDrag(
           e.stopPropagation();
           // Compute ghost dimensions in SCREEN space
           const iframeEl = sel.iframeRef as HTMLIFrameElement | undefined;
-          let ifs = 1;
-          if (iframeEl) {
-            const ir = iframeEl.getBoundingClientRect();
-            const naturalW = parseInt(iframeEl.style.width) || ir.width;
-            ifs = ir.width / naturalW;
-          }
+          const ifs = iframeEl ? getIframeOffset(iframeEl).scale : 1;
           const er = sel.element.getBoundingClientRect();
           reorderRef.current = {
             el: sel.element,
@@ -286,11 +281,10 @@ export function useSpacingDrag(
         const iframeEl = sel?.iframeRef as HTMLIFrameElement | undefined;
         let ox = 0, oy = 0, ifs = 1;
         if (iframeEl) {
-          const ir = iframeEl.getBoundingClientRect();
-          const naturalW = parseInt(iframeEl.style.width) || ir.width;
-          ifs = ir.width / naturalW;
-          ox = ir.left;
-          oy = ir.top;
+          const off = getIframeOffset(iframeEl);
+          ifs = off.scale;
+          ox = off.x;
+          oy = off.y;
         }
 
         const children = Array.from(parent.children).filter(c => c !== ro.el);

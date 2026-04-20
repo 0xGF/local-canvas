@@ -25,11 +25,13 @@ window.addEventListener("error", (e) => {
 });
 
 function bootstrap() {
+  const params = new URLSearchParams(location.search);
+
   // Never run inside iframes (prevents recursive canvas-in-canvas)
   if (window.parent !== window) return;
 
   // Don't inject overlay into responsive preview iframes
-  if (new URLSearchParams(location.search).has("__canvas_no_overlay")) return;
+  if (params.has("__canvas_no_overlay")) return;
 
   // Don't initialize twice
   if (document.getElementById("local-canvas-host")) return;

@@ -33,8 +33,12 @@ interface EditorState {
   // Panels
   propertiesOpen: boolean;
   paletteOpen: boolean;
+  layersOpen: boolean;
+  layersWidth: number;
   toggleProperties: () => void;
   togglePalette: () => void;
+  toggleLayers: () => void;
+  setLayersWidth: (w: number) => void;
 
   // Command bar
   commandBarOpen: boolean;
@@ -160,10 +164,15 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   propertiesOpen: false,
   paletteOpen: false,
+  layersOpen: !!_persisted.layersOpen,
+  layersWidth: clampLayersWidth(_persisted.layersWidth) ?? 260,
   toggleProperties: () =>
     set((s) => ({ propertiesOpen: !s.propertiesOpen })),
   togglePalette: () =>
     set((s) => ({ paletteOpen: !s.paletteOpen })),
+  toggleLayers: () =>
+    set((s) => ({ layersOpen: !s.layersOpen })),
+  setLayersWidth: (w) => set({ layersWidth: clampLayersWidth(w) ?? 260 }),
 
   commandBarOpen: false,
   setCommandBarOpen: (open) => set({ commandBarOpen: open }),
@@ -281,5 +290,16 @@ export const useEditorStore = create<EditorState>((set) => ({
   clearPending: () => set((s) => ({ savedVersion: s.version, pendingCount: 0 })),
 }));
 
+// Clamp layers panel width to a sane range — protects against stale localStorage
+function clampLayersWidth(w: number | undefined): number | null {
+  if (typeof w !== "number" || !isFinite(w)) return null;
+  return Math.max(180, Math.min(520, w));
+}
+
 // Persist selected keys to localStorage
-syncToStorage(useEditorStore, ["mode", "breakpoint", "animationsPaused"], "editor", 300);
+syncToStorage(
+  useEditorStore,
+  ["mode", "breakpoint", "animationsPaused", "layersOpen", "layersWidth"],
+  "editor",
+  300,
+);

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Check, X, AlertCircle } from "lucide-react";
+import { Check, X, AlertCircle } from "./icons.js";
 import { create } from "zustand";
 
 interface ToastData {

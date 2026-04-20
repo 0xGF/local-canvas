@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect } from "react";
 import { CanvasOverlayLayer } from "./components/CanvasOverlayLayer.js";
 import { Toolbar } from "./components/Toolbar.js";
 import { PropertiesPanel } from "./components/PropertiesPanel.js";
+import { LayersPanel } from "./components/LayersPanel.js";
 import { ResponsiveFrame } from "./components/ResponsiveFrame.js";
 import { ContextMenu } from "./components/ContextMenu.js";
 // Only needed once the user is in edit mode and not mid-interaction.
@@ -79,6 +80,7 @@ export function App() {
     <>
       <ResponsiveFrame />
       {mode === "edit" && !interacting && <CanvasOverlayLayer />}
+      {mode === "edit" && !interacting && <LayersPanel />}
       {mode === "edit" && !interacting && <PropertiesPanel />}
       {mode === "edit" && !interacting && <ContextMenu />}
       {mode === "edit" && !interacting && (

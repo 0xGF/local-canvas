@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { ExpandY } from "../../utils/motion-presets.js";
 
 interface ColorPickerProps {
   label: string;
@@ -157,16 +157,8 @@ export function ColorPicker({ label, prefix, classes, onApply, disabledReason }:
         )}
       </div>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.15 }}
-            style={{ overflow: "hidden" }}
-          >
-            <div style={{ marginTop: 6, padding: 8, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6 }}>
+      <ExpandY open={open} duration={180}>
+        <div style={{ marginTop: 6, padding: 8, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6 }}>
               {/* Tabs */}
               <div style={{ display: "flex", gap: 2, marginBottom: 8, background: "#161616", borderRadius: 5, padding: 2 }}>
                 <button style={tabStyle("palette")} onClick={() => setTab("palette")}>Palette</button>
@@ -269,9 +261,7 @@ export function ColorPicker({ label, prefix, classes, onApply, disabledReason }:
                 </div>
               )}
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </ExpandY>
     </div>
   );
 }

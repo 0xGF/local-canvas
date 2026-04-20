@@ -2,7 +2,7 @@ import { useEffect, useCallback, useRef } from "react";
 import { useEditorStore } from "../stores/editor-store.js";
 import { deepElementFromPoint } from "../utils/element-picker.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
-import { attachToDocumentAndIframe, bind, getEditorIframe } from "../utils/iframe-events.js";
+import { attachToDocumentAndIframe, bind, getEditorIframe, getIframeOffset, iframeRectToScreen, iframeRectToScreenBox } from "../utils/iframe-events.js";
 import { getCachedStyle } from "../utils/style-cache.js";
 import { wasDragRecent } from "../utils/drag-state.js";
 
@@ -42,13 +42,23 @@ function useClassObserver() {
 
 const OVERLAY_HOST_ID = "local-canvas-host";
 
-function isClickInsideOverlay(e: MouseEvent): boolean {
+export function isClickInsideOverlay(e: MouseEvent): boolean {
   // Don't use composedPath — the canvas covers the viewport so it always
   // includes local-canvas-host. Instead check what shadow DOM element is
   // under the cursor and whether it's interactive (pointerEvents: auto).
   const host = document.getElementById(OVERLAY_HOST_ID);
   const shadow = host?.shadowRoot;
   if (!shadow) return false;
+
+  // Events from inside the iframe arrive with iframe-local coordinates, not
+  // viewport coordinates. Feeding those into shadow.elementFromPoint lands
+  // somewhere random in the viewport (often the LayersPanel at top-left),
+  // which falsely reports the click as overlay chrome and blocks annotate
+  // clicks on iframe content. Overlay chrome lives in the main document's
+  // shadow root — iframe content can never be overlay chrome — so short-
+  // circuit to false for iframe-originated events.
+  const targetDoc = (e.target as Node | null)?.ownerDocument;
+  if (targetDoc && targetDoc !== document) return false;
 
   if (!isFinite(e.clientX) || !isFinite(e.clientY)) return false;
   const el = shadow.elementFromPoint(e.clientX, e.clientY);
@@ -66,6 +76,34 @@ function isClickInsideOverlay(e: MouseEvent): boolean {
     node = node.parentElement;
   }
   return true;
+}
+
+/**
+ * True when the cursor is inside the Layers panel. The panel sets
+ * `hoveredElement` on row hover so the canvas can mirror-highlight the
+ * corresponding DOM element. Without this guard the mousemove handler
+ * would clear `hoveredElement` the instant the cursor entered the panel,
+ * defeating the hover-mirror feature entirely.
+ *
+ * Exported so we don't duplicate the shadow-DOM walk in the hover path.
+ */
+export function isInsideLayersPanel(e: MouseEvent): boolean {
+  const host = document.getElementById(OVERLAY_HOST_ID);
+  const shadow = host?.shadowRoot;
+  if (!shadow) return false;
+  // Iframe-originated events have iframe-local coords — they can't be "over
+  // the layers panel" in viewport space. Bail out early.
+  const targetDoc = (e.target as Node | null)?.ownerDocument;
+  if (targetDoc && targetDoc !== document) return false;
+  if (!isFinite(e.clientX) || !isFinite(e.clientY)) return false;
+  const el = shadow.elementFromPoint(e.clientX, e.clientY);
+  if (!el) return false;
+  let node: Element | null = el;
+  while (node) {
+    if (node instanceof HTMLElement && node.dataset.canvasLayerPanel === "true") return true;
+    node = node.parentElement;
+  }
+  return false;
 }
 
 /**
@@ -135,8 +173,7 @@ export function elementAtPoint(clientX: number, clientY: number): { target: HTML
     const iframeY = clientY - ir.top;
     if (iframeX >= 0 && iframeY >= 0 && iframeX <= ir.width && iframeY <= ir.height) {
       // Account for zoom: the iframe is scaled via CSS transform
-      const naturalW = parseInt(iframe.style.width) || ir.width;
-      const scale = ir.width / naturalW;
+      const { scale } = getIframeOffset(iframe);
       const localX = iframeX / scale;
       const localY = iframeY / scale;
       const target = deepElementFromPoint(localX, localY, iframe.contentDocument);
@@ -166,6 +203,10 @@ export function useSelection() {
     (e: MouseEvent) => {
       if (mode !== "edit") return;
       if (useEditorStore.getState().interacting) return;
+      // Layers panel owns hover state when the cursor is inside it — row
+      // mouseEnter sets `hoveredElement` so the canvas can mirror-highlight
+      // the corresponding DOM element. Don't touch it here.
+      if (isInsideLayersPanel(e)) return;
       if (isClickInsideOverlay(e)) {
         if (lastHoveredRef.current !== null) {
           lastHoveredRef.current = null;
@@ -257,14 +298,14 @@ export function useSelection() {
           tagName: target.tagName.toLowerCase(),
           iframeRef: fromIframe && iframe ? iframe : undefined,
         });
-        let menuX = rect.left, menuY = rect.top;
-        if (fromIframe && iframe) {
-          const ir = iframe.getBoundingClientRect();
-          const naturalW = parseInt(iframe.style.width) || ir.width;
-          const scale = ir.width / naturalW;
-          menuX = rect.left * scale + ir.left;
-          menuY = rect.top * scale + ir.top;
-        }
+        // Anchor the annotate menu at the element's horizontal centre so it
+        // opens OVER the element rather than at its left edge. ContextMenu
+        // interprets (x, y) as a centre-anchor when initialMode is set.
+        const screenBox = fromIframe && iframe
+          ? iframeRectToScreenBox(rect, iframe)
+          : { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+        const menuX = screenBox.left + screenBox.width / 2;
+        const menuY = screenBox.top;
         setContextMenu({ x: menuX, y: menuY - 6, element: target, source, initialMode: "ai-prompt" });
         // Stay in annotate mode — user stays armed until they toggle the
         // button off, press `A` again, or hit Escape (handled in
@@ -291,14 +332,9 @@ export function useSelection() {
           tagName: target.tagName.toLowerCase(),
           iframeRef: fromIframe && iframe ? iframe : undefined,
         });
-        let menuX = rect.left, menuY = rect.top;
-        if (fromIframe && iframe) {
-          const ir = iframe.getBoundingClientRect();
-          const naturalW = parseInt(iframe.style.width) || ir.width;
-          const scale = ir.width / naturalW;
-          menuX = rect.left * scale + ir.left;
-          menuY = rect.top * scale + ir.top;
-        }
+        const { x: menuX, y: menuY } = fromIframe && iframe
+          ? iframeRectToScreen(rect, iframe)
+          : { x: rect.left, y: rect.top };
         setContextMenu({ x: menuX, y: menuY - 6, element: target, source });
         return;
       }
@@ -399,14 +435,9 @@ export function useSelection() {
       }
 
       // Anchor to the top of the element (screen space — translate if in iframe)
-      let menuX = rect.left, menuY = rect.top;
-      if (fromIframe && iframe) {
-        const ir = iframe.getBoundingClientRect();
-        const naturalW = parseInt(iframe.style.width) || ir.width;
-        const scale = ir.width / naturalW;
-        menuX = rect.left * scale + ir.left;
-        menuY = rect.top * scale + ir.top;
-      }
+      const { x: menuX, y: menuY } = fromIframe && iframe
+        ? iframeRectToScreen(rect, iframe)
+        : { x: rect.left, y: rect.top };
       setContextMenu({ x: menuX, y: menuY - 6, element: target, source });
     },
     [mode, selectElement, setContextMenu]
@@ -475,11 +506,10 @@ export function useSelection() {
     const iframeEl = iframe;
     let scale = 1, ox = 0, oy = 0;
     if (iframeEl) {
-      const ir = iframeEl.getBoundingClientRect();
-      const naturalW = parseInt(iframeEl.style.width) || ir.width;
-      scale = ir.width / naturalW;
-      ox = ir.left;
-      oy = ir.top;
+      const off = getIframeOffset(iframeEl);
+      scale = off.scale;
+      ox = off.x;
+      oy = off.y;
     }
 
     const matched: import("../stores/editor-store.js").SelectedElement[] = [];
@@ -571,14 +601,15 @@ export function useSelection() {
 }
 
 /**
- * Yellow `+` cursor for the annotate tool. Double-stroked (black under,
- * yellow over) so it reads on both light and dark backgrounds. URL-encoded
- * SVG so it works cross-origin in the iframe body.
- * Hotspot is the centre of the `+` at (12, 12).
+ * Small black `+` cursor for the annotate tool. Subtle white underlay so
+ * it reads on dark backgrounds without shouting. 16×16 (half the old 24×24)
+ * and a thinner stroke — matches a native system pointer's visual weight.
+ * URL-encoded SVG so it works cross-origin in the iframe body.
+ * Hotspot is the centre of the `+` at (8, 8).
  */
 const ANNOTATE_CURSOR_SVG =
-  `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">` +
-    `<path d="M12 5v14M5 12h14" stroke="%23000" stroke-width="5" stroke-linecap="round" fill="none"/>` +
-    `<path d="M12 5v14M5 12h14" stroke="%23ffb800" stroke-width="3" stroke-linecap="round" fill="none"/>` +
+  `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">` +
+    `<path d="M8 3v10M3 8h10" stroke="%23fff" stroke-width="2.5" stroke-linecap="round" fill="none"/>` +
+    `<path d="M8 3v10M3 8h10" stroke="%23000" stroke-width="1.25" stroke-linecap="round" fill="none"/>` +
   `</svg>`;
-const ANNOTATE_CURSOR_CSS = `url('data:image/svg+xml;utf8,${ANNOTATE_CURSOR_SVG}') 12 12, crosshair`;
+const ANNOTATE_CURSOR_CSS = `url('data:image/svg+xml;utf8,${ANNOTATE_CURSOR_SVG}') 8 8, crosshair`;

@@ -49,7 +49,7 @@ async function freshAgentation() {
 
 describe("getOrCreateSession — session identity", () => {
   beforeEach(() => {
-    setHref("http://localhost:4400/overview");
+    setHref("http://localhost:6966/overview");
   });
 
   it("reuses the same session when the URL only differs by hash", async () => {
@@ -57,7 +57,7 @@ describe("getOrCreateSession — session identity", () => {
     stubFetch(["session-A", "session-B"]);
 
     const first = await getOrCreateSession();
-    setHref("http://localhost:4400/overview#section-2");
+    setHref("http://localhost:6966/overview#section-2");
     const second = await getOrCreateSession();
 
     expect(first).toBe("session-A");
@@ -69,7 +69,7 @@ describe("getOrCreateSession — session identity", () => {
     stubFetch(["session-A", "session-B"]);
 
     const first = await getOrCreateSession();
-    setHref("http://localhost:4400/overview?tab=install");
+    setHref("http://localhost:6966/overview?tab=install");
     const second = await getOrCreateSession();
 
     expect(first).toBe("session-A");
@@ -81,7 +81,7 @@ describe("getOrCreateSession — session identity", () => {
     stubFetch(["session-A", "session-B"]);
 
     const first = await getOrCreateSession();
-    setHref("http://localhost:4400/install");
+    setHref("http://localhost:6966/install");
     const second = await getOrCreateSession();
 
     expect(first).toBe("session-A");
@@ -91,7 +91,7 @@ describe("getOrCreateSession — session identity", () => {
 
 describe("getOrCreateSession — concurrent call coalescing", () => {
   beforeEach(() => {
-    setHref("http://localhost:4400/overview");
+    setHref("http://localhost:6966/overview");
   });
 
   it("returns the same session id for concurrent callers (no double POST)", async () => {
@@ -117,7 +117,7 @@ describe("getOrCreateSession — concurrent call coalescing", () => {
 
 describe("currentSessionId", () => {
   beforeEach(() => {
-    setHref("http://localhost:4400/overview");
+    setHref("http://localhost:6966/overview");
   });
 
   it("is null before getOrCreateSession has resolved", async () => {

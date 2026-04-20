@@ -1,8 +1,7 @@
 import React, { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { ChevronRight } from "../icons.js";
-import { TWEEN, EASE, DURATION } from "../../utils/easings.js";
-import { sectionExpand } from "../../utils/motion-presets.js";
+import { EASE, DURATION } from "../../utils/easings.js";
+import { ExpandY } from "../../utils/motion-presets.js";
 
 interface SectionProps {
   title: string;
@@ -71,30 +70,22 @@ export function Section({ title, children, defaultOpen = true, warning }: Sectio
               )}
             </span>
           )}
-          <motion.span
-            animate={{ rotate: open ? 90 : 0 }}
-            transition={TWEEN.small}
-            style={{ display: "flex", alignItems: "center" }}
+          <span
+            style={{
+              display: "flex", alignItems: "center",
+              transform: open ? "rotate(90deg)" : "rotate(0deg)",
+              transition: `transform 150ms ${EASE.smooth}`,
+            }}
           >
             <ChevronRight size={12} style={{ color: C.fgDim, flexShrink: 0 }} />
-          </motion.span>
+          </span>
         </div>
       </div>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            initial={sectionExpand.initial}
-            animate={sectionExpand.animate}
-            exit={sectionExpand.exit}
-            transition={sectionExpand.transition}
-            style={{ overflow: "hidden" }}
-          >
-            <div style={{ padding: "4px 12px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
-              {children}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <ExpandY open={open}>
+        <div style={{ padding: "4px 12px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
+          {children}
+        </div>
+      </ExpandY>
     </div>
   );
 }

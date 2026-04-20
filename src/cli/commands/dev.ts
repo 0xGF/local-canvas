@@ -10,15 +10,15 @@ interface DevOptions {
   root?: string;
 }
 
-interface CanvasConfig {
+interface LegacyDevConfig {
   target?: number;
   port?: number;
   host?: string;
   root?: string;
 }
 
-/** Read .local-canvas.json from the project root. */
-function loadConfig(root: string): CanvasConfig {
+/** Read .local-canvas.json from the project root (server/port/host config). */
+function loadLegacyConfig(root: string): LegacyDevConfig {
   const configPath = resolve(root, ".local-canvas.json");
   if (!existsSync(configPath)) return {};
   try {
@@ -30,7 +30,7 @@ function loadConfig(root: string): CanvasConfig {
 
 export async function devCommand(options: DevOptions) {
   const root = options.root || process.cwd();
-  const config = loadConfig(root);
+  const config = loadLegacyConfig(root);
 
   // CLI flags > config file > defaults
   const targetPort = parseInt(options.target || String(config.target || 3000), 10);

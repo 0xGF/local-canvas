@@ -1,6 +1,21 @@
 import "@testing-library/jest-dom/vitest";
 import { vi } from "vitest";
 
+// jsdom doesn't ship matchMedia; motion-presets reads it on import.
+if (typeof window !== "undefined" && !window.matchMedia) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).matchMedia = (query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  });
+}
+
 // Mock WebSocket
 class MockWebSocket {
   static CONNECTING = 0;

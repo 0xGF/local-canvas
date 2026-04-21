@@ -69,7 +69,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className="pt-12 pb-6">
         <Link to="/overview" className="block">
-          <LocalCanvasLogo className="w-[120px] h-[39px]" />
+          <LocalCanvasLogo className="h-6 w-auto" />
         </Link>
         <span className="text-[11px] text-[#a8a29e] mt-1 block">v0.1.0</span>
       </div>

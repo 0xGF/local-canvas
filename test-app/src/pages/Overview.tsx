@@ -4,8 +4,8 @@ import { CodeBlock } from "../components/CodeBlock";
 export default function Overview() {
   return (
     <div className="max-w-[680px] px-6 pt-12 pb-16 space-y-8" style={{ paddingBottom: "0px" }}>
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight xl:mb-3 xl:shadow-[0px_4px_8px_0px_rgba(0,0,0,0.1)] xl:contrast-79 xl:contrast-101">Introduction</h1>
+      <div className="xl:mb-2.5">
+        <h1 className="text-2xl font-bold tracking-tight xl:mb-3 xl:contrast-79 xl:contrast-101">Introduction</h1>
         <p className="text-[15px] text-neutral-500 leading-relaxed xl:outline-[#000000]">
           <strong className="text-neutral-800">Canvas Editor is a visual editing overlay for React.</strong>{" "}
           Select any element, tweak its Tailwind classes, drag to reorder — every
@@ -17,7 +17,7 @@ export default function Overview() {
 
       <CodeBlock code="npx local-canvas dev --target 3000" />
 
-      <hr className="border-neutral-200 2xl:mb-8" />
+      <hr className="border-neutral-200 2xl:mb-8 xl:mb-5" />
 
       <div className="space-y-4 xl:outline-[#1C1917] xl:block xl:justify-start xl:items-start xl:flex-col">
         <h2 className="text-lg font-semibold tracking-tight">Architecture</h2>
@@ -42,7 +42,7 @@ export default function Overview() {
         </ul>
       </div>
 
-      <hr className="border-neutral-200" />
+      <hr className="border-neutral-200 xl:mb-5" />
 
       <div className="space-y-4">
         <h2 className="text-lg font-semibold tracking-tight">How it works</h2>
@@ -73,7 +73,7 @@ export default function Overview() {
         </ol>
       </div>
 
-      <hr className="border-neutral-200" />
+      <hr className="border-neutral-200 xl:mb-5" />
 
       <div className="space-y-4">
         <h2 className="text-lg font-semibold tracking-tight">Supported className patterns</h2>

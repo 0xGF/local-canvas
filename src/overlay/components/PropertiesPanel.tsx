@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useReadonlyStyleStore } from "../stores/readonly-style-store.js";
 import { useClassHelpers } from "../hooks/useClassHelpers.js";
@@ -45,6 +45,7 @@ import {
   MoveRight, MoveDown,
   Square, Columns3, Grid3x3, Eye, EyeOff, Plus, BorderAll,
   CircleDot,
+  AlignLeft, AlignCenter, AlignRight, AlignJustify,
 } from "./icons.js";
 import { THEME } from "../theme.js";
 
@@ -159,10 +160,12 @@ export const PropertiesPanel = React.memo(function PropertiesPanel() {
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overlay-scroll-stable">
         <LayoutSection h={helpers} sel={sel} />
         <SpacingSection h={helpers} sel={sel} />
+        <TypographySection h={helpers} sel={sel} />
         <RadiusSection h={helpers} sel={sel} />
+        <TransformSection h={helpers} sel={sel} />
         <BlendingSection h={helpers} sel={sel} />
         <FillSection h={helpers} sel={sel} />
         <OutlineSection h={helpers} sel={sel} />
@@ -171,6 +174,9 @@ export const PropertiesPanel = React.memo(function PropertiesPanel() {
         <InnerShadowSection h={helpers} sel={sel} />
         <SelectionColorsSection h={helpers} sel={sel} />
         <FiltersSection h={helpers} sel={sel} />
+        <BackdropFiltersSection h={helpers} sel={sel} />
+        <TransitionsSection h={helpers} sel={sel} />
+        <InteractivitySection h={helpers} sel={sel} />
       </div>
     </div>
   );
@@ -533,7 +539,9 @@ function FlexAdvancedPopover({ h, sel }: { h: ClassHelpers; sel: NonNullable<Ret
           sideOffset={6}
           collisionPadding={8}
           className={cn(
-            "z-[2147483647] w-60 rounded-md border border-canvas-border bg-canvas-bg",
+            // See SelectField: portaled popover must opt back into pointer
+            // events since the shadow-DOM mount point disables them.
+            "pointer-events-auto z-[2147483647] w-60 rounded-md border border-canvas-border bg-canvas-bg",
             "shadow-md p-2.5 space-y-2 text-xs",
           )}
         >
@@ -611,11 +619,17 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
     h.set(prefix, v);
   }, [h]);
 
-  const flipX = !!h.has("-scale-x-100");
-  const flipY = !!h.has("-scale-y-100");
+  // `h.has` only checks bare + current-breakpoint prefix, so a `-scale-y-100`
+  // applied via `md:` (outside the active breakpoint) would read as "off".
+  // Walk the full class list via stripBpPrefix so we catch every prefix.
+  const findActualFlip = (cls: string): string | undefined =>
+    h.classes.find(c => h.stripBpPrefix(c) === cls);
+  const flipX = !!findActualFlip("-scale-x-100");
+  const flipY = !!findActualFlip("-scale-y-100");
   const toggleScale = (cls: string) => {
-    if (h.has(cls)) {
-      h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: [h.actual(cls) || cls] });
+    const actual = findActualFlip(cls);
+    if (actual) {
+      h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: [actual] });
     } else {
       h.sendPrefixed({ type: "modify-class", source: sel.source!, add: [cls] });
     }
@@ -837,23 +851,64 @@ const SpacingSection = React.memo(function SpacingSection({ h, sel }: { h: Class
   const marHasIndividual = !!(mt || mr || mb || ml);
   const [marMode, setMarMode] = useState<LinkMode>(marHasIndividual ? "split" : "linked");
 
+  // Maps the margin axis to the CSS inline properties we paint optimistically.
+  // Mirrors PREFIX_TO_PREVIEW in useClassHelpers; duplicated because
+  // writeMargin builds the class itself to support negative values (`-mx-4`),
+  // which h.set doesn't encode.
+  const marginPreviewProps = (axis: string): string[] => {
+    if (axis === "mx") return ["marginLeft", "marginRight"];
+    if (axis === "my") return ["marginTop", "marginBottom"];
+    if (axis === "m") return ["margin"];
+    if (axis === "mt") return ["marginTop"];
+    if (axis === "mr") return ["marginRight"];
+    if (axis === "mb") return ["marginBottom"];
+    if (axis === "ml") return ["marginLeft"];
+    return [];
+  };
+  const decodeMarginPx = (v: string): string | null => {
+    if (!v) return "0px";
+    const bracket = v.match(/^\[(.+)\]$/);
+    if (bracket) return bracket[1];
+    const n = Number(v);
+    if (Number.isFinite(n)) return `${n * 4}px`;
+    return null;
+  };
+
   const writeMargin = useCallback((axis: string, v: string) => {
     if (!sel.source) return;
     const remove = findMarginActuals(el, axis);
     const trimmed = v.trim();
     if (!trimmed) {
+      // Anti-flash: paint 0 immediately so the margin drops live.
+      if (el) {
+        for (const p of marginPreviewProps(axis)) setStyleProp(el, p, "0px");
+      }
       if (remove.length) h.sendPrefixed({ type: "modify-class", source: sel.source, remove });
+      if (el) {
+        for (const p of marginPreviewProps(axis)) clearInlineAfterClassUpdate(el, p);
+      }
       return;
     }
     const n = parseFloat(trimmed);
     const isNumericNeg = Number.isFinite(n) && n < 0 && /^-?\d+(\.\d+)?$/.test(trimmed);
     const cls = isNumericNeg ? `-${axis}-${Math.abs(n)}` : `${axis}-${trimmed}`;
+    // Anti-flash: paint the new margin inline so the user sees it change
+    // without waiting for the debounced file write → HMR round trip.
+    if (el) {
+      const raw = isNumericNeg ? `-${Math.abs(n) * 4}px` : decodeMarginPx(trimmed);
+      if (raw !== null) {
+        for (const p of marginPreviewProps(axis)) setStyleProp(el, p, raw);
+      }
+    }
     h.sendPrefixed({
       type: "modify-class",
       source: sel.source,
       remove: remove.length ? remove : undefined,
       add: [cls],
     });
+    if (el) {
+      for (const p of marginPreviewProps(axis)) clearInlineAfterClassUpdate(el, p);
+    }
   }, [el, sel.source, h]);
 
   const phPx = (raw: string | undefined, fallback = "0px") => {
@@ -1053,21 +1108,30 @@ const FillSection = React.memo(function FillSection({ h, sel }: { h: ClassHelper
     return currentBg ? [currentBg] : undefined;
   }, [currentBg]);
 
+  // Local preview so the swatch reflects the drag immediately without
+  // waiting for HMR; cleared when `solidValue` from the class list catches
+  // up with what we last wrote.
+  const [solidPreview, setSolidPreview] = useState<string | null>(null);
   const writeSolidHex = useCallback((color: string) => {
     if (!sel.source) return;
+    setSolidPreview(color);
     const cleaned = color.replace(/\s+/g, "");
     if (!cleaned) {
-      h.sendPrefixed({ type: "modify-class", source: sel.source, remove: removeCurrentBg() });
+      h.debouncedMutation("color:bg", {
+        type: "modify-class",
+        source: sel.source,
+        remove: removeCurrentBg(),
+      }, 120);
       return;
     }
     const named = hexToNamedBgClass(cleaned);
     const add = [named ? `bg-${named}` : `bg-[${cleaned}]`];
-    h.sendPrefixed({
+    h.debouncedMutation("color:bg", {
       type: "modify-class",
       source: sel.source,
       remove: removeCurrentBg(),
-      add,
-    });
+      add: add.map(c => h.prefixCls(c)),
+    }, 120);
   }, [h, sel, removeCurrentBg]);
 
   const writeGradient = useCallback((g: GradientValue) => {
@@ -1140,6 +1204,13 @@ const FillSection = React.memo(function FillSection({ h, sel }: { h: ClassHelper
       || (cs?.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)" ? cs.backgroundColor : ""))
     : "";
 
+  // Clear the preview once the class list reflects what we wrote.
+  useEffect(() => {
+    if (solidPreview === null) return;
+    const norm = (s: string) => s.replace(/\s+/g, "").toLowerCase();
+    if (norm(solidValue) === norm(solidPreview)) setSolidPreview(null);
+  }, [solidValue, solidPreview]);
+
   const hasFill = !!currentBg || (!!cs?.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)");
   return (
     <Section
@@ -1193,7 +1264,7 @@ const FillSection = React.memo(function FillSection({ h, sel }: { h: ClassHelper
 
         {type === "solid" && (
           <ColorField
-            value={solidValue}
+            value={solidPreview ?? solidValue}
             onChange={writeSolidHex}
             title="Fill color"
           />
@@ -1228,7 +1299,6 @@ const BorderSection = React.memo(function BorderSection({ h, sel }: { h: ClassHe
   const warning = inlineBorder ? "border is set in style={{ ... }} — edit the source or remove the inline declaration" : undefined;
   const cs = sel.element ? getCachedStyle(sel.element) : null;
   const computedBorderPx = cs ? Math.round(parseFloat(cs.borderTopWidth) || 0) : 0;
-  const portalContainer = usePortalContainer();
 
   // Detect the currently-active side. Priority: single side > all. Strip the
   // responsive prefix when matching so `md:border-t-2` still counts as top.
@@ -1365,52 +1435,16 @@ const BorderSection = React.memo(function BorderSection({ h, sel }: { h: ClassHe
   };
 
   const headerAction = (
-    <div className="flex items-center gap-0.5">
-      <Popover.Root>
-        <Popover.Trigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            title="Border style"
-            aria-label="Border style"
-            className="size-6 text-canvas-muted-fg hover:text-canvas-fg"
-          >
-            <SlidersHorizontal size={12} />
-          </Button>
-        </Popover.Trigger>
-        <Popover.Portal container={portalContainer}>
-          <Popover.Content
-            side="bottom"
-            align="end"
-            sideOffset={6}
-            collisionPadding={8}
-            className={cn(
-              "z-[2147483647] w-56 rounded-md border border-canvas-border bg-canvas-bg",
-              "shadow-md p-2.5 space-y-2 text-xs",
-            )}
-          >
-            <div className="text-[11px] font-medium text-canvas-fg">Border style</div>
-            <SelectField
-              value={borderStyleVal}
-              options={BORDER_STYLE_SELECT}
-              onChange={setBorderStyle}
-              placeholder="Solid"
-              title="Border style"
-            />
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
-      <Button
-        variant="ghost"
-        size="icon"
-        title={hasBorder ? "Reset border" : "Add border"}
-        aria-label={hasBorder ? "Reset border" : "Add border"}
-        onClick={addBorder}
-        className="size-6 text-canvas-muted-fg hover:text-canvas-fg"
-      >
-        <Plus size={12} />
-      </Button>
-    </div>
+    <Button
+      variant="ghost"
+      size="icon"
+      title={hasBorder ? "Reset border" : "Add border"}
+      aria-label={hasBorder ? "Reset border" : "Add border"}
+      onClick={addBorder}
+      className="size-6 text-canvas-muted-fg hover:text-canvas-fg"
+    >
+      <Plus size={12} />
+    </Button>
   );
 
   return (
@@ -1460,6 +1494,19 @@ const BorderSection = React.memo(function BorderSection({ h, sel }: { h: ClassHe
             <Minus size={12} />
           </Button>
         </div>
+        {/* Border style used to live in a header popover — moved inline so the
+            control stays anchored to the border row it belongs to, and so
+            clicking the dropdown doesn't collide with Radix outside-click
+            detection inside a shadow DOM (which was dismissing the popover
+            before it could interact). */}
+        <SelectField
+          icon={<Square size={12} />}
+          value={borderStyleVal}
+          options={BORDER_STYLE_SELECT}
+          onChange={setBorderStyle}
+          placeholder="Solid"
+          title="Border style"
+        />
         <ClassColorField h={h} sel={sel} prefix="border"
           computed={cs?.borderTopColor} title="Border color" />
       </div>
@@ -1491,7 +1538,7 @@ function ClassColorField({
   // color classes stay intact until the user picks a new color). The class
   // list may carry a responsive prefix (e.g. `md:border-[#abc]`), so we match
   // on the bare form and keep the prefixed token for removals.
-  const bracketRe = new RegExp(`^${prefix}-\\[(.+)\\]$`);
+  const bracketRe = useMemo(() => new RegExp(`^${prefix}-\\[(.+)\\]$`), [prefix]);
   const colorClass = h.classes.find(c => {
     const m = h.stripBpPrefix(c).match(bracketRe);
     return m ? COLOR_CONTENT.test(m[1]) : false;
@@ -1499,8 +1546,21 @@ function ClassColorField({
   const currentBracketed = colorClass ? h.stripBpPrefix(colorClass).match(bracketRe)?.[1] : undefined;
   const current = currentBracketed ?? (computed && computed !== "rgba(0, 0, 0, 0)" ? computed : "");
 
+  // Local preview so the pill + swatch update instantly while the mutation is
+  // still in flight. Without this, the ColorField reads `current` from props,
+  // which only changes after HMR lands — so the user sees stale display +
+  // resets between drag frames. Cleared when the incoming `current` catches
+  // up (i.e. the mutation landed).
+  const [preview, setPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (preview === null) return;
+    const norm = (s: string) => s.replace(/\s+/g, "").toLowerCase();
+    if (norm(current) === norm(preview)) setPreview(null);
+  }, [current, preview]);
+
   const onChange = useCallback((next: string) => {
     if (!sel.source) return;
+    setPreview(next);
     // Remove any prior bracketed color class for this prefix.
     const remove = h.classes.filter(c => {
       const m = h.stripBpPrefix(c).match(bracketRe);
@@ -1508,14 +1568,19 @@ function ClassColorField({
     });
     const cleaned = next.replace(/\s+/g, "");
     const add = cleaned ? [`${prefix}-[${cleaned}]`] : undefined;
-    h.sendPrefixed({
-      type: "modify-class", source: sel.source,
+    // Debounce under a per-prefix key — during a SV-area drag the picker
+    // emits a new colour every pointermove (~60/s). Each mutation would hit
+    // the server + HMR the file. 120ms coalesces drags into a single write
+    // without making the live swatch feel laggy.
+    h.debouncedMutation(`color:${prefix}`, {
+      type: "modify-class",
+      source: sel.source,
       remove: remove.length ? remove : undefined,
-      add,
-    });
-  }, [h, sel, prefix]);
+      add: add?.map(c => h.prefixCls(c)),
+    }, 120);
+  }, [h, sel, prefix, bracketRe]);
 
-  return <ColorField value={current} onChange={onChange} title={title} />;
+  return <ColorField value={preview ?? current} onChange={onChange} title={title} />;
 }
 
 // Is this class a WIDTH (length) class for the given prefix? Matches bare,
@@ -1548,7 +1613,6 @@ const OutlineSection = React.memo(function OutlineSection({ h, sel }: { h: Class
   const cs = sel.element ? getCachedStyle(sel.element) : null;
   const outlineWidthPx = cs ? Math.round(parseFloat(cs.outlineWidth) || 0) : 0;
   const outlineOffsetPx = cs ? Math.round(parseFloat(cs.outlineOffset) || 0) : 0;
-  const portalContainer = usePortalContainer();
 
   const readWidth = (): string => {
     const hit = h.classes.find(c => isWidthClass(c, "outline", h.stripBpPrefix));
@@ -1659,53 +1723,16 @@ const OutlineSection = React.memo(function OutlineSection({ h, sel }: { h: Class
   };
 
   const headerAction = (
-    <div className="flex items-center gap-0.5">
-      <Popover.Root>
-        <Popover.Trigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            title="Outline offset"
-            aria-label="Outline offset"
-            className="size-6 text-canvas-muted-fg hover:text-canvas-fg"
-          >
-            <SlidersHorizontal size={12} />
-          </Button>
-        </Popover.Trigger>
-        <Popover.Portal container={portalContainer}>
-          <Popover.Content
-            side="bottom"
-            align="end"
-            sideOffset={6}
-            collisionPadding={8}
-            className={cn(
-              "z-[2147483647] w-56 rounded-md border border-canvas-border bg-canvas-bg",
-              "shadow-md p-2.5 space-y-2 text-xs",
-            )}
-          >
-            <div className="text-[11px] font-medium text-canvas-fg">Outline offset</div>
-            <ScrubField
-              label="Off"
-              value={readOffset() ? `${readOffset()}px` : ""}
-              onChange={writeOffset}
-              placeholder={`${outlineOffsetPx}px`}
-              title="Outline offset"
-              format={n => `${Math.round(n)}px`}
-            />
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
-      <Button
-        variant="ghost"
-        size="icon"
-        title={hasOutline ? "Reset outline" : "Add outline"}
-        aria-label={hasOutline ? "Reset outline" : "Add outline"}
-        onClick={addOutline}
-        className="size-6 text-canvas-muted-fg hover:text-canvas-fg"
-      >
-        <Plus size={12} />
-      </Button>
-    </div>
+    <Button
+      variant="ghost"
+      size="icon"
+      title={hasOutline ? "Reset outline" : "Add outline"}
+      aria-label={hasOutline ? "Reset outline" : "Add outline"}
+      onClick={addOutline}
+      className="size-6 text-canvas-muted-fg hover:text-canvas-fg"
+    >
+      <Plus size={12} />
+    </Button>
   );
 
   return (
@@ -1755,6 +1782,18 @@ const OutlineSection = React.memo(function OutlineSection({ h, sel }: { h: Class
             <Minus size={12} />
           </Button>
         </div>
+        {/* Offset moved out of the header popover — a Radix popover inside the
+            already-scrolling panel was closing on its own trigger click under
+            shadow-DOM event retargeting. Inline keeps it anchored to the
+            outline row and always interactable. */}
+        <ScrubField
+          label="Off"
+          value={readOffset() ? `${readOffset()}px` : ""}
+          onChange={writeOffset}
+          placeholder={`${outlineOffsetPx}px`}
+          title="Outline offset"
+          format={n => `${Math.round(n)}px`}
+        />
         <ClassColorField h={h} sel={sel} prefix="outline"
           computed={cs?.outlineColor} title="Outline color" />
       </div>
@@ -1865,11 +1904,11 @@ const RadiusSection = React.memo(function RadiusSection({ h, sel }: { h: ClassHe
   );
 
   return (
-    <Section title="Radius" defaultOpen={false} headerAction={toggle}
+    <Section title="Radius" defaultOpen={false}
       autoOpenKey={sel.element}
       hasValue={computedRadius > 0 || !!h.classes.find(c => /^rounded(?:-|$)/.test(h.stripBpPrefix(c)))}>
       {mode === "linked" ? (
-        <div className="grid grid-cols-[1fr_4rem] gap-1.5 items-center">
+        <div className="grid grid-cols-[1fr_4rem_auto] gap-1.5 items-center">
           <Slider
             value={linkedPx}
             min={0} max={80} step={1}
@@ -1889,25 +1928,29 @@ const RadiusSection = React.memo(function RadiusSection({ h, sel }: { h: ClassHe
             placeholder={`${computedRadius}px`}
             format={n => `${Math.round(n)}px`}
           />
+          {toggle}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-1.5">
-          <ScrubField label={<CornerGlyph corner="tl" />} value={`${tlPx}px`}
-            onChange={v => writeCorner("tl", parseInt(v, 10) || 0)}
-            placeholder={`${tlPx}px`} title="Top-left"
-            format={n => `${Math.round(n)}px`} />
-          <ScrubField label={<CornerGlyph corner="tr" />} value={`${trPx}px`}
-            onChange={v => writeCorner("tr", parseInt(v, 10) || 0)}
-            placeholder={`${trPx}px`} title="Top-right"
-            format={n => `${Math.round(n)}px`} />
-          <ScrubField label={<CornerGlyph corner="bl" />} value={`${blPx}px`}
-            onChange={v => writeCorner("bl", parseInt(v, 10) || 0)}
-            placeholder={`${blPx}px`} title="Bottom-left"
-            format={n => `${Math.round(n)}px`} />
-          <ScrubField label={<CornerGlyph corner="br" />} value={`${brPx}px`}
-            onChange={v => writeCorner("br", parseInt(v, 10) || 0)}
-            placeholder={`${brPx}px`} title="Bottom-right"
-            format={n => `${Math.round(n)}px`} />
+        <div className="flex gap-1.5 items-center">
+          <div className="grid grid-cols-2 gap-1.5 flex-1 min-w-0">
+            <ScrubField label={<CornerGlyph corner="tl" />} value={`${tlPx}px`}
+              onChange={v => writeCorner("tl", parseInt(v, 10) || 0)}
+              placeholder={`${tlPx}px`} title="Top-left"
+              format={n => `${Math.round(n)}px`} />
+            <ScrubField label={<CornerGlyph corner="tr" />} value={`${trPx}px`}
+              onChange={v => writeCorner("tr", parseInt(v, 10) || 0)}
+              placeholder={`${trPx}px`} title="Top-right"
+              format={n => `${Math.round(n)}px`} />
+            <ScrubField label={<CornerGlyph corner="bl" />} value={`${blPx}px`}
+              onChange={v => writeCorner("bl", parseInt(v, 10) || 0)}
+              placeholder={`${blPx}px`} title="Bottom-left"
+              format={n => `${Math.round(n)}px`} />
+            <ScrubField label={<CornerGlyph corner="br" />} value={`${brPx}px`}
+              onChange={v => writeCorner("br", parseInt(v, 10) || 0)}
+              placeholder={`${brPx}px`} title="Bottom-right"
+              format={n => `${Math.round(n)}px`} />
+          </div>
+          {toggle}
         </div>
       )}
     </Section>
@@ -2142,6 +2185,469 @@ const InnerShadowSection = React.memo(function InnerShadowSection({ h, sel }: { 
   );
 });
 
+// ──────────────────────────────────────────────────────────────────────────
+// Transform
+// ──────────────────────────────────────────────────────────────────────────
+// Rotate + scale scrubs. Tailwind's rotate/scale utilities are a mix of
+// named scale steps and negative-prefix utilities (`-rotate-45`, `-scale-x-100`)
+// — we emit arbitrary `rotate-[Ndeg]` and `scale-[N]` so the scrub isn't
+// constrained to the 10-ish preset values.
+
+const ROTATE_CLASS_RE = /^-?rotate-(\d+|\[.+\])$/;
+const SCALE_CLASS_RE = /^-?scale-(\d+|\[.+\])$/;
+
+function readRotateDeg(h: ClassHelpers): number {
+  const cls = h.classes.find(c => ROTATE_CLASS_RE.test(h.stripBpPrefix(c)));
+  if (!cls) return 0;
+  const bare = h.stripBpPrefix(cls);
+  const neg = bare.startsWith("-");
+  const body = bare.replace(/^-?rotate-/, "");
+  const bracket = body.match(/^\[(-?\d+(?:\.\d+)?)deg\]$/);
+  const n = bracket ? parseFloat(bracket[1]) : parseFloat(body);
+  if (!Number.isFinite(n)) return 0;
+  return neg ? -n : n;
+}
+
+function readScalePct(h: ClassHelpers): number {
+  // Ignore the flip utilities (`-scale-x-100` / `-scale-y-100`) — those live
+  // in the Layout section and aren't a uniform scale.
+  const cls = h.classes.find(c => {
+    const bare = h.stripBpPrefix(c);
+    if (!SCALE_CLASS_RE.test(bare)) return false;
+    if (bare.includes("scale-x-") || bare.includes("scale-y-")) return false;
+    return true;
+  });
+  if (!cls) return 100;
+  const bare = h.stripBpPrefix(cls);
+  const neg = bare.startsWith("-");
+  const body = bare.replace(/^-?scale-/, "");
+  const bracket = body.match(/^\[(-?\d+(?:\.\d+)?)\]$/);
+  const n = bracket ? parseFloat(bracket[1]) * 100 : parseFloat(body);
+  if (!Number.isFinite(n)) return 100;
+  return neg ? -n : n;
+}
+
+const TransformSection = React.memo(function TransformSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
+  const rotateDeg = readRotateDeg(h);
+  const scalePct = readScalePct(h);
+
+  const writeRotate = useCallback((raw: string) => {
+    if (!sel.source) return;
+    const remove = h.classes.filter(c => ROTATE_CLASS_RE.test(h.stripBpPrefix(c)));
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      if (remove.length) h.sendPrefixed({ type: "modify-class", source: sel.source, remove });
+      return;
+    }
+    const n = parseFloat(trimmed);
+    if (!Number.isFinite(n) || n === 0) {
+      if (remove.length) h.sendPrefixed({ type: "modify-class", source: sel.source, remove });
+      return;
+    }
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add: [`rotate-[${Math.round(n)}deg]`],
+    });
+  }, [h, sel.source]);
+
+  const writeScale = useCallback((raw: string) => {
+    if (!sel.source) return;
+    const remove = h.classes.filter(c => {
+      const bare = h.stripBpPrefix(c);
+      if (!SCALE_CLASS_RE.test(bare)) return false;
+      return !bare.includes("scale-x-") && !bare.includes("scale-y-");
+    });
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      if (remove.length) h.sendPrefixed({ type: "modify-class", source: sel.source, remove });
+      return;
+    }
+    const n = parseFloat(trimmed);
+    if (!Number.isFinite(n) || n === 100) {
+      if (remove.length) h.sendPrefixed({ type: "modify-class", source: sel.source, remove });
+      return;
+    }
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add: [`scale-[${(n / 100).toFixed(2).replace(/\.?0+$/, "") || "0"}]`],
+    });
+  }, [h, sel.source]);
+
+  const hasTransform = rotateDeg !== 0 || scalePct !== 100;
+
+  return (
+    <Section title="Transform" defaultOpen={false}
+      autoOpenKey={sel.element} hasValue={hasTransform}>
+      <div className="grid grid-cols-2 gap-1.5">
+        <ScrubField label="Rot"
+          value={`${Math.round(rotateDeg)}°`}
+          onChange={writeRotate}
+          placeholder="0°"
+          format={n => `${Math.round(n)}°`}
+          title="Rotate (deg)"
+        />
+        <ScrubField label="Scale"
+          value={`${Math.round(scalePct)}%`}
+          onChange={writeScale}
+          placeholder="100%"
+          format={n => `${Math.round(n)}%`}
+          title="Uniform scale"
+        />
+      </div>
+    </Section>
+  );
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// Typography
+// ──────────────────────────────────────────────────────────────────────────
+// Tailwind collides `text-*` between font-size, text-color, and text-align —
+// so this section detects each sub-property from the class list explicitly
+// instead of using `h.get("text")` (which returns whichever `text-*` class
+// appears first and would cross-contaminate the three controls).
+
+const FONT_SIZE_MAP: Record<string, number> = {
+  xs: 12, sm: 14, base: 16, lg: 18, xl: 20,
+  "2xl": 24, "3xl": 30, "4xl": 36, "5xl": 48,
+  "6xl": 60, "7xl": 72, "8xl": 96, "9xl": 128,
+};
+const FONT_SIZE_LABELS = Object.keys(FONT_SIZE_MAP);
+const FONT_SIZE_BRACKET_RE = /^\[(\d+(?:\.\d+)?)(px|rem|em)?\]$/;
+
+const FONT_WEIGHT_OPTIONS: { value: string; label: string }[] = [
+  { value: "",           label: "Default" },
+  { value: "thin",       label: "Thin 100" },
+  { value: "extralight", label: "Extra light 200" },
+  { value: "light",      label: "Light 300" },
+  { value: "normal",     label: "Normal 400" },
+  { value: "medium",     label: "Medium 500" },
+  { value: "semibold",   label: "Semibold 600" },
+  { value: "bold",       label: "Bold 700" },
+  { value: "extrabold",  label: "Extra bold 800" },
+  { value: "black",      label: "Black 900" },
+];
+
+const TEXT_ALIGN_ITEMS = [
+  { value: "left",    icon: <AlignLeft size={12} />,    title: "Align left" },
+  { value: "center",  icon: <AlignCenter size={12} />,  title: "Align center" },
+  { value: "right",   icon: <AlignRight size={12} />,   title: "Align right" },
+  { value: "justify", icon: <AlignJustify size={12} />, title: "Justify" },
+];
+
+const TEXT_TRANSFORM_SELECT = [
+  { value: "",            label: "Normal" },
+  { value: "uppercase",   label: "Uppercase" },
+  { value: "lowercase",   label: "Lowercase" },
+  { value: "capitalize",  label: "Capitalize" },
+];
+
+const FONT_STYLE_ITEMS = [
+  { value: "italic",      label: "I", title: "Italic" },
+  { value: "underline",   label: "U", title: "Underline" },
+  { value: "line-through", label: "S", title: "Strikethrough" },
+];
+
+const TEXT_ALIGN_RE = /^text-(left|center|right|justify|start|end)$/;
+const FONT_WEIGHT_VALUES = FONT_WEIGHT_OPTIONS.map(o => o.value).filter(Boolean);
+const FONT_WEIGHT_RE = /^font-(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)$/;
+const TEXT_TRANSFORM_RE = /^(uppercase|lowercase|capitalize|normal-case)$/;
+// Named Tailwind color or bracketed arbitrary color — excludes size / align /
+// weight / style classes that also start with `text-`. The bracketed branch
+// requires the contents to look color-shaped (#hex, rgb()/rgba()/hsl()/oklch()
+// /color()/var(), or a named CSS colour) — otherwise a font-size class like
+// `text-[12px]` would register as the "current colour" and the color picker
+// would try to display `12px` as a swatch.
+const TEXT_COLOR_BRACKET_RE = /^\[(?:#[0-9a-f]{3,8}|(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|var)\(|(?:aliceblue|antiquewhite|aqua|aquamarine|azure|beige|bisque|black|blanchedalmond|blue|blueviolet|brown|burlywood|cadetblue|chartreuse|chocolate|coral|cornflowerblue|cornsilk|crimson|cyan|darkblue|darkcyan|darkgoldenrod|darkgray|darkgrey|darkgreen|darkkhaki|darkmagenta|darkolivegreen|darkorange|darkorchid|darkred|darksalmon|darkseagreen|darkslateblue|darkslategray|darkslategrey|darkturquoise|darkviolet|deeppink|deepskyblue|dimgray|dimgrey|dodgerblue|firebrick|floralwhite|forestgreen|fuchsia|gainsboro|ghostwhite|gold|goldenrod|gray|grey|green|greenyellow|honeydew|hotpink|indianred|indigo|ivory|khaki|lavender|lavenderblush|lawngreen|lemonchiffon|lightblue|lightcoral|lightcyan|lightgoldenrodyellow|lightgray|lightgrey|lightgreen|lightpink|lightsalmon|lightseagreen|lightskyblue|lightslategray|lightslategrey|lightsteelblue|lightyellow|lime|limegreen|linen|magenta|maroon|mediumaquamarine|mediumblue|mediumorchid|mediumpurple|mediumseagreen|mediumslateblue|mediumspringgreen|mediumturquoise|mediumvioletred|midnightblue|mintcream|mistyrose|moccasin|navajowhite|navy|oldlace|olive|olivedrab|orange|orangered|orchid|palegoldenrod|palegreen|paleturquoise|palevioletred|papayawhip|peachpuff|peru|pink|plum|powderblue|purple|rebeccapurple|red|rosybrown|royalblue|saddlebrown|salmon|sandybrown|seagreen|seashell|sienna|silver|skyblue|slateblue|slategray|slategrey|snow|springgreen|steelblue|tan|teal|thistle|tomato|turquoise|violet|wheat|white|whitesmoke|yellow|yellowgreen|transparent|currentcolor)\b)/i;
+const TEXT_COLOR_RE = /^text-(black|white|transparent|current|inherit|[a-z]+-(?:50|\d{2,3}0?))$/;
+function isTextColorClass(bare: string): boolean {
+  if (TEXT_COLOR_RE.test(bare)) return true;
+  if (!bare.startsWith("text-")) return false;
+  return TEXT_COLOR_BRACKET_RE.test(bare.slice(5));
+}
+
+function findTypographyClass(h: ClassHelpers, test: (bare: string) => boolean): string | undefined {
+  return h.classes.find(c => test(h.stripBpPrefix(c)));
+}
+
+function decodeFontSizePx(suffix: string): number | null {
+  if (suffix in FONT_SIZE_MAP) return FONT_SIZE_MAP[suffix];
+  const m = suffix.match(FONT_SIZE_BRACKET_RE);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  const unit = m[2] || "px";
+  if (unit === "rem") return Math.round(n * 16);
+  if (unit === "em") return Math.round(n * 16);
+  return Math.round(n);
+}
+
+function encodeFontSizePx(px: number): string {
+  const scaleKey = FONT_SIZE_LABELS.find(k => FONT_SIZE_MAP[k] === px);
+  return scaleKey ?? `[${px}px]`;
+}
+
+const TypographySection = React.memo(function TypographySection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
+  const el = sel.element;
+  const cs = el ? getCachedStyle(el) : null;
+
+  // ── Font size ────────────────────────────────────────────────────────────
+  const sizeClass = findTypographyClass(h, bare => {
+    if (!bare.startsWith("text-")) return false;
+    const rest = bare.slice(5);
+    return rest in FONT_SIZE_MAP || FONT_SIZE_BRACKET_RE.test(rest);
+  });
+  const sizeSuffix = sizeClass ? h.stripBpPrefix(sizeClass).slice(5) : "";
+  const sizePx = sizeSuffix ? decodeFontSizePx(sizeSuffix) : null;
+  const cssSizePx = cs?.fontSize ? parseFloat(cs.fontSize) : NaN;
+  const sizeDisplay = sizePx != null ? `${sizePx}px` : (Number.isFinite(cssSizePx) ? `${Math.round(cssSizePx)}px` : "");
+  const writeFontSize = useCallback((raw: string) => {
+    if (!sel.source) return;
+    const trimmed = raw.trim();
+    const old = h.classes.filter(c => {
+      const bare = h.stripBpPrefix(c);
+      if (!bare.startsWith("text-")) return false;
+      const rest = bare.slice(5);
+      return rest in FONT_SIZE_MAP || FONT_SIZE_BRACKET_RE.test(rest);
+    });
+    if (!trimmed) {
+      if (old.length) h.sendPrefixed({ type: "modify-class", source: sel.source, remove: old });
+      return;
+    }
+    const n = parseFloat(trimmed);
+    if (!Number.isFinite(n)) return;
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: old.length ? old : undefined,
+      add: [`text-${encodeFontSizePx(Math.round(n))}`],
+    });
+  }, [h, sel.source]);
+
+  // ── Font weight ──────────────────────────────────────────────────────────
+  const weightClass = findTypographyClass(h, bare => FONT_WEIGHT_RE.test(bare));
+  const weightVal = weightClass ? h.stripBpPrefix(weightClass).slice(5) : "";
+  const setWeight = useCallback((v: string) => {
+    const current = FONT_WEIGHT_VALUES.map(w => h.actual(`font-${w}`)).filter(Boolean) as string[];
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source!,
+      remove: current.length ? current : undefined,
+      add: v ? [`font-${v}`] : undefined,
+    });
+  }, [h, sel.source]);
+
+  // ── Text align ───────────────────────────────────────────────────────────
+  const alignClass = findTypographyClass(h, bare => TEXT_ALIGN_RE.test(bare));
+  const alignVal = alignClass ? h.stripBpPrefix(alignClass).slice(5) : "";
+  const setAlign = useCallback((v: string) => {
+    const current = alignClass ? [alignClass] : [];
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source!,
+      remove: current.length ? current : undefined,
+      add: v ? [`text-${v}`] : undefined,
+    });
+  }, [h, sel.source, alignClass]);
+
+  // ── Font style + decoration (italic / underline / line-through) ─────────
+  const styleActuals: Record<string, string | undefined> = {};
+  for (const tok of ["italic", "underline", "line-through"]) {
+    styleActuals[tok] = h.classes.find(c => h.stripBpPrefix(c) === tok);
+  }
+  const activeStyles = Object.entries(styleActuals)
+    .filter(([, actual]) => !!actual)
+    .map(([tok]) => tok);
+  const toggleStyle = useCallback((v: string) => {
+    if (!sel.source) return;
+    const actual = styleActuals[v];
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      // Pass the actually-present class (so `md:italic` is removed properly,
+      // not a bare `italic` that never matches).
+      remove: actual ? [actual] : undefined,
+      add: actual ? undefined : [v],
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [h, sel.source, styleActuals.italic, styleActuals.underline, styleActuals["line-through"]]);
+
+  // ── Text transform ───────────────────────────────────────────────────────
+  const transformClass = findTypographyClass(h, bare => TEXT_TRANSFORM_RE.test(bare));
+  const transformVal = transformClass ? h.stripBpPrefix(transformClass) : "";
+  const setTransform = useCallback((v: string) => {
+    const remove = transformClass ? [transformClass] : [];
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source!,
+      remove: remove.length ? remove : undefined,
+      add: v ? [v] : undefined,
+    });
+  }, [h, sel.source, transformClass]);
+
+  // ── Line-height / letter-spacing scrubs (arbitrary-value) ───────────────
+  const leadingClass = findTypographyClass(h, bare => /^leading-/.test(bare));
+  const leadingSuffix = leadingClass ? h.stripBpPrefix(leadingClass).slice(8) : "";
+  const leadingDisplay = leadingSuffix
+    ? (leadingSuffix.match(/^\[(.+)\]$/)?.[1] ?? leadingSuffix)
+    : (cs?.lineHeight && cs.lineHeight !== "normal" ? `${Math.round(parseFloat(cs.lineHeight))}px` : "");
+  const writeLeading = useCallback((raw: string) => {
+    const trimmed = raw.trim();
+    const current = leadingClass ? [leadingClass] : [];
+    if (!trimmed) {
+      if (current.length) h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: current });
+      return;
+    }
+    const n = parseFloat(trimmed);
+    if (!Number.isFinite(n)) return;
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source!,
+      remove: current.length ? current : undefined,
+      add: [`leading-[${n}px]`],
+    });
+  }, [h, sel.source, leadingClass]);
+
+  const trackingClass = findTypographyClass(h, bare => /^tracking-/.test(bare));
+  const trackingSuffix = trackingClass ? h.stripBpPrefix(trackingClass).slice(9) : "";
+  const trackingDisplay = trackingSuffix
+    ? (trackingSuffix.match(/^\[(.+)\]$/)?.[1] ?? trackingSuffix)
+    : "";
+  const writeTracking = useCallback((raw: string) => {
+    const trimmed = raw.trim();
+    const current = trackingClass ? [trackingClass] : [];
+    if (!trimmed) {
+      if (current.length) h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: current });
+      return;
+    }
+    const n = parseFloat(trimmed);
+    if (!Number.isFinite(n)) return;
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source!,
+      remove: current.length ? current : undefined,
+      add: [`tracking-[${n}em]`],
+    });
+  }, [h, sel.source, trackingClass]);
+
+  // ── Text color (named or bracketed) ──────────────────────────────────────
+  // Prefer the class value over the computed style. `cs.color` is the
+  // element's resolved colour — which for a container with no `text-*` class
+  // is whatever it inherits (usually default black). Showing that in the
+  // picker when the element doesn't actually have a colour class was
+  // misleading: the section rendered "000000 / 100%" even though the element
+  // had no colour of its own.
+  const colorClass = findTypographyClass(h, isTextColorClass);
+  const colorCss = (() => {
+    if (!colorClass) return "";
+    const bare = h.stripBpPrefix(colorClass);
+    const bracket = bare.match(/^text-\[(.+)\]$/);
+    if (bracket) return bracket[1];
+    // Named Tailwind colour (`text-red-500` etc.) — resolve via the computed
+    // style so the picker shows the actual swatch.
+    return cs?.color ?? "";
+  })();
+  // Same drag-debounce + optimistic preview as ClassColorField. Text color
+  // writes can come in at ~60/s during a SV-area drag in the picker; a bare
+  // sendPrefixed-per-event produces a flurry of file writes + HMR cycles.
+  const [colorPreview, setColorPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (colorPreview === null) return;
+    const norm = (s: string) => s.replace(/\s+/g, "").toLowerCase();
+    if (norm(colorCss) === norm(colorPreview)) setColorPreview(null);
+  }, [colorCss, colorPreview]);
+  const writeColor = useCallback((next: string) => {
+    if (!sel.source) return;
+    setColorPreview(next);
+    const cleaned = next.replace(/\s+/g, "");
+    const remove = colorClass ? [colorClass] : [];
+    h.debouncedMutation("color:text", {
+      type: "modify-class",
+      source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add: cleaned ? [h.prefixCls(`text-[${cleaned}]`)] : undefined,
+    }, 120);
+  }, [h, sel.source, colorClass]);
+
+  const hasTypography = !!(sizeClass || weightClass || alignClass || transformClass || leadingClass || trackingClass || colorClass || activeStyles.length);
+
+  return (
+    <Section title="Typography" defaultOpen={false}
+      autoOpenKey={sel.element} hasValue={hasTypography}>
+      <div className="grid grid-cols-2 gap-1.5">
+        <ScrubField label="Size"
+          value={sizeDisplay}
+          onChange={writeFontSize}
+          placeholder="auto"
+          format={n => `${Math.max(0, Math.round(n))}px`}
+          title="Font size (px)"
+        />
+        <SelectField
+          value={weightVal}
+          options={FONT_WEIGHT_OPTIONS}
+          onChange={setWeight}
+          placeholder="Default"
+          title="Font weight"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        <ScrubField label="Line"
+          value={leadingDisplay}
+          onChange={writeLeading}
+          placeholder="auto"
+          format={n => `${Math.max(0, Math.round(n))}px`}
+          title="Line height (px)"
+        />
+        <ScrubField label="Track"
+          value={trackingDisplay}
+          onChange={writeTracking}
+          placeholder="0"
+          format={n => n.toFixed(2)}
+          parse={v => parseFloat(v)}
+          title="Letter spacing (em)"
+        />
+      </div>
+      <ToggleGroup
+        value={alignVal}
+        items={TEXT_ALIGN_ITEMS}
+        onChange={setAlign}
+      />
+      <div className="grid grid-cols-[auto_1fr] gap-1.5 items-center">
+        <div className="flex gap-px p-0.5 rounded-md bg-canvas-muted">
+          {FONT_STYLE_ITEMS.map(item => {
+            const active = activeStyles.includes(item.value);
+            return (
+              <button
+                key={item.value}
+                type="button"
+                aria-pressed={active}
+                title={item.title}
+                onClick={() => toggleStyle(item.value)}
+                className={cn(
+                  "min-w-[26px] h-6 px-1.5 rounded text-[11px] select-none cursor-pointer transition-colors",
+                  item.value === "italic" && "italic",
+                  item.value === "underline" && "underline",
+                  item.value === "line-through" && "line-through",
+                  active
+                    ? "bg-canvas-accent text-canvas-accent-fg font-medium shadow-sm"
+                    : "text-canvas-muted-fg hover:bg-canvas-muted/60 hover:text-canvas-fg",
+                )}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+        <SelectField
+          value={transformVal === "normal-case" ? "" : transformVal}
+          options={TEXT_TRANSFORM_SELECT}
+          onChange={setTransform}
+          placeholder="Normal"
+          title="Text transform"
+        />
+      </div>
+      <ColorField
+        value={colorPreview ?? colorCss}
+        onChange={writeColor}
+        title="Text color"
+      />
+    </Section>
+  );
+});
+
 // Normalize BLEND_MODE_OPTIONS: presets' Option.label is optional, and the
 // array also contains `{ separator: true }` markers that we pass through.
 const BLEND_MODE_SELECT = BLEND_MODE_OPTIONS.map(o =>
@@ -2205,16 +2711,58 @@ const BlendingSection = React.memo(function BlendingSection({ h, sel }: { h: Cla
     });
   }, [h, sel, hasInlineBlend]);
 
-  const hasBlending = opacityNum !== 100 || !!blendMode;
+  // ── Background blend mode (bg-blend-*) ───────────────────────────────────
+  // Blends the element's background image against its background colour —
+  // separate from `mix-blend-mode`, which blends the whole element against
+  // its backdrop. Useful for image-over-colour treatments.
+  const bgBlendMode = (() => {
+    const found = h.classes.find(c => /^bg-blend-/.test(h.stripBpPrefix(c)));
+    return found ? h.stripBpPrefix(found).replace(/^bg-blend-/, "") : "";
+  })();
+  const setBgBlend = useCallback((v: string) => {
+    if (!sel.source) return;
+    const remove = h.classes.filter(c => /^bg-blend-/.test(h.stripBpPrefix(c)));
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add: v ? [`bg-blend-${v}`] : undefined,
+    });
+  }, [h, sel]);
+
+  // ── Isolation ────────────────────────────────────────────────────────────
+  // Blend modes without `isolation: isolate` can leak through to ancestors
+  // (whatever is painted below the nearest stacking context). Exposing the
+  // toggle here means picking a blend mode can actually land predictably
+  // without the user having to remember a separate utility class.
+  const isolated = h.classes.some(c => h.stripBpPrefix(c) === "isolate");
+  const isolateAuto = h.classes.some(c => h.stripBpPrefix(c) === "isolation-auto");
+  const toggleIsolate = useCallback(() => {
+    if (!sel.source) return;
+    const isoClass = h.classes.find(c => {
+      const bare = h.stripBpPrefix(c);
+      return bare === "isolate" || bare === "isolation-auto";
+    });
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: isoClass ? [isoClass] : undefined,
+      add: isolated ? undefined : ["isolate"],
+    });
+  }, [h, sel.source, isolated]);
+
+  const hasBlending = opacityNum !== 100 || !!blendMode || !!bgBlendMode || isolated || isolateAuto;
   return (
     <Section title="Blending" defaultOpen={false}
       autoOpenKey={sel.element} hasValue={hasBlending}>
-      <div className="grid grid-cols-2 gap-1.5 items-center">
-        <div className="flex items-center gap-1.5">
+      <SubLabel>Opacity</SubLabel>
+      {/* px-1 on the slider column keeps the track from butting right up
+          against the value pill — the thumb has its own radius and visually
+          "touches" the pill without the padding. */}
+      <div className="grid grid-cols-[1fr_4.25rem] gap-2 items-center">
+        <div className="px-1">
           <Slider
             value={opacityNum}
             min={0} max={100} step={1}
-            onChange={() => { /* live preview via sliderValue binding only */ }}
+            onChange={() => { /* live preview via slider's own drag state */ }}
             onCommit={n => h.set("opacity", encodeOpacity(n))}
             showValue={false}
           />
@@ -2230,10 +2778,17 @@ const BlendingSection = React.memo(function BlendingSection({ h, sel }: { h: Cla
           format={n => `${Math.max(0, Math.min(100, Math.round(n)))}%`}
         />
       </div>
-      <div className="mt-1.5">
-        <SelectField value={blendMode} options={BLEND_MODE_SELECT} onChange={setBlend}
-          placeholder="Normal" title="Blend mode" />
-      </div>
+      <SubLabel>Mix blend</SubLabel>
+      <SelectField value={blendMode} options={BLEND_MODE_SELECT} onChange={setBlend}
+        placeholder="Normal" title="Mix blend mode — blends the element against what's behind it" />
+      <SubLabel>Background blend</SubLabel>
+      <SelectField value={bgBlendMode} options={BLEND_MODE_SELECT} onChange={setBgBlend}
+        placeholder="Normal" title="Background blend mode — blends the element's own background image against its colour" />
+      <CheckboxRow
+        label="Isolate (contain blend)"
+        checked={isolated}
+        onChange={toggleIsolate}
+      />
     </Section>
   );
 });
@@ -2345,8 +2900,8 @@ function FilterRow({
 }: {
   h: ClassHelpers; label: string; prefix: string;
   min: number; max: number; step: number;
-  /** Display unit appended to the scrub value ("px" / "%"). */
-  suffix: "px" | "%";
+  /** Display unit appended to the scrub value ("px" / "%" / "°"). */
+  suffix: "px" | "%" | "°";
   encode: (n: number) => string;
   decode: (v: string) => number;
   defaultN: number;
@@ -2375,7 +2930,25 @@ function FilterRow({
   );
 }
 
-const FILTER_PREFIXES = ["blur", "brightness", "contrast", "saturate", "hue-rotate", "grayscale", "invert", "sepia"];
+const FILTER_PREFIXES = ["blur", "brightness", "contrast", "saturate", "hue-rotate", "grayscale", "invert", "sepia", "drop-shadow"];
+const BACKDROP_FILTER_PREFIXES = ["backdrop-blur", "backdrop-brightness", "backdrop-contrast", "backdrop-saturate", "backdrop-hue-rotate", "backdrop-grayscale", "backdrop-invert", "backdrop-sepia", "backdrop-opacity"];
+
+// Degree-valued filter (hue-rotate): `[Ndeg]` brackets or bare scale.
+const degFilter = {
+  encode: (n: number) => n === 0 ? "" : `[${n}deg]`,
+  decode: (v: string) => { const m = v.match(/^\[(-?\d+)deg\]$/); return m ? parseInt(m[1], 10) : 0; },
+};
+// Percent filter (brightness/contrast/saturate/grayscale/invert/sepia): bare scale is percent.
+const pctFilter = (neutral: number) => ({
+  encode: (n: number) => n === neutral ? "" : String(n),
+  decode: (v: string) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : neutral; },
+});
+// Px-bracket filter (blur, backdrop-blur).
+const pxBracketFilter = {
+  encode: (n: number) => n === 0 ? "" : `[${n}px]`,
+  decode: (v: string) => { const m = v.match(/^\[(\d+)px\]$/); return m ? parseInt(m[1], 10) : 0; },
+};
+
 const FiltersSection = React.memo(function FiltersSection({ h, sel }: { h: ClassHelpers; sel: Sel }) {
   const hasFilter = h.classes.some(c => {
     const bare = h.stripBpPrefix(c);
@@ -2384,22 +2957,306 @@ const FiltersSection = React.memo(function FiltersSection({ h, sel }: { h: Class
   return (
     <Section title="Filters" defaultOpen={false}
       autoOpenKey={sel?.element} hasValue={hasFilter}>
-      <FilterRow h={h} label="Blur"   prefix="blur"       min={0} max={64}  step={1} suffix="px"
-        encode={n => n === 0 ? "" : `[${n}px]`}
-        decode={v => { const m = v.match(/^\[(\d+)px\]$/); return m ? parseInt(m[1], 10) : 0; }}
-        defaultN={0} />
-      <FilterRow h={h} label="Bright" prefix="brightness" min={0} max={200} step={5} suffix="%"
-        encode={n => n === 100 ? "" : String(n)}
-        decode={v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 100; }}
-        defaultN={100} />
-      <FilterRow h={h} label="Cntr"   prefix="contrast"   min={0} max={200} step={5} suffix="%"
-        encode={n => n === 100 ? "" : String(n)}
-        decode={v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 100; }}
-        defaultN={100} />
-      <FilterRow h={h} label="Satur"  prefix="saturate"   min={0} max={200} step={5} suffix="%"
-        encode={n => n === 100 ? "" : String(n)}
-        decode={v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 100; }}
-        defaultN={100} />
+      <FilterRow h={h} label="Blur"       prefix="blur"       min={0}    max={64}  step={1} suffix="px" {...pxBracketFilter} defaultN={0} />
+      <FilterRow h={h} label="Bright"     prefix="brightness" min={0}    max={200} step={5} suffix="%"  {...pctFilter(100)}  defaultN={100} />
+      <FilterRow h={h} label="Cntr"       prefix="contrast"   min={0}    max={200} step={5} suffix="%"  {...pctFilter(100)}  defaultN={100} />
+      <FilterRow h={h} label="Satur"      prefix="saturate"   min={0}    max={200} step={5} suffix="%"  {...pctFilter(100)}  defaultN={100} />
+      <FilterRow h={h} label="Hue"        prefix="hue-rotate" min={-180} max={180} step={5} suffix="°"  {...degFilter}       defaultN={0} />
+      <FilterRow h={h} label="Gray"       prefix="grayscale"  min={0}    max={100} step={5} suffix="%"  {...pctFilter(0)}    defaultN={0} />
+      <FilterRow h={h} label="Invert"     prefix="invert"     min={0}    max={100} step={5} suffix="%"  {...pctFilter(0)}    defaultN={0} />
+      <FilterRow h={h} label="Sepia"      prefix="sepia"      min={0}    max={100} step={5} suffix="%"  {...pctFilter(0)}    defaultN={0} />
+    </Section>
+  );
+});
+
+const BackdropFiltersSection = React.memo(function BackdropFiltersSection({ h, sel }: { h: ClassHelpers; sel: Sel }) {
+  const hasBackdrop = h.classes.some(c => {
+    const bare = h.stripBpPrefix(c);
+    return BACKDROP_FILTER_PREFIXES.some(p => bare === p || bare.startsWith(p + "-"));
+  });
+  return (
+    <Section title="Backdrop filter" defaultOpen={false}
+      autoOpenKey={sel?.element} hasValue={hasBackdrop}>
+      <FilterRow h={h} label="Blur"   prefix="backdrop-blur"       min={0}    max={64}  step={1} suffix="px" {...pxBracketFilter} defaultN={0} />
+      <FilterRow h={h} label="Bright" prefix="backdrop-brightness" min={0}    max={200} step={5} suffix="%"  {...pctFilter(100)}  defaultN={100} />
+      <FilterRow h={h} label="Cntr"   prefix="backdrop-contrast"   min={0}    max={200} step={5} suffix="%"  {...pctFilter(100)}  defaultN={100} />
+      <FilterRow h={h} label="Satur"  prefix="backdrop-saturate"   min={0}    max={200} step={5} suffix="%"  {...pctFilter(100)}  defaultN={100} />
+      <FilterRow h={h} label="Opac"   prefix="backdrop-opacity"    min={0}    max={100} step={5} suffix="%"  {...pctFilter(100)}  defaultN={100} />
+      <FilterRow h={h} label="Hue"    prefix="backdrop-hue-rotate" min={-180} max={180} step={5} suffix="°"  {...degFilter}       defaultN={0} />
+      <FilterRow h={h} label="Gray"   prefix="backdrop-grayscale"  min={0}    max={100} step={5} suffix="%"  {...pctFilter(0)}    defaultN={0} />
+    </Section>
+  );
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// Transitions
+// ──────────────────────────────────────────────────────────────────────────
+
+const TRANSITION_PROPERTY_SELECT = [
+  { value: "",           label: "None" },
+  { value: "all",        label: "All" },
+  { value: "",           label: "Default" },
+  { value: "colors",     label: "Colors" },
+  { value: "opacity",    label: "Opacity" },
+  { value: "shadow",     label: "Shadow" },
+  { value: "transform",  label: "Transform" },
+];
+const TIMING_SELECT = [
+  { value: "",        label: "Default" },
+  { value: "linear",  label: "Linear" },
+  { value: "in",      label: "Ease in" },
+  { value: "out",     label: "Ease out" },
+  { value: "in-out",  label: "Ease in-out" },
+];
+const ANIMATE_SELECT = [
+  { value: "",       label: "None" },
+  { value: "none",   label: "None" },
+  { value: "spin",   label: "Spin" },
+  { value: "ping",   label: "Ping" },
+  { value: "pulse",  label: "Pulse" },
+  { value: "bounce", label: "Bounce" },
+];
+
+const TransitionsSection = React.memo(function TransitionsSection({ h, sel }: { h: ClassHelpers; sel: Sel }) {
+  const transitionCls = h.classes.find(c => /^transition(?:-|$)/.test(h.stripBpPrefix(c)));
+  const transitionVal = transitionCls
+    ? (() => { const b = h.stripBpPrefix(transitionCls); return b === "transition" ? "" : b.slice("transition-".length); })()
+    : "";
+  const setTransition = useCallback((v: string) => {
+    if (!sel?.source) return;
+    const remove = h.classes.filter(c => /^transition(?:-|$)/.test(h.stripBpPrefix(c)));
+    const add = v === "all" ? ["transition-all"]
+      : v === "" ? ["transition"]
+      : v ? [`transition-${v}`]
+      : undefined;
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add,
+    });
+  }, [h, sel]);
+
+  const durationN = readScaleValue(h, "duration", 0);
+  const delayN = readScaleValue(h, "delay", 0);
+  const easingCls = h.classes.find(c => /^ease-/.test(h.stripBpPrefix(c)));
+  const easingVal = easingCls ? h.stripBpPrefix(easingCls).slice("ease-".length) : "";
+  const setEasing = useCallback((v: string) => {
+    if (!sel?.source) return;
+    const remove = h.classes.filter(c => /^ease-/.test(h.stripBpPrefix(c)));
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add: v ? [`ease-${v}`] : undefined,
+    });
+  }, [h, sel]);
+
+  const animateCls = h.classes.find(c => /^animate-/.test(h.stripBpPrefix(c)));
+  const animateVal = animateCls ? h.stripBpPrefix(animateCls).slice("animate-".length) : "";
+  const setAnimate = useCallback((v: string) => {
+    if (!sel?.source) return;
+    const remove = h.classes.filter(c => /^animate-/.test(h.stripBpPrefix(c)));
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add: v ? [`animate-${v}`] : undefined,
+    });
+  }, [h, sel]);
+
+  const hasTransition = !!(transitionCls || durationN > 0 || delayN > 0 || easingCls || animateCls);
+
+  return (
+    <Section title="Transitions" defaultOpen={false}
+      autoOpenKey={sel?.element} hasValue={hasTransition}>
+      <div className="grid grid-cols-2 gap-1.5">
+        <SelectField
+          value={transitionVal}
+          options={TRANSITION_PROPERTY_SELECT}
+          onChange={setTransition}
+          placeholder="None"
+          title="Transition property"
+        />
+        <SelectField
+          value={easingVal}
+          options={TIMING_SELECT}
+          onChange={setEasing}
+          placeholder="Default"
+          title="Timing function"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        <ScrubField label="Dur"
+          value={durationN ? `${durationN}ms` : ""}
+          onChange={raw => writeScaleValue(h, sel, "duration", raw, v => `${v}ms`)}
+          placeholder="0ms"
+          format={n => `${Math.max(0, Math.round(n))}ms`}
+          title="Duration (ms)"
+        />
+        <ScrubField label="Delay"
+          value={delayN ? `${delayN}ms` : ""}
+          onChange={raw => writeScaleValue(h, sel, "delay", raw, v => `${v}ms`)}
+          placeholder="0ms"
+          format={n => `${Math.max(0, Math.round(n))}ms`}
+          title="Delay (ms)"
+        />
+      </div>
+      <SelectField
+        value={animateVal}
+        options={ANIMATE_SELECT}
+        onChange={setAnimate}
+        placeholder="None"
+        title="Animation"
+      />
+    </Section>
+  );
+});
+
+// Shared scrub helpers for `duration-N` / `delay-N` (Tailwind bare values are
+// in ms; bracket form `[Nms]` allowed for off-scale values).
+function readScaleValue(h: ClassHelpers, prefix: string, defaultN: number): number {
+  const cls = h.classes.find(c => new RegExp(`^${prefix}(?:-|$)`).test(h.stripBpPrefix(c)));
+  if (!cls) return defaultN;
+  const bare = h.stripBpPrefix(cls);
+  if (bare === prefix) return defaultN;
+  const rest = bare.slice(prefix.length + 1);
+  const bracket = rest.match(/^\[(\d+)ms\]$/);
+  if (bracket) return parseInt(bracket[1], 10);
+  const n = parseInt(rest, 10);
+  return Number.isFinite(n) ? n : defaultN;
+}
+
+function writeScaleValue(
+  h: ClassHelpers,
+  sel: Sel | null,
+  prefix: string,
+  raw: string,
+  _format: (n: number) => string,
+): void {
+  if (!sel?.source) return;
+  const trimmed = raw.trim();
+  const remove = h.classes.filter(c => new RegExp(`^${prefix}(?:-|$)`).test(h.stripBpPrefix(c)));
+  if (!trimmed) {
+    if (remove.length) h.sendPrefixed({ type: "modify-class", source: sel.source, remove });
+    return;
+  }
+  const n = parseInt(trimmed, 10);
+  if (!Number.isFinite(n) || n <= 0) {
+    if (remove.length) h.sendPrefixed({ type: "modify-class", source: sel.source, remove });
+    return;
+  }
+  // Tailwind duration/delay scale (75/100/150/200/300/500/700/1000). Use the
+  // named class when it matches exactly; bracket for anything else.
+  const NAMED = new Set([0, 75, 100, 150, 200, 300, 500, 700, 1000]);
+  const add = NAMED.has(n) ? [`${prefix}-${n}`] : [`${prefix}-[${n}ms]`];
+  h.sendPrefixed({
+    type: "modify-class", source: sel.source,
+    remove: remove.length ? remove : undefined,
+    add,
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Interactivity
+// ──────────────────────────────────────────────────────────────────────────
+
+const CURSOR_SELECT = [
+  { value: "",            label: "Auto" },
+  { value: "default",     label: "Default" },
+  { value: "pointer",     label: "Pointer" },
+  { value: "wait",        label: "Wait" },
+  { value: "text",        label: "Text" },
+  { value: "move",        label: "Move" },
+  { value: "help",        label: "Help" },
+  { value: "not-allowed", label: "Not allowed" },
+  { value: "none",        label: "None" },
+  { value: "grab",        label: "Grab" },
+  { value: "grabbing",    label: "Grabbing" },
+  { value: "crosshair",   label: "Crosshair" },
+  { value: "zoom-in",     label: "Zoom in" },
+  { value: "zoom-out",    label: "Zoom out" },
+];
+
+const POINTER_SELECT = [
+  { value: "",     label: "Auto" },
+  { value: "auto", label: "Auto" },
+  { value: "none", label: "None" },
+];
+
+const USER_SELECT_SELECT = [
+  { value: "",     label: "Auto" },
+  { value: "auto", label: "Auto" },
+  { value: "none", label: "None" },
+  { value: "text", label: "Text" },
+  { value: "all",  label: "All" },
+];
+
+const InteractivitySection = React.memo(function InteractivitySection({ h, sel }: { h: ClassHelpers; sel: Sel }) {
+  const cursorCls = h.classes.find(c => /^cursor-/.test(h.stripBpPrefix(c)));
+  const cursorVal = cursorCls ? h.stripBpPrefix(cursorCls).slice("cursor-".length) : "";
+  const setCursor = useCallback((v: string) => {
+    if (!sel?.source) return;
+    const remove = h.classes.filter(c => /^cursor-/.test(h.stripBpPrefix(c)));
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add: v ? [`cursor-${v}`] : undefined,
+    });
+  }, [h, sel]);
+
+  const pointerCls = h.classes.find(c => /^pointer-events-/.test(h.stripBpPrefix(c)));
+  const pointerVal = pointerCls ? h.stripBpPrefix(pointerCls).slice("pointer-events-".length) : "";
+  const setPointer = useCallback((v: string) => {
+    if (!sel?.source) return;
+    const remove = h.classes.filter(c => /^pointer-events-/.test(h.stripBpPrefix(c)));
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add: v ? [`pointer-events-${v}`] : undefined,
+    });
+  }, [h, sel]);
+
+  const selectCls = h.classes.find(c => /^select-/.test(h.stripBpPrefix(c)));
+  const selectVal = selectCls ? h.stripBpPrefix(selectCls).slice("select-".length) : "";
+  const setSelect = useCallback((v: string) => {
+    if (!sel?.source) return;
+    const remove = h.classes.filter(c => /^select-/.test(h.stripBpPrefix(c)));
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add: v ? [`select-${v}`] : undefined,
+    });
+  }, [h, sel]);
+
+  const hasInteractivity = !!(cursorCls || pointerCls || selectCls);
+
+  return (
+    <Section title="Interactivity" defaultOpen={false}
+      autoOpenKey={sel?.element} hasValue={hasInteractivity}>
+      <div className="grid grid-cols-[auto_1fr] gap-1.5 items-center">
+        <span className="text-[10px] text-canvas-muted-fg w-11 shrink-0">Cursor</span>
+        <SelectField
+          value={cursorVal}
+          options={CURSOR_SELECT}
+          onChange={setCursor}
+          placeholder="Auto"
+          title="Cursor"
+        />
+        <span className="text-[10px] text-canvas-muted-fg w-11 shrink-0">Pointer</span>
+        <SelectField
+          value={pointerVal}
+          options={POINTER_SELECT}
+          onChange={setPointer}
+          placeholder="Auto"
+          title="Pointer events"
+        />
+        <span className="text-[10px] text-canvas-muted-fg w-11 shrink-0">Select</span>
+        <SelectField
+          value={selectVal}
+          options={USER_SELECT_SELECT}
+          onChange={setSelect}
+          placeholder="Auto"
+          title="User select"
+        />
+      </div>
     </Section>
   );
 });

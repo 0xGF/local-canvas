@@ -542,6 +542,12 @@
 }
 
 /* ═══ Scrollbar ═══ */
+/* Panel scrollers pre-reserve scrollbar space so toggling linked/split
+ * (which changes content height) doesn't shift the form left by 6px when the
+ * scrollbar appears. Applied via `.overlay-scroll-stable` — opt-in so menus
+ * that shouldn't reserve space don't grow. */
+.overlay-scroll-stable { scrollbar-gutter: stable; }
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -583,8 +589,28 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
-  pointer-events: none;
+  /* Capture pointer events while the halftone covers — stops the iframe
+   * below from receiving mousemove/click, so no hover/selection overlay
+   * drawings fire during load. Dropped to `none` during the wipe so the
+   * user can start interacting with the live page as it reveals. */
+  pointer-events: auto;
   background: #1f2126;
+  /* Hard-edged top-to-bottom wipe via clip-path. At rest the element is
+   * fully unclipped (halftone visible). Adding `.wiping` clips from the
+   * top down to 100%, which sweeps the visible region downward — the
+   * halftone retreats, revealing the iframe beneath. Clip-path is used
+   * instead of mask-image for a crisp edge (no gradient feather) and
+   * more reliable cross-browser behaviour. */
+  clip-path: inset(0 0 0 0);
+  -webkit-clip-path: inset(0 0 0 0);
+  transition:
+    clip-path 450ms cubic-bezier(0.45, 0, 0.2, 1),
+    -webkit-clip-path 450ms cubic-bezier(0.45, 0, 0.2, 1);
+}
+
+.halftone-loader.wiping {
+  clip-path: inset(100% 0 0 0);
+  -webkit-clip-path: inset(100% 0 0 0);
 }
 
 /* Static faint-blue dot grid — tiny dots, visible baseline */

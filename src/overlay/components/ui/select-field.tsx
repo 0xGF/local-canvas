@@ -62,6 +62,10 @@ export function SelectField({
   const pill = (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <div
+        // Expose `title` as `data-title` so accessibility + tests can find
+        // the field without stacking the native tooltip on top of Radix's.
+        data-title={title}
+        aria-label={title}
         className={cn(
           // `min-w-0` so this pill shrinks in a `1fr` grid column (see ScrubField).
           "relative flex items-center h-7 min-w-0 rounded-md text-xs transition-colors",
@@ -108,7 +112,10 @@ export function SelectField({
           collisionPadding={8}
           role="listbox"
           className={cn(
-            "z-[2147483647] min-w-[var(--radix-popover-trigger-width)]",
+            // `pointer-events-auto` is load-bearing: the shadow-DOM mount
+            // point sets `pointer-events: none` so it doesn't swallow iframe
+            // events, and portaled popovers inherit that unless they opt in.
+            "pointer-events-auto z-[2147483647] min-w-[var(--radix-popover-trigger-width)]",
             "rounded-md border border-canvas-border bg-canvas-bg shadow-md",
             "py-1 text-xs max-h-72 overflow-y-auto",
           )}

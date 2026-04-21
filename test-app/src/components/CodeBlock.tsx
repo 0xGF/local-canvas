@@ -22,14 +22,14 @@ export function CodeBlock({
           <span>{filename}</span>
         </div>
       )}
-      <div className="relative p-4">
+      <div className="relative p-4 xl:text-[#6E1313] xl:text-[#892323] xl:text-[#C47070]">
         <button
           onClick={copy}
           className="absolute top-3 right-3 px-2 py-1 rounded text-[11px] text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-colors"
         >
           {copied ? "Copied" : "Copy"}
         </button>
-        <pre className="font-mono text-[13px] leading-relaxed text-stone-300 overflow-x-auto whitespace-pre">
+        <pre className="font-mono text-[13px] leading-relaxed xl:text-[#D6D3D1] overflow-x-auto whitespace-pre">
           {code}
         </pre>
       </div>

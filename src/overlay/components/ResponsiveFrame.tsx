@@ -49,10 +49,14 @@ export const ResponsiveFrame = React.memo(function ResponsiveFrame() {
 
 const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width: number }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const heightRef = useRef(900);
-  const [height, setHeight] = useState(900);
+  // Needs SOME default height since iframe can't measure itself until rendered.
+  // Kept modest so pages with `100vh` inner sections don't lock to a taller
+  // placeholder viewport and fail to shrink.
+  const heightRef = useRef(1000);
+  const [height, setHeight] = useState(1000);
   const [loaded, setLoaded] = useState(false);
   const [loaderMounted, setLoaderMounted] = useState(true);
+  const [wiping, setWiping] = useState(false);
   const selectElement = useEditorStore((s) => s.selectElement);
   const setHoveredElement = useEditorStore((s) => s.setHoveredElement);
 
@@ -63,13 +67,20 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
     requestAnimationFrame(() => useViewportStore.getState().fitToPage());
   }, [width]);
 
-  // Unmount the loader after its exit transition completes. The iframe
-  // sits underneath at full opacity, so the loader just needs to dissolve
-  // cleanly to reveal it — no cross-fade, no ghost content mid-reveal.
+  // Reveal sequence once the iframe has loaded:
+  //   1. Height transition starts ~100ms after onLoad, takes ~350ms.
+  //   2. After height settles (~450ms), trigger the halftone clip-wipe
+  //      (450ms, top-to-bottom) — the iframe sits at opacity 1 underneath
+  //      so the wipe exposes it directly with no cross-fade ghost.
+  //   3. Unmount the loader after the wipe completes.
   useEffect(() => {
-    if (!loaded) { setLoaderMounted(true); return; }
-    const t = setTimeout(() => setLoaderMounted(false), 750);
-    return () => clearTimeout(t);
+    if (!loaded) { setLoaderMounted(true); setWiping(false); return; }
+    const wipeStart = setTimeout(() => setWiping(true), 450);
+    const unmount = setTimeout(() => setLoaderMounted(false), 950);
+    return () => {
+      clearTimeout(wipeStart);
+      clearTimeout(unmount);
+    };
   }, [loaded]);
 
   useEffect(() => {
@@ -77,6 +88,7 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
     if (!iframe) return;
 
     let ro: ResizeObserver | null = null;
+    let heightPoll: number | null = null;
     let cleanupListeners: (() => void) | null = null;
 
     function onLoad() {
@@ -100,11 +112,17 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
       const updateHeight = () => {
         void doc.body.offsetHeight;
         const h = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight, doc.body.offsetHeight);
-        if (h > 0) { heightRef.current = h; setHeight(h); }
+        if (h > 0 && h !== heightRef.current) { heightRef.current = h; setHeight(h); }
       };
       setTimeout(updateHeight, 100);
       ro = new ResizeObserver(updateHeight);
       ro.observe(doc.body);
+      ro.observe(doc.documentElement);
+      // Polling fallback — ResizeObserver can miss layout changes driven by
+      // HMR or ancestor size constraints (e.g. when a padded element grows
+      // inside an absolutely-positioned parent). Re-read every 300ms so any
+      // missed growth is reflected on the canvas + wrap without a reload.
+      heightPoll = window.setInterval(updateHeight, 300);
 
       // Zoom/pan: forward wheel events from iframe to viewport store
       const onWheel = (e: WheelEvent) => {
@@ -315,6 +333,7 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
     return () => {
       iframe.removeEventListener("load", onLoad);
       ro?.disconnect();
+      if (heightPoll !== null) window.clearInterval(heightPoll);
       cleanupListeners?.();
     };
   }, [selectElement, setHoveredElement]);
@@ -353,18 +372,28 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
           paints on top of absolutely-positioned sibling elements even
           with higher z-index. Hoisting the canvas up one level above
           the iframe's frame-div works. */}
-      <div style={{ width, height, position: "relative" }}>
+      {/* Height animates when the iframe reports its real scrollHeight on
+          load, so the loader / paper grow down smoothly to the content
+          instead of popping from the 900px placeholder. */}
+      <div
+        style={{
+          width,
+          height,
+          position: "relative",
+          transition: "height 350ms cubic-bezier(0.4, 0, 0.2, 1)",
+        }}
+      >
         {/* Frame — holds the iframe. The iframe sits here at full opacity
             from first render; the halftone loader is stacked on top and
             simply dissolves to reveal it, so the reveal is smooth with no
             cross-fade ghosting. Card shadow fades in on load. */}
         <div
           className={[
-            "absolute inset-0 overflow-hidden rounded-lg bg-white",
-            "transition-shadow duration-[500ms] ease-out",
+            "absolute inset-0 overflow-hidden rounded-lg",
+            "transition-[background-color,box-shadow] duration-[350ms] ease-out",
             loaded
-              ? "shadow-[0_4px_32px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.06)]"
-              : "shadow-none",
+              ? "bg-white shadow-[0_4px_32px_rgba(0,0,0,0.4)]"
+              : "bg-transparent shadow-none",
           ].join(" ")}
           style={{ width, height }}
         >
@@ -373,16 +402,20 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
             src={frameUrl}
             scrolling="no"
             className="block border-0 overflow-hidden"
-            style={{ width, height }}
+            style={{
+              width,
+              height,
+              transition: "height 350ms cubic-bezier(0.4, 0, 0.2, 1)",
+            }}
             title={`${width}px preview`}
           />
           {loaderMounted && (
-            <HalftoneLoader
-              className={[
-                "transition-opacity duration-[650ms] [transition-timing-function:cubic-bezier(0.4,0,0.2,1)]",
-                loaded ? "opacity-0" : "opacity-100",
-              ].join(" ")}
-            />
+            // `wiping` triggers the top-to-bottom mask reveal in styles.css
+            // once the iframe has loaded AND the height-resize has settled
+            // (height update runs ~100ms after onLoad, grows for ~550ms —
+            // see the height-transition on the wrap + iframe above — so we
+            // drive the wipe from a delayed `wiping` flag set in useEffect).
+            <HalftoneLoader wiping={wiping} />
           )}
         </div>
 
@@ -403,6 +436,17 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
             width,
             height,
             pointerEvents: "none",
+            // Canvas is hidden while the halftone loader covers the frame,
+            // so any restored selection/hover outlines don't show through
+            // during load. Fades in as the wipe completes.
+            opacity: loaderMounted ? 0 : 1,
+            // Match the wrap + iframe height transition so the overlay
+            // canvas grows/shrinks in lock-step with the container when
+            // scrollHeight changes — otherwise the canvas snaps instantly
+            // while the iframe/card animate, leaving badges+handles out of
+            // alignment during the resize.
+            transition:
+              "height 350ms cubic-bezier(0.4, 0, 0.2, 1), opacity 250ms ease-out",
           }}
         >
           {HAS_DRAW_ELEMENT && (

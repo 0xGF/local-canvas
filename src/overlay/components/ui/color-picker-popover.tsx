@@ -12,7 +12,7 @@ import {
 } from "../../lib/color.js";
 import { ScrubField } from "./scrub-field.js";
 import { Button } from "./button.js";
-import { Copy, X as CloseIcon, Eyedropper, Hamburger } from "../icons.js";
+import { Copy, X as CloseIcon, Eyedropper } from "../icons.js";
 
 interface ColorPickerPopoverProps {
   /** Current color as a CSS string (#hex / rgb()). */
@@ -156,22 +156,21 @@ export function ColorPickerPopover({ value, onChange, onClose, className }: Colo
               type="button"
               onClick={() => setSpace(s)}
               className={cn(
-                "px-2 h-6 text-[10px] font-medium rounded-[4px] transition-colors",
+                // Bumped text size and tightened padding so the labels are
+                // actually legible — 10px bold on a muted bg washed out.
+                "px-2.5 h-6 text-[11px] font-semibold rounded-[4px] transition-colors tracking-tight",
                 space === s
                   ? "bg-canvas-bg text-canvas-fg shadow-sm"
                   : "text-canvas-muted-fg hover:text-canvas-fg",
               )}
             >
-              {s === "srgb" ? "sRGB" : "Display P3"}
+              {s === "srgb" ? "sRGB" : "P3"}
             </button>
           ))}
         </div>
         <div className="flex items-center gap-0.5">
           <Button variant="ghost" size="icon" className="h-6 w-6" title="Pick from screen" onClick={eyedrop}>
             <Eyedropper size={12} />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-6 w-6" title="Menu">
-            <Hamburger size={12} />
           </Button>
           {onClose && (
             <Button variant="ghost" size="icon" className="h-6 w-6" title="Close" onClick={onClose}>
@@ -194,18 +193,18 @@ export function ColorPickerPopover({ value, onChange, onClose, className }: Colo
           }}
         >
           <div
-            className="absolute w-3 h-3 rounded-full border-2 border-white shadow pointer-events-none"
+            className="absolute w-3 h-3 rounded-full border-2 border-white pointer-events-none"
             style={{
               left: `calc(${hsva.s}% - 6px)`,
               top: `calc(${100 - hsva.v}% - 6px)`,
-              boxShadow: "0 0 0 1px rgba(0,0,0,0.25)",
+              boxShadow: "0 0 0 1px rgba(0,0,0,0.35)",
             }}
           />
         </div>
         {/* Alpha */}
         <div
           onPointerDown={onAlphaPointer}
-          className="relative w-3 h-[200px] rounded-full cursor-pointer overflow-hidden"
+          className="relative w-2.5 h-[200px] rounded-full cursor-pointer overflow-hidden"
           style={{
             background:
               `linear-gradient(to top, transparent, ${baseHueCss}),` +
@@ -213,21 +212,21 @@ export function ColorPickerPopover({ value, onChange, onClose, className }: Colo
           }}
         >
           <div
-            className="absolute -left-0.5 w-4 h-1 rounded-sm bg-white pointer-events-none"
+            className="absolute left-1/2 w-3.5 h-1 -translate-x-1/2 rounded-[2px] bg-white pointer-events-none"
             style={{ top: `calc(${(1 - hsva.a) * 100}% - 2px)`, boxShadow: "0 0 0 1px rgba(0,0,0,0.4)" }}
           />
         </div>
         {/* Hue */}
         <div
           onPointerDown={onHuePointer}
-          className="relative w-3 h-[200px] rounded-full cursor-pointer"
+          className="relative w-2.5 h-[200px] rounded-full cursor-pointer"
           style={{
             background:
               "linear-gradient(to top, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%)",
           }}
         >
           <div
-            className="absolute -left-0.5 w-4 h-1 rounded-sm bg-white pointer-events-none"
+            className="absolute left-1/2 w-3.5 h-1 -translate-x-1/2 rounded-[2px] bg-white pointer-events-none"
             style={{ top: `calc(${(1 - hsva.h / 360) * 100}% - 2px)`, boxShadow: "0 0 0 1px rgba(0,0,0,0.4)" }}
           />
         </div>
@@ -303,7 +302,7 @@ function ValueRow({
   a, b, c, labels, onCopy,
 }: { label: string; a: number; b: number; c: number; labels: [string, string, string]; onCopy: () => void; }) {
   return (
-    <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-1 mb-1.5">
+    <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-1 mb-1">
       <Cell label={labels[0]} value={a} />
       <Cell label={labels[1]} value={b} />
       <Cell label={labels[2]} value={c} />
@@ -322,11 +321,13 @@ function ValueRow({
 
 function Cell({ label, value }: { label: string; value: number }) {
   return (
-    <div className="flex flex-col items-center">
-      <div className="w-full h-7 flex items-center justify-center bg-canvas-muted rounded-md text-xs font-mono text-canvas-fg tabular-nums">
+    <div className="flex items-center h-7 min-w-0 rounded-md bg-canvas-muted text-xs">
+      <span className="h-full flex items-center justify-center shrink-0 pl-2 pr-1 text-[11px] text-canvas-muted-fg select-none">
+        {label}
+      </span>
+      <span className="flex-1 min-w-0 pr-2 font-mono text-canvas-fg tabular-nums text-right">
         {value}
-      </div>
-      <span className="text-[9px] uppercase tracking-wider text-canvas-muted-fg mt-0.5">{label}</span>
+      </span>
     </div>
   );
 }

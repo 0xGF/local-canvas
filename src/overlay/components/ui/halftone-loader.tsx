@@ -10,14 +10,22 @@ import React from "react";
 export function HalftoneLoader({
   className = "",
   rounded = "rounded-lg",
+  wiping = false,
 }: {
   className?: string;
   rounded?: string;
+  /** Trigger the top-to-bottom mask-wipe reveal. */
+  wiping?: boolean;
 }) {
   return (
     <div
       aria-hidden="true"
-      className={["halftone-loader", rounded, className].join(" ")}
+      className={[
+        "halftone-loader",
+        wiping ? "wiping" : "",
+        rounded,
+        className,
+      ].join(" ")}
     />
   );
 }

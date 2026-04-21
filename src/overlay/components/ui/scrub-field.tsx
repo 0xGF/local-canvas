@@ -120,6 +120,10 @@ export const ScrubField = React.memo(function ScrubField({
   const pill = (
     <div
       ref={wrapRef}
+      // Expose `title` as `data-title` + `aria-label` for accessibility +
+      // tests. Native `title` stays off so it doesn't clash with Tooltip.
+      data-title={title}
+      aria-label={title}
       className={cn(
         // `min-w-0` lets this pill shrink inside a `grid-cols-[1fr_*]` parent.
         // Without it, the input's intrinsic size (~200px) makes 1fr columns
@@ -199,7 +203,10 @@ export const ScrubField = React.memo(function ScrubField({
               collisionPadding={8}
               role="menu"
               className={cn(
-                "z-[2147483647] min-w-[var(--radix-popover-trigger-width)]",
+                // See SelectField: portaled popover must opt back into
+                // pointer events since the shadow-DOM mount point disables
+                // them.
+                "pointer-events-auto z-[2147483647] min-w-[var(--radix-popover-trigger-width)]",
                 "rounded-md border border-canvas-border bg-canvas-bg shadow-md",
                 "py-1 text-xs",
               )}

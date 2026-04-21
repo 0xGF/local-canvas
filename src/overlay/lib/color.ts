@@ -141,6 +141,7 @@ export function rgbaCss({ r, g, b, a }: RGBA): string {
  */
 export function parseColor(input: string): HSVA | null {
   const s = input.trim().toLowerCase();
+  if (!s) return null;
   if (s === "transparent") return { h: 0, s: 0, v: 0, a: 0 };
   if (s.startsWith("#")) {
     const rgba = hexToRgba(s);
@@ -157,5 +158,33 @@ export function parseColor(input: string): HSVA | null {
     if ([r, g, b, a].some(n => !Number.isFinite(n))) return null;
     return rgbaToHsva({ r, g, b, a });
   }
-  return null;
+  // Fallback: any other CSS color format (oklch, hsl, lab, color-mix, color(),
+  // named colors, etc.) — let the browser normalize it to rgb via canvas. This
+  // is load-bearing for Tailwind v4, which computes colors as `oklch(...)` —
+  // without this, `parseColor` returns null and every picker falls back to
+  // black, even though the element visibly has a real colour applied.
+  return parseViaCanvas(s);
+}
+
+let _canvasCtx: CanvasRenderingContext2D | null = null;
+function parseViaCanvas(css: string): HSVA | null {
+  if (typeof document === "undefined") return null;
+  if (!_canvasCtx) {
+    const c = document.createElement("canvas");
+    c.width = 1; c.height = 1;
+    _canvasCtx = c.getContext("2d");
+  }
+  if (!_canvasCtx) return null;
+  _canvasCtx.fillStyle = "#000";
+  const before = _canvasCtx.fillStyle;
+  try { _canvasCtx.fillStyle = css; } catch { return null; }
+  // If the assignment was rejected as unparseable, fillStyle stays at the
+  // previous value (black). Distinguish "user asked for black" from "browser
+  // rejected" by reading pixel after a fill.
+  _canvasCtx.fillRect(0, 0, 1, 1);
+  const [r, g, b, aByte] = _canvasCtx.getImageData(0, 0, 1, 1).data;
+  if (_canvasCtx.fillStyle === before && !/^(#0{3,6}|black|rgb\(0,\s*0,\s*0\))$/i.test(css)) {
+    return null;
+  }
+  return rgbaToHsva({ r, g, b, a: aByte / 255 });
 }

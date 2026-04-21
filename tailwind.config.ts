@@ -19,6 +19,20 @@ const config: Config = {
       borderRadius: {
         canvas: "var(--canvas-radius)",
       },
+      keyframes: {
+        "canvas-halftone-shimmer": {
+          "0%":   { "background-position": "200% 0" },
+          "100%": { "background-position": "-100% 0" },
+        },
+        "canvas-halftone-in": {
+          "0%":   { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+      },
+      animation: {
+        "canvas-halftone-shimmer": "canvas-halftone-shimmer 2.6s linear infinite",
+        "canvas-halftone-in": "canvas-halftone-in 0.25s ease-out both",
+      },
     },
   },
   plugins: [],

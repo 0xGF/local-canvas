@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { ChevronRight } from "../icons.js";
-import { EASE, DURATION } from "../../utils/easings.js";
 import { ExpandY } from "../../utils/motion-presets.js";
+import { cn } from "../../lib/utils.js";
 
 interface SectionProps {
   title: string;
@@ -9,82 +9,107 @@ interface SectionProps {
   defaultOpen?: boolean;
   /** Optional hover-explained warning shown as a ⚠ next to the chevron. */
   warning?: string;
+  /**
+   * Optional right-aligned slot in the header (before the chevron). Use for
+   * per-section toggles — e.g. the linked/split icon on Radius — so they
+   * sit next to the title instead of occupying a content row. Clicks on
+   * this slot don't expand/collapse the section.
+   */
+  headerAction?: React.ReactNode;
+  /**
+   * When this key changes (e.g. on element selection), the section resets
+   * its open state to `hasValue` (if provided) or `defaultOpen`. After that,
+   * the user can still toggle manually until the next key change.
+   */
+  autoOpenKey?: unknown;
+  /**
+   * When `autoOpenKey` changes, open the section iff this is true. Lets
+   * sections auto-expand for the current selection when relevant values are
+   * set, and collapse otherwise.
+   */
+  hasValue?: boolean;
 }
 
-import { THEME } from "../../theme.js";
-const C = THEME;
-
-export function Section({ title, children, defaultOpen = true, warning }: SectionProps) {
-  const [open, setOpen] = useState(defaultOpen);
+export function Section({ title, children, defaultOpen = true, warning, headerAction, autoOpenKey, hasValue }: SectionProps) {
+  // Track the last-seen autoOpenKey alongside the open state so we can reset
+  // synchronously during render when the selection changes. Doing this in a
+  // useEffect would leave the section in the previous open state for one
+  // paint, which flashes the wrong body at the user.
+  const [state, setState] = useState(() => ({
+    key: autoOpenKey,
+    open: hasValue ?? defaultOpen,
+  }));
+  if (autoOpenKey !== undefined && state.key !== autoOpenKey) {
+    setState({ key: autoOpenKey, open: hasValue ?? defaultOpen });
+  }
+  const open = state.open;
+  const setOpen = (next: boolean) => setState(prev => ({ ...prev, open: next }));
   const [warningHovered, setWarningHovered] = useState(false);
 
   return (
-    <div style={{ borderBottom: `1px solid ${C.borderLight}` }}>
+    <div className="border-b border-canvas-border/60 last:border-b-0">
       <div
-        onClick={() => setOpen(!open)}
-        style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "8px 12px", cursor: "pointer",
-          transition: `background ${DURATION.micro}ms ${EASE.snappy}`, minHeight: 32,
-        }}
-        onMouseEnter={e => (e.currentTarget.style.background = C.bgHover)}
-        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+        className={cn(
+          "flex items-center justify-between w-full min-h-8 px-3 py-2",
+          "hover:bg-canvas-muted/60 transition-colors select-none",
+        )}
       >
-        <span style={{ fontSize: 11, fontWeight: 500, color: C.fgDim }}>{title}</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className="flex-1 text-left cursor-pointer bg-transparent border-0 p-0 min-w-0"
+        >
+          <span className="text-[11px] font-semibold text-canvas-fg">{title}</span>
+        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
           {warning && (
             <span
-              onClick={(e) => e.stopPropagation()}
+              onClick={e => e.stopPropagation()}
               onMouseEnter={() => setWarningHovered(true)}
               onMouseLeave={() => setWarningHovered(false)}
-              style={{
-                position: "relative",
-                fontSize: 12, lineHeight: 1, color: "#facc15",
-                cursor: "help", padding: "0 2px",
-              }}
+              className="relative text-[12px] leading-none text-yellow-400 cursor-help px-0.5"
+              aria-label={warning}
             >
               ⚠
               {warningHovered && (
                 <span
-                  style={{
-                    position: "absolute",
-                    top: "100%",
-                    right: 0,
-                    marginTop: 4,
-                    background: "#18181b",
-                    color: "#fafafa",
-                    border: "1px solid #facc15",
-                    borderRadius: 4,
-                    padding: "6px 8px",
-                    fontSize: 10,
-                    lineHeight: 1.4,
-                    width: 220,
-                    zIndex: 100,
-                    fontWeight: 400,
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-                    pointerEvents: "none",
-                  }}
+                  className={cn(
+                    "absolute top-full right-0 mt-1 z-[100] w-56",
+                    "bg-canvas-bg border border-yellow-400 rounded px-2 py-1.5",
+                    "text-[10px] leading-snug font-normal text-canvas-fg",
+                    "shadow-md pointer-events-none",
+                  )}
                 >
                   {warning}
                 </span>
               )}
             </span>
           )}
-          <span
-            style={{
-              display: "flex", alignItems: "center",
-              transform: open ? "rotate(90deg)" : "rotate(0deg)",
-              transition: `transform 150ms ${EASE.smooth}`,
-            }}
+          {headerAction && (
+            <span
+              onClick={e => e.stopPropagation()}
+              onMouseDown={e => e.stopPropagation()}
+              className="flex items-center"
+            >
+              {headerAction}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            aria-label={open ? "Collapse section" : "Expand section"}
+            className={cn(
+              "inline-flex items-center text-canvas-muted-fg",
+              "bg-transparent border-0 p-0 cursor-pointer transition-transform duration-150",
+              open && "rotate-90",
+            )}
           >
-            <ChevronRight size={12} style={{ color: C.fgDim, flexShrink: 0 }} />
-          </span>
+            <ChevronRight size={12} />
+          </button>
         </div>
       </div>
       <ExpandY open={open}>
-        <div style={{ padding: "4px 12px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
-          {children}
-        </div>
+        <div className="flex flex-col gap-1.5 px-3 pt-1 pb-3">{children}</div>
       </ExpandY>
     </div>
   );
@@ -92,16 +117,16 @@ export function Section({ title, children, defaultOpen = true, warning }: Sectio
 
 export function PropRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 26 }}>
-      <span style={{ fontSize: 10, color: C.fgDim, width: 44, flexShrink: 0, fontWeight: 400 }}>{label}</span>
-      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+    <div className="flex items-center gap-1.5 min-h-[26px]">
+      <span className="text-[10px] text-canvas-muted-fg w-11 shrink-0 font-normal">{label}</span>
+      <div className="flex-1 min-w-0">{children}</div>
     </div>
   );
 }
 
 export function SubLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ fontSize: 9, color: C.fgDim, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600, marginTop: 2, marginBottom: -2 }}>
+    <div className="text-[9px] text-canvas-muted-fg uppercase tracking-wider font-semibold mt-0.5 -mb-0.5">
       {children}
     </div>
   );

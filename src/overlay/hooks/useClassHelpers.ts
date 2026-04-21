@@ -3,6 +3,7 @@ import { useEditorStore } from "../stores/editor-store.js";
 import { useReadonlyStyleStore } from "../stores/readonly-style-store.js";
 import { useWebSocket } from "./useWebSocket.js";
 import { sourceStyleHasProperty, camelToKebabCss } from "../utils/inline-style-source.js";
+import { setStyleProp } from "../utils/dom-style.js";
 import {
   getBreakpointPrefix,
   hasResponsivePrefix,
@@ -20,6 +21,31 @@ const PREFIX_TO_INLINE_STYLE: Record<string, string> = {
   gap: "gap",
 };
 
+// Prefix → CSS property (or list) for anti-flash optimistic inline preview.
+// Applied synchronously so the user sees the new value immediately; cleared
+// once the class mutation actually lands on the DOM (via HMR). Covers the
+// prefixes where `value` decodes cleanly to a CSS length — for color /
+// keyword-only prefixes we'd need lookup tables, so those stay on the
+// slower HMR-only path for now.
+const PREFIX_TO_PREVIEW: Record<string, string | string[]> = {
+  mt: "marginTop", mr: "marginRight", mb: "marginBottom", ml: "marginLeft",
+  mx: ["marginLeft", "marginRight"],
+  my: ["marginTop", "marginBottom"],
+  m: "margin",
+  pt: "paddingTop", pr: "paddingRight", pb: "paddingBottom", pl: "paddingLeft",
+  px: ["paddingLeft", "paddingRight"],
+  py: ["paddingTop", "paddingBottom"],
+  p: "padding",
+  w: "width", h: "height",
+  "min-w": "minWidth", "max-w": "maxWidth",
+  "min-h": "minHeight", "max-h": "maxHeight",
+  gap: "gap", "gap-x": "columnGap", "gap-y": "rowGap",
+  rounded: "borderRadius",
+  opacity: "opacity",
+  z: "zIndex",
+  order: "order",
+};
+
 /** Tailwind spacing scale: each unit is 0.25rem (4px). `value` is a Tailwind
  * scale step (e.g. "4" for 16px) or a bracket value like "[12px]".
  * Returns a CSS-valid length string, or null if we can't interpret it. */
@@ -30,6 +56,74 @@ function tailwindScaleToPx(value: string): string | null {
   const n = Number(value);
   if (Number.isFinite(n)) return `${n * 4}px`;
   return null;
+}
+
+// Decode a Tailwind class suffix to a concrete CSS value for the given prefix.
+// Returns null when we can't confidently represent the value — in which case
+// we skip the inline preview (the element will just wait for HMR).
+function decodePreviewValue(prefix: string, value: string): string | null {
+  // Clearing a class → reset to the CSS default for that property
+  if (!value) {
+    if (prefix === "opacity") return "1";
+    if (prefix === "z" || prefix === "order") return "auto";
+    if (prefix === "rounded") return "0px";
+    if (/^(w|h|min-w|max-w|min-h|max-h)$/.test(prefix)) return "auto";
+    return "0px"; // spacing
+  }
+  if (prefix === "opacity") {
+    const n = Number(value);
+    return Number.isFinite(n) ? String(n / 100) : null;
+  }
+  if (prefix === "z" || prefix === "order") {
+    const bracket = value.match(/^\[(.+)\]$/);
+    if (bracket) return bracket[1];
+    return Number.isFinite(Number(value)) ? value : null;
+  }
+  if (prefix === "rounded") {
+    const bracket = value.match(/^\[(.+)\]$/);
+    if (bracket) return bracket[1];
+    const radius: Record<string, string> = {
+      none: "0px", sm: "2px", "": "4px", md: "6px", lg: "8px",
+      xl: "12px", "2xl": "16px", "3xl": "24px", full: "9999px",
+    };
+    return radius[value] ?? null;
+  }
+  // Spacing / sizing: bracket value, numeric scale, or sizing keyword
+  const bracket = value.match(/^\[(.+)\]$/);
+  if (bracket) return bracket[1];
+  const n = Number(value);
+  if (Number.isFinite(n)) return `${n * 4}px`;
+  const sizeKeywords: Record<string, string> = {
+    auto: "auto", full: "100%", screen: /^(h|min-h|max-h)$/.test(prefix) ? "100vh" : "100vw",
+    min: "min-content", max: "max-content", fit: "fit-content",
+    px: "1px",
+  };
+  return sizeKeywords[value] ?? null;
+}
+
+/** Apply an optimistic inline style matching the incoming class change, then
+ * clear it only after the class attribute actually updates on the element
+ * (via HMR). This prevents the element from flashing back to its pre-edit
+ * appearance while the mutation round-trips through the file system. */
+function applyInlinePreview(el: HTMLElement, prefix: string, value: string): void {
+  const target = PREFIX_TO_PREVIEW[prefix];
+  if (!target) return;
+  const decoded = decodePreviewValue(prefix, value);
+  if (decoded === null) return;
+  const props = Array.isArray(target) ? target : [target];
+  for (const p of props) setStyleProp(el, p, decoded);
+
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    for (const p of props) setStyleProp(el, p, "");
+    observer.disconnect();
+    clearTimeout(fallback);
+  };
+  const observer = new MutationObserver(finish);
+  observer.observe(el, { attributes: true, attributeFilter: ["class"] });
+  const fallback = setTimeout(finish, 5000);
 }
 
 /**
@@ -169,6 +263,14 @@ export function useClassHelpers() {
       if (immediate) trackedSendMutation(mutation);
       else debouncedMutation(`style:${inlineKey}`, mutation);
       return;
+    }
+
+    // Anti-flash: write the new value as an inline style immediately so the
+    // element shows the edit without waiting for the file-write → HMR round
+    // trip. Cleared automatically once the class attribute actually updates.
+    // Only for non-exact edits with a known prefix→CSS mapping.
+    if (!isExact && sel.element) {
+      applyInlinePreview(sel.element, prefix, value);
     }
 
     const target = bpPrefix ? `${bpPrefix}:${prefix}` : prefix;

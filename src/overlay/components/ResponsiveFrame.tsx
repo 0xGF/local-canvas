@@ -8,6 +8,7 @@ import { getIframeOffset } from "../utils/iframe-events.js";
 import { HAS_DRAW_ELEMENT, COL } from "../canvas/constants.js";
 import { BREAKPOINT_PRESETS } from "../../shared/breakpoints.js";
 import { THEME } from "../theme.js";
+import { HalftoneLoader } from "./ui/halftone-loader.js";
 
 const C = THEME;
 
@@ -51,6 +52,7 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
   const heightRef = useRef(900);
   const [height, setHeight] = useState(900);
   const [loaded, setLoaded] = useState(false);
+  const [loaderMounted, setLoaderMounted] = useState(true);
   const selectElement = useEditorStore((s) => s.selectElement);
   const setHoveredElement = useEditorStore((s) => s.setHoveredElement);
 
@@ -60,6 +62,15 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
   useEffect(() => {
     requestAnimationFrame(() => useViewportStore.getState().fitToPage());
   }, [width]);
+
+  // Unmount the loader after its exit transition completes. The iframe
+  // sits underneath at full opacity, so the loader just needs to dissolve
+  // cleanly to reveal it — no cross-fade, no ghost content mid-reveal.
+  useEffect(() => {
+    if (!loaded) { setLoaderMounted(true); return; }
+    const t = setTimeout(() => setLoaderMounted(false), 750);
+    return () => clearTimeout(t);
+  }, [loaded]);
 
   useEffect(() => {
     const iframe = iframeRef.current;
@@ -343,40 +354,35 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
           with higher z-index. Hoisting the canvas up one level above
           the iframe's frame-div works. */}
       <div style={{ width, height, position: "relative" }}>
-        {/* Frame — holds the iframe. */}
-        <div style={{
-          width,
-          height,
-          background: "#fff",
-          borderRadius: 8,
-          boxShadow: "0 4px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06)",
-          overflow: "hidden",
-          position: "absolute",
-          inset: 0,
-        }}>
+        {/* Frame — holds the iframe. The iframe sits here at full opacity
+            from first render; the halftone loader is stacked on top and
+            simply dissolves to reveal it, so the reveal is smooth with no
+            cross-fade ghosting. Card shadow fades in on load. */}
+        <div
+          className={[
+            "absolute inset-0 overflow-hidden rounded-lg bg-white",
+            "transition-shadow duration-[500ms] ease-out",
+            loaded
+              ? "shadow-[0_4px_32px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.06)]"
+              : "shadow-none",
+          ].join(" ")}
+          style={{ width, height }}
+        >
           <iframe
             ref={iframeRef}
             src={frameUrl}
             scrolling="no"
-            style={{
-              width,
-              height,
-              border: "none",
-              display: "block",
-              overflow: "hidden",
-              opacity: loaded ? 1 : 0,
-              transition: "opacity 0.3s",
-            }}
+            className="block border-0 overflow-hidden"
+            style={{ width, height }}
             title={`${width}px preview`}
           />
-          {!loaded && (
-            <div style={{
-              position: "absolute", inset: 0,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              color: "#666", fontSize: 12, fontFamily: C.mono,
-            }}>
-              Loading...
-            </div>
+          {loaderMounted && (
+            <HalftoneLoader
+              className={[
+                "transition-opacity duration-[650ms] [transition-timing-function:cubic-bezier(0.4,0,0.2,1)]",
+                loaded ? "opacity-0" : "opacity-100",
+              ].join(" ")}
+            />
           )}
         </div>
 

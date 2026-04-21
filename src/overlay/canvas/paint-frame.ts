@@ -151,10 +151,15 @@ export function paintFrame(
   };
 
   // ── Hover highlight ──
+  // Defined here (declarations kept local) but invoked AFTER the selected
+  // element draws, so hover always reads on top of selection — otherwise
+  // hovering a sibling of the selected element gets hidden behind the
+  // selection's padding/margin hatch zones.
   const hEl = hoveredElement;
   const sEl = selectedElement?.element;
   const ifs = iframeOffset.scale ?? 1;
-  if (hEl && hEl !== sEl) {
+  const drawHoverOnTop = () => {
+    if (!hEl || hEl === sEl) return;
     const raw = getRect(hEl);
     const ox = iframeOffset.x, oy = iframeOffset.y;
     const r = { left: raw.left * ifs + ox, top: raw.top * ifs + oy, width: raw.width * ifs, height: raw.height * ifs };
@@ -175,18 +180,18 @@ export function paintFrame(
       left: hz(parseFloat(hcs.paddingLeft) || 0),
     };
 
-    // Draw margin zones
+    // Draw margin zones (diagonal hatching)
     ctx.save();
-    if (hm.top > 0) { ctx.fillStyle = COL.marginBg; ctx.fillRect(r.left, r.top - hm.top, r.width, hm.top); }
-    if (hm.bottom > 0) { ctx.fillStyle = COL.marginBg; ctx.fillRect(r.left, r.top + r.height, r.width, hm.bottom); }
-    if (hm.left > 0) { ctx.fillStyle = COL.marginBg; ctx.fillRect(r.left - hm.left, r.top, hm.left, r.height); }
-    if (hm.right > 0) { ctx.fillStyle = COL.marginBg; ctx.fillRect(r.left + r.width, r.top, hm.right, r.height); }
+    if (hm.top > 0) drawHatchedRect(ctx, r.left, r.top - hm.top, r.width, hm.top, COL.margin);
+    if (hm.bottom > 0) drawHatchedRect(ctx, r.left, r.top + r.height, r.width, hm.bottom, COL.margin);
+    if (hm.left > 0) drawHatchedRect(ctx, r.left - hm.left, r.top, hm.left, r.height, COL.margin);
+    if (hm.right > 0) drawHatchedRect(ctx, r.left + r.width, r.top, hm.right, r.height, COL.margin);
 
-    // Draw padding zones
-    if (hp.top > 0) { ctx.fillStyle = COL.paddingBg; ctx.fillRect(r.left, r.top, r.width, hp.top); }
-    if (hp.bottom > 0) { ctx.fillStyle = COL.paddingBg; ctx.fillRect(r.left, r.top + r.height - hp.bottom, r.width, hp.bottom); }
-    if (hp.left > 0) { ctx.fillStyle = COL.paddingBg; ctx.fillRect(r.left, r.top + hp.top, hp.left, r.height - hp.top - hp.bottom); }
-    if (hp.right > 0) { ctx.fillStyle = COL.paddingBg; ctx.fillRect(r.left + r.width - hp.right, r.top + hp.top, hp.right, r.height - hp.top - hp.bottom); }
+    // Draw padding zones (diagonal hatching)
+    if (hp.top > 0) drawHatchedRect(ctx, r.left, r.top, r.width, hp.top, COL.padding);
+    if (hp.bottom > 0) drawHatchedRect(ctx, r.left, r.top + r.height - hp.bottom, r.width, hp.bottom, COL.padding);
+    if (hp.left > 0) drawHatchedRect(ctx, r.left, r.top + hp.top, hp.left, r.height - hp.top - hp.bottom, COL.padding);
+    if (hp.right > 0) drawHatchedRect(ctx, r.left + r.width - hp.right, r.top + hp.top, hp.right, r.height - hp.top - hp.bottom, COL.padding);
     ctx.restore();
 
     // Draw gap zones for flex/grid
@@ -206,11 +211,11 @@ export function paintFrame(
             const a = childRects[i], b = childRects[j];
             if (hcg > 0 && b.left > a.right - 1 && a.bottom > b.top + 1) {
               const gW = b.left - a.right;
-              if (gW > 1) { ctx.fillStyle = COL.purpleBg; ctx.fillRect(a.right, Math.max(a.top, b.top), gW, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)); }
+              if (gW > 1) drawHatchedRect(ctx, a.right, Math.max(a.top, b.top), gW, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top), COL.purple);
             }
             if (hrg > 0 && b.top > a.bottom - 1 && a.right > b.left + 1) {
               const gH = b.top - a.bottom;
-              if (gH > 1) { ctx.fillStyle = COL.purpleBg; ctx.fillRect(Math.max(a.left, b.left), a.bottom, Math.min(a.right, b.right) - Math.max(a.left, b.left), gH); }
+              if (gH > 1) drawHatchedRect(ctx, Math.max(a.left, b.left), a.bottom, Math.min(a.right, b.right) - Math.max(a.left, b.left), gH, COL.purple);
             }
           }
         }
@@ -259,7 +264,7 @@ export function paintFrame(
     const hCssH = parseFloat(hcs.height) || r.height;
     const hDims = `${Math.round(hCssW)} × ${Math.round(hCssH)}`;
     drawLabelBadge(ctx, `${tag}  ${hDims}`, r.left, r.top - 22, annotate ? COL.annotate : COL.blue);
-  }
+  };
 
   // ── Selected element ──
   if (selectedElement) {
@@ -313,20 +318,20 @@ export function paintFrame(
       const m: SpacingBox = { top: sz(mRaw.top), right: sz(mRaw.right), bottom: sz(mRaw.bottom), left: sz(mRaw.left) };
       const p: SpacingBox = { top: sz(pRaw.top), right: sz(pRaw.right), bottom: sz(pRaw.bottom), left: sz(pRaw.left) };
 
-      // ── Margin zones ──
+      // ── Margin zones (diagonal hatching) ──
       ctx.save();
-      if (m.top > 0) { ctx.fillStyle = COL.marginBg; ctx.fillRect(r.left, r.top - m.top, r.width, m.top); drawDashedEdges(ctx, r.left, r.top - m.top, r.width, m.top, COL.marginDash, { bottom: false }); }
-      if (m.bottom > 0) { ctx.fillStyle = COL.marginBg; ctx.fillRect(r.left, r.top + r.height, r.width, m.bottom); drawDashedEdges(ctx, r.left, r.top + r.height, r.width, m.bottom, COL.marginDash, { top: false }); }
-      if (m.left > 0) { ctx.fillStyle = COL.marginBg; ctx.fillRect(r.left - m.left, r.top, m.left, r.height); drawDashedEdges(ctx, r.left - m.left, r.top, m.left, r.height, COL.marginDash, { right: false }); }
-      if (m.right > 0) { ctx.fillStyle = COL.marginBg; ctx.fillRect(r.left + r.width, r.top, m.right, r.height); drawDashedEdges(ctx, r.left + r.width, r.top, m.right, r.height, COL.marginDash, { left: false }); }
+      if (m.top > 0) { drawHatchedRect(ctx, r.left, r.top - m.top, r.width, m.top, COL.margin); drawDashedEdges(ctx, r.left, r.top - m.top, r.width, m.top, COL.marginDash, { bottom: false }); }
+      if (m.bottom > 0) { drawHatchedRect(ctx, r.left, r.top + r.height, r.width, m.bottom, COL.margin); drawDashedEdges(ctx, r.left, r.top + r.height, r.width, m.bottom, COL.marginDash, { top: false }); }
+      if (m.left > 0) { drawHatchedRect(ctx, r.left - m.left, r.top, m.left, r.height, COL.margin); drawDashedEdges(ctx, r.left - m.left, r.top, m.left, r.height, COL.marginDash, { right: false }); }
+      if (m.right > 0) { drawHatchedRect(ctx, r.left + r.width, r.top, m.right, r.height, COL.margin); drawDashedEdges(ctx, r.left + r.width, r.top, m.right, r.height, COL.marginDash, { left: false }); }
       ctx.restore();
 
-      // ── Padding zones ──
+      // ── Padding zones (diagonal hatching) ──
       ctx.save();
-      if (p.top > 0) { ctx.fillStyle = COL.paddingBg; ctx.fillRect(r.left, r.top, r.width, p.top); drawDashedLine(ctx, r.left, r.top + p.top, r.left + r.width, r.top + p.top, COL.paddingDash); }
-      if (p.bottom > 0) { ctx.fillStyle = COL.paddingBg; ctx.fillRect(r.left, r.top + r.height - p.bottom, r.width, p.bottom); drawDashedLine(ctx, r.left, r.top + r.height - p.bottom, r.left + r.width, r.top + r.height - p.bottom, COL.paddingDash); }
-      if (p.left > 0) { ctx.fillStyle = COL.paddingBg; ctx.fillRect(r.left, r.top + p.top, p.left, r.height - p.top - p.bottom); drawDashedLine(ctx, r.left + p.left, r.top + p.top, r.left + p.left, r.top + r.height - p.bottom, COL.paddingDash); }
-      if (p.right > 0) { ctx.fillStyle = COL.paddingBg; ctx.fillRect(r.left + r.width - p.right, r.top + p.top, p.right, r.height - p.top - p.bottom); drawDashedLine(ctx, r.left + r.width - p.right, r.top + p.top, r.left + r.width - p.right, r.top + r.height - p.bottom, COL.paddingDash); }
+      if (p.top > 0) { drawHatchedRect(ctx, r.left, r.top, r.width, p.top, COL.padding); drawDashedLine(ctx, r.left, r.top + p.top, r.left + r.width, r.top + p.top, COL.paddingDash); }
+      if (p.bottom > 0) { drawHatchedRect(ctx, r.left, r.top + r.height - p.bottom, r.width, p.bottom, COL.padding); drawDashedLine(ctx, r.left, r.top + r.height - p.bottom, r.left + r.width, r.top + r.height - p.bottom, COL.paddingDash); }
+      if (p.left > 0) { drawHatchedRect(ctx, r.left, r.top + p.top, p.left, r.height - p.top - p.bottom, COL.padding); drawDashedLine(ctx, r.left + p.left, r.top + p.top, r.left + p.left, r.top + r.height - p.bottom, COL.paddingDash); }
+      if (p.right > 0) { drawHatchedRect(ctx, r.left + r.width - p.right, r.top + p.top, p.right, r.height - p.top - p.bottom, COL.padding); drawDashedLine(ctx, r.left + r.width - p.right, r.top + p.top, r.left + r.width - p.right, r.top + r.height - p.bottom, COL.paddingDash); }
       ctx.restore();
 
       // ── Gap zones ──
@@ -347,7 +352,7 @@ export function paintFrame(
               if (cg > 0 && b.left > a.right - 1 && a.bottom > b.top + 1 && a.top < b.bottom - 1) {
                 const gL = a.right, gW = b.left - a.right, key = `cg-${Math.round(gL)}-${Math.round(a.top)}`;
                 if (gW > 1 && !seen.has(key)) { seen.add(key); const gT = Math.max(a.top, b.top), gB = Math.min(a.bottom, b.bottom);
-                  ctx.save(); ctx.fillStyle = COL.purpleBg; ctx.fillRect(gL, gT, gW, gB - gT);
+                  ctx.save(); drawHatchedRect(ctx, gL, gT, gW, gB - gT, COL.purple);
                   drawDashedLine(ctx, gL, gT, gL, gB, COL.purple); drawDashedLine(ctx, gL + gW, gT, gL + gW, gB, COL.purple); ctx.restore();
                   // BUG FIX: gW is screen-space, divide by zoom to show CSS value
                   if (zoomScale >= 0.8) drawValueBadge(ctx, Math.round(gW / spaceScale), COL.purple, gL + gW / 2, (gT + gB) / 2);
@@ -356,7 +361,7 @@ export function paintFrame(
               if (rg > 0 && b.top > a.bottom - 1 && a.right > b.left + 1 && a.left < b.right - 1) {
                 const gT = a.bottom, gH = b.top - a.bottom, key = `rg-${Math.round(a.left)}-${Math.round(gT)}`;
                 if (gH > 1 && !seen.has(key)) { seen.add(key); const gL = Math.max(a.left, b.left), gR = Math.min(a.right, b.right);
-                  ctx.save(); ctx.fillStyle = COL.purpleBg; ctx.fillRect(gL, gT, gR - gL, gH);
+                  ctx.save(); drawHatchedRect(ctx, gL, gT, gR - gL, gH, COL.purple);
                   drawDashedLine(ctx, gL, gT, gR, gT, COL.purple); drawDashedLine(ctx, gL, gT + gH, gR, gT + gH, COL.purple); ctx.restore();
                   // BUG FIX: gH is screen-space, divide by zoom to show CSS value
                   if (zoomScale >= 0.8) drawValueBadge(ctx, Math.round(gH / spaceScale), COL.purple, (gL + gR) / 2, gT + gH / 2);
@@ -599,6 +604,11 @@ export function paintFrame(
       prevRectStr = `${rawRect.left},${rawRect.top},${rawRect.width},${rawRect.height}`;
     }
   }
+
+  // Draw hover LAST so it composites on top of the selected element's
+  // outline / padding-margin hatching. Otherwise hovering a sibling or
+  // child of the selection disappears behind the selection's overlays.
+  drawHoverOnTop();
 
   // Update dirty-check cache
   prevSelectedEl = selectedElement?.element ?? null;

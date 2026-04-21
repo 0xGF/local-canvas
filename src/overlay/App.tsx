@@ -17,6 +17,7 @@ const ContextMenu = lazy(() =>
 const AnnotationPins = lazy(() =>
   import("./components/AnnotationPins.js").then(m => ({ default: m.AnnotationPins }))
 );
+import { TooltipProvider } from "./components/ui/tooltip.js";
 import { useSelection } from "./hooks/useSelection.js";
 import { useKeyboard } from "./hooks/useKeyboard.js";
 import { useViewport, restoreViewport } from "./hooks/useViewport.js";
@@ -85,7 +86,7 @@ export function App() {
   }, [animationsPaused]);
 
   return (
-    <>
+    <TooltipProvider>
       <ResponsiveFrame />
       {mode === "edit" && !interacting && <CanvasOverlayLayer />}
       {mode === "edit" && !interacting && (
@@ -98,6 +99,6 @@ export function App() {
       )}
 
       <Toolbar />
-    </>
+    </TooltipProvider>
   );
 }

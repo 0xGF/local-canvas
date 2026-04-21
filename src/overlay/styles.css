@@ -1,5 +1,27 @@
+/* Tailwind — compiled utilities injected into the shadow DOM so the
+ * new primitives (ScrubField, SelectField, ColorField, CheckboxRow,
+ * LinkedInput, LayerStack, FieldGroup, Subheader, Button, etc.) render
+ * with their intended classes. Without these directives, every class
+ * like bg-canvas-muted / grid-cols-2 / absolute / space-y-* has no CSS. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* Canvas Editor Overlay — Figma-inspired dark theme */
 :host {
+  /* ── Tailwind token mapping (tailwind.config.ts uses hsl(var(--canvas-*))). */
+  --canvas-bg: 0 0% 12%;              /* #1e1e1e */
+  --canvas-fg: 0 0% 88%;              /* #e0e0e0 */
+  --canvas-muted: 0 0% 17%;           /* #2c2c2c */
+  --canvas-muted-fg: 0 0% 55%;        /* #8c8c8c */
+  --canvas-border: 0 0% 23%;          /* #3a3a3a */
+  --canvas-accent: 207 90% 48%;       /* #0c8ce9 */
+  --canvas-accent-fg: 0 0% 100%;      /* #ffffff */
+  --canvas-destructive: 12 89% 54%;   /* #f24822 */
+  --canvas-radius: 6px;
+
+  /* Legacy CSS variables — still used by hand-styled components (CustomSelect,
+   * Section, ColorPicker, etc.). Kept while older sections remain. */
   --bg: #1e1e1e;
   --bg-alt: #2c2c2c;
   --bg-hover: #363636;
@@ -543,6 +565,75 @@
 .animate-slide-in {
   animation: slideIn 0.15s ease-out;
 }
+
+/* ═══ Halftone shimmer loader ═══
+ * Dark surface with a faint-blue dot grid. A bluer band sweeps across,
+ * clipped to the same dot grid via mask — so the shimmer is literally
+ * the dots lighting up as the wave passes. Positioned absolute inset-0
+ * against a relatively-positioned parent.
+ *
+ * No mount animation — the loader paints fully opaque from first frame,
+ * otherwise the iframe underneath ghosts through during any fade-in. */
+@keyframes halftone-shimmer-sweep {
+  0%   { background-position: 220% 0; }
+  100% { background-position: -120% 0; }
+}
+
+.halftone-loader {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: #1f2126;
+}
+
+/* Static faint-blue dot grid — tiny dots, visible baseline */
+.halftone-loader::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(
+    circle at center,
+    rgba(140, 185, 235, 0.35) 0.7px,
+    transparent 1.1px
+  );
+  background-size: 11px 11px;
+}
+
+/* Blue shimmer wave, clipped to the same dot grid via mask */
+.halftone-loader::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    transparent 38%,
+    rgba(170, 210, 245, 0.55) 50%,
+    transparent 62%,
+    transparent 100%
+  );
+  background-size: 240% 100%;
+  background-position: 220% 0;
+  -webkit-mask-image: radial-gradient(circle, #000 10%, transparent 14%);
+  mask-image: radial-gradient(circle, #000 10%, transparent 14%);
+  -webkit-mask-size: 11px 11px;
+  mask-size: 11px 11px;
+  animation: halftone-shimmer-sweep 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes tooltipIn {
+  from { opacity: 0; transform: translateY(2px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes tooltipOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(2px) scale(0.97); }
+}
+
+.animate-tooltip-in { animation: tooltipIn 90ms ease-out; }
+.animate-tooltip-out { animation: tooltipOut 90ms ease-in; }
 
 /* ═══ Tooltip ═══ */
 .tooltip {

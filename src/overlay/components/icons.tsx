@@ -102,6 +102,15 @@ import {
   CreditCardIcon,
   Tag01Icon,
   UserCircleIcon,
+
+  // Picker / fill / outline / shadow / filter chrome
+  ViewIcon,
+  DropletIcon,
+  FlipHorizontalIcon,
+  FlipVerticalIcon,
+  Menu01Icon,
+  ColorPickerIcon,
+  HamburgerIcon,
 } from "@hugeicons/core-free-icons";
 
 // Re-export HugeIcons icons via small forwardRef wrappers so call sites like
@@ -276,3 +285,12 @@ export const CreditCard = make(CreditCardIcon, "CreditCard");
 export const SeparatorHorizontal = make(MinusSignIcon, "SeparatorHorizontal");
 export const Tag = make(Tag01Icon, "Tag");
 export const CircleUser = make(UserCircleIcon, "CircleUser");
+
+// Picker / fill / outline / shadow / filter chrome
+export const Eye = make(ViewIcon, "Eye");
+export const Droplet = make(DropletIcon, "Droplet");
+export const FlipHorizontal = make(FlipHorizontalIcon, "FlipHorizontal");
+export const FlipVertical = make(FlipVerticalIcon, "FlipVertical");
+export const MenuDots = make(Menu01Icon, "MenuDots");
+export const Eyedropper = make(ColorPickerIcon, "Eyedropper");
+export const Hamburger = make(HamburgerIcon, "Hamburger");

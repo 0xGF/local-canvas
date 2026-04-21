@@ -2,6 +2,9 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import terser from "@rollup/plugin-terser";
 import { visualizer } from "rollup-plugin-visualizer";
+import tailwindcss from "tailwindcss";
+import autoprefixer from "autoprefixer";
+import tailwindConfig from "./tailwind.config.js";
 import path from "path";
 
 // Set ANALYZE=1 (e.g. `ANALYZE=1 npm run build:overlay`) to emit a treemap at
@@ -49,8 +52,14 @@ export default defineConfig({
     emptyOutDir: true,
   },
   css: {
+    // Overlay bundle needs Tailwind compiled INTO styles.css so the shadow-DOM
+    // stylesheet contains all utility classes used by the primitives
+    // (ScrubField, SelectField, ColorField, CheckboxRow, LinkedInput,
+    // FieldGroup, LayerStack, Subheader, Button, etc.). Previously this was
+    // `plugins: []`, which silently overrode the root postcss.config.js and
+    // left every Tailwind class unstyled inside the shadow DOM.
     postcss: {
-      plugins: [],
+      plugins: [tailwindcss(tailwindConfig), autoprefixer()],
     },
   },
   resolve: {

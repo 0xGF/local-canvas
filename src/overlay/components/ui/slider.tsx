@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
+import { cn } from "../../lib/utils.js";
 
 interface SliderProps {
   value: number;
@@ -9,12 +10,10 @@ interface SliderProps {
   onChange?: (value: number) => void;
   /** Fires on mouseup / input blur — send the mutation here */
   onCommit: (value: number) => void;
-  suffix?: string;
+  /** Render the trailing numeric input. Default true. */
   showValue?: boolean;
+  className?: string;
 }
-
-import { THEME } from "../../theme.js";
-const C = { ...THEME, track: "#3a3a3a" };
 
 export const Slider = React.memo(function Slider({
   value,
@@ -24,6 +23,7 @@ export const Slider = React.memo(function Slider({
   onChange,
   onCommit,
   showValue = true,
+  className,
 }: SliderProps) {
   const [dragging, setDragging] = useState(false);
   const [hovering, setHovering] = useState(false);
@@ -47,7 +47,7 @@ export const Slider = React.memo(function Slider({
       const raw = min + pct * (max - min);
       return Math.round(raw / step) * step;
     },
-    [min, max, step, value]
+    [min, max, step, value],
   );
 
   const handleMouseDown = useCallback(
@@ -67,7 +67,6 @@ export const Slider = React.memo(function Slider({
         onChange?.(v);
       };
       const handleUp = () => {
-        // Use last value from mousemove — no recalculation, no value jump
         const finalVal = lastDragVal.current;
         setDragging(false);
         setDragValue(finalVal);
@@ -79,64 +78,60 @@ export const Slider = React.memo(function Slider({
       document.addEventListener("mousemove", handleMove);
       document.addEventListener("mouseup", handleUp);
     },
-    [getValueFromX, onChange, onCommit]
+    [getValueFromX, onChange, onCommit],
   );
 
   const displayValue = dragging ? dragValue : value;
-  const pct = ((displayValue - min) / (max - min)) * 100;
+  const pct = Math.max(0, Math.min(100, ((displayValue - min) / (max - min)) * 100));
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, height: 26 }}>
+    <div className={cn("flex items-center gap-2 h-7 min-w-0", className)}>
       <div
         ref={trackRef}
         onMouseDown={handleMouseDown}
         onMouseEnter={() => setHovering(true)}
         onMouseLeave={() => setHovering(false)}
-        style={{
-          flex: 1, height: 6, background: C.track,
-          borderRadius: 3, position: "relative", cursor: "pointer",
-        }}
+        // Track stays inline-styled in just one place (the fill width pct) since
+        // a per-percent Tailwind class isn't expressible. Everything else is
+        // class-driven so theming follows --canvas-* vars.
+        className="flex-1 min-w-0 h-1.5 rounded-full bg-canvas-border relative cursor-pointer"
       >
-        <div style={{
-          position: "absolute", left: 0, top: 0, height: "100%",
-          width: `${pct}%`, background: C.accent, borderRadius: 3,
-          transition: dragging ? "none" : "width 0.1s ease",
-        }} />
-        <div style={{
-          position: "absolute", left: `${pct}%`, top: "50%",
-          width: dragging || hovering ? 14 : 12,
-          height: dragging || hovering ? 14 : 12,
-          background: "#fff", borderRadius: "50%",
-          transform: "translate(-50%, -50%)",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.4)",
-          transition: dragging ? "none" : "all 0.15s ease",
-          border: `2px solid ${C.accent}`,
-        }} />
+        <div
+          className={cn(
+            "absolute left-0 top-0 h-full rounded-full bg-canvas-accent",
+            !dragging && "transition-[width] duration-100",
+          )}
+          style={{ width: `${pct}%` }}
+        />
+        <div
+          className={cn(
+            "absolute top-1/2 -translate-x-1/2 -translate-y-1/2",
+            "rounded-full bg-white border-2 border-canvas-accent shadow",
+            dragging || hovering ? "size-3.5" : "size-3",
+            !dragging && "transition-all duration-150",
+          )}
+          style={{ left: `${pct}%` }}
+        />
       </div>
       {showValue && (
         <input
-          style={{
-            width: 40, height: 22, background: C.bgAlt,
-            border: "1px solid transparent", borderRadius: 4,
-            color: C.fg, fontSize: 10, fontFamily: C.mono,
-            textAlign: "center", outline: "none", padding: 0,
-          }}
           value={localInput}
-          onChange={(e) => setLocalInput(e.target.value)}
-          onFocus={(e) => { e.currentTarget.style.borderColor = C.accent; }}
-          onBlur={(e) => {
-            e.currentTarget.style.borderColor = "transparent";
-            const num = parseInt(localInput);
+          onChange={e => setLocalInput(e.target.value)}
+          onBlur={() => {
+            const num = parseInt(localInput, 10);
             if (!isNaN(num)) {
-              const clamped = Math.max(min, Math.min(max, num));
-              onCommit(clamped);
+              onCommit(Math.max(min, Math.min(max, num)));
             } else {
               setLocalInput(String(value));
             }
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          }}
+          onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+          className={cn(
+            "w-10 h-6 rounded bg-canvas-muted text-canvas-fg",
+            "text-[10px] font-mono text-center outline-none px-0",
+            "border border-transparent focus:border-canvas-accent",
+            "placeholder:text-canvas-muted-fg",
+          )}
         />
       )}
     </div>

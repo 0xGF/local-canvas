@@ -116,23 +116,33 @@ export function drawValueBadge(ctx: CanvasRenderingContext2D, value: number, col
   ctx.restore();
 }
 
-/** Draw a hatched (diagonal lines) fill — Figma-style padding zone */
-export function drawHatchedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string) {
+/** Draw a hatched (diagonal lines) fill — Figma-style spacing zone */
+export function drawHatchedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number,
+  color: string,
+  opts?: { step?: number; bgAlpha?: number; lineAlpha?: number },
+) {
   if (w <= 0 || h <= 0) return;
+  const step = opts?.step ?? 4;
+  const bgAlpha = opts?.bgAlpha ?? 0.07;
+  const lineAlpha = opts?.lineAlpha ?? 0.26;
   ctx.save();
   ctx.beginPath();
   ctx.rect(x, y, w, h);
   ctx.clip();
   // Subtle tinted background
   ctx.fillStyle = color;
-  ctx.globalAlpha = 0.08;
+  ctx.globalAlpha = bgAlpha;
   ctx.fillRect(x, y, w, h);
-  // Sparse diagonal lines
-  ctx.globalAlpha = 0.18;
+  // Fine diagonal lines — ~45°, hairline for a crisp weave
+  ctx.globalAlpha = lineAlpha;
   ctx.strokeStyle = color;
-  ctx.lineWidth = 1;
-  const step = 8;
-  for (let i = -h; i < w + h; i += step) {
+  ctx.lineWidth = 0.75;
+  ctx.lineCap = "butt";
+  // Extend the iteration range so lines fully cover tall/wide strips
+  const diag = w + h;
+  for (let i = -h; i < diag; i += step) {
     ctx.beginPath();
     ctx.moveTo(x + i, y);
     ctx.lineTo(x + i + h, y + h);

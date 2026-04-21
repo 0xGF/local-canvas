@@ -455,26 +455,31 @@ export const BG_IMAGE_PRESETS: Preset[] = [
 // EFFECTS
 // ─────────────────────────────────────────────────────────────────────────
 
-export const BLEND_MODE_OPTIONS: Option[] = [
+// Grouped to match Figma's blend-mode menu: darkening / lightening / contrast /
+// comparative / color-model families, each separated by a horizontal divider.
+export const BLEND_MODE_OPTIONS: Array<Option | { separator: true }> = [
   { value: "",             label: "Normal" },
-  { value: "normal",       label: "Normal" },
-  { value: "multiply",     label: "Multiply" },
-  { value: "screen",       label: "Screen" },
-  { value: "overlay",      label: "Overlay" },
+  { separator: true },
   { value: "darken",       label: "Darken" },
+  { value: "multiply",     label: "Multiply" },
+  { value: "color-burn",   label: "Color Burn" },
+  { separator: true },
   { value: "lighten",      label: "Lighten" },
-  { value: "color-dodge",  label: "Color dodge" },
-  { value: "color-burn",   label: "Color burn" },
-  { value: "hard-light",   label: "Hard light" },
-  { value: "soft-light",   label: "Soft light" },
+  { value: "screen",       label: "Screen" },
+  { value: "plus-lighter", label: "Plus Lighter" },
+  { value: "color-dodge",  label: "Color Dodge" },
+  { separator: true },
+  { value: "overlay",      label: "Overlay" },
+  { value: "soft-light",   label: "Soft Light" },
+  { value: "hard-light",   label: "Hard Light" },
+  { separator: true },
   { value: "difference",   label: "Difference" },
   { value: "exclusion",    label: "Exclusion" },
+  { separator: true },
   { value: "hue",          label: "Hue" },
   { value: "saturation",   label: "Saturation" },
   { value: "color",        label: "Color" },
   { value: "luminosity",   label: "Luminosity" },
-  { value: "plus-darker",  label: "Plus darker" },
-  { value: "plus-lighter", label: "Plus lighter" },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import {
   Type, Square, Component, Code,
   ImageIcon, Heading1, ListIcon, MousePointerClick, Braces, LinkIcon,
 } from "./icons.js";
+import { HalftoneLoader } from "./ui/halftone-loader.js";
 const C = THEME;
 const EXPAND_KEY = "layers-expanded";
 
@@ -350,27 +351,21 @@ export const LayersPanel = React.memo(function LayersPanel() {
         style={{
           flex: 1, overflowY: "auto", overflowX: "hidden",
           padding: "4px 0",
+          position: "relative",
         }}
         onMouseLeave={() => setHovered(null)}
       >
-        {rows.length === 0 && (
+        {tree.length === 0 ? (
+          // Empty tree = waiting for iframe → halftone shimmer, matches canvas loader
+          <HalftoneLoader rounded="rounded-none" />
+        ) : rows.length === 0 ? (
           <div style={{
             padding: "24px 14px", fontSize: 11, color: C.fgMuted,
             textAlign: "center", lineHeight: 1.5,
           }}>
-            {tree.length === 0 ? (
-              <>
-                <div style={{ color: C.fgDim, marginBottom: 4 }}>
-                  No source-mapped elements found.
-                </div>
-                <div style={{ fontSize: 10 }}>
-                  Waiting for the preview iframe to load. If this persists, make
-                  sure the local-canvas plugin is enabled in your dev config.
-                </div>
-              </>
-            ) : "No matches."}
+            No matches.
           </div>
-        )}
+        ) : null}
         {rows.map((row) => {
           const { node, depth } = row;
           const isExpanded = expandedForRender.has(node.path);

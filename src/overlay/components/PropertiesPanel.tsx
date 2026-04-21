@@ -1,57 +1,52 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useReadonlyStyleStore } from "../stores/readonly-style-store.js";
 import { useClassHelpers } from "../hooks/useClassHelpers.js";
+import { useSelectionColors, type ColorGroup } from "../hooks/useSelectionColors.js";
 import { sourceStyleHasProperty } from "../utils/inline-style-source.js";
 import { getCachedStyle } from "../utils/style-cache.js";
 import { setStyleProp } from "../utils/dom-style.js";
-import { useCSSVariables, filterVariables } from "../hooks/useCSSVariables.js";
-import { Section, PropRow, SubLabel } from "./ui/section.js";
-import { CustomSelect } from "./ui/custom-select.js";
-import { NumberInput } from "./ui/number-input.js";
+import { Section, SubLabel } from "./ui/section.js";
 import { ToggleGroup } from "./ui/toggle-group.js";
-import { ColorPicker } from "./ui/color-picker.js";
-import { VariableSuggest } from "./ui/variable-suggest.js";
-import { ValueInput } from "./ui/value-input.js";
-import { SliderValueInput } from "./ui/slider-value-input.js";
 import { AlignmentPicker } from "./ui/alignment-picker.js";
 import { Button } from "./ui/button.js";
+import { ScrubField } from "./ui/scrub-field.js";
+import { Subheader } from "./ui/subheader.js";
+import { LinkedInput, type LinkMode } from "./ui/linked-input.js";
+import { CheckboxRow } from "./ui/checkbox-row.js";
+import { SelectField } from "./ui/select-field.js";
+import { FlipHorizontal, FlipVertical, Minus, SlidersHorizontal } from "./icons.js";
+import * as Popover from "@radix-ui/react-popover";
+import { usePortalContainer } from "../lib/portal-container.js";
 import { cn } from "../lib/utils.js";
-import { LENGTH, INTEGER, GRID_COLS, KEYWORD, ANGLE, DURATION, NUMBER } from "./ui/value-input.parsers.js";
-import { THEME } from "../theme.js";
-import { PREFIX_TO_CSS } from "../canvas/constants.js";
+import { radiusSuffixToPx, pxToRadiusSuffix } from "../lib/tailwind-length.js";
 import {
   DISPLAY_OPTS, FLEX_DIR_OPTS,
   OPACITY_MAP,
-  JUSTIFY_OPTIONS, ALIGN_OPTIONS,
+  ALIGN_OPTIONS,
   SHADOW_PRESETS, POSITION_OPTIONS, OVERFLOW_OPTIONS, Z_INDEX_PRESETS, SIZE_PRESETS,
-  INSET_PRESETS, LEADING_PRESETS, TRACKING_PRESETS, GRID_COLS_PRESETS, FLEX_ITEM_PRESETS,
-  BORDER_STYLE_PRESETS, RADIUS_PRESETS, FONT_WEIGHT_PRESETS,
-  pxToTwScale, twValueToPx,
+  GRID_COLS_PRESETS, FLEX_ITEM_PRESETS,
+  BORDER_STYLE_PRESETS,
+  INSET_PRESETS,
 } from "./PropertiesPanel.constants.js";
 import {
-  ASPECT_RATIO_PRESETS, BOX_SIZING_OPTIONS, FLOAT_OPTIONS, CLEAR_OPTIONS,
-  OBJECT_FIT_OPTIONS, OBJECT_POSITION_PRESETS, VISIBILITY_OPTIONS,
-  TEXT_TRANSFORM_OPTIONS, TEXT_OVERFLOW_OPTIONS, TEXT_WRAP_OPTIONS,
-  WHITE_SPACE_OPTIONS, WORD_BREAK_OPTIONS, FONT_STYLE_OPTIONS,
-  TEXT_DECORATION_LINE_OPTIONS, TEXT_DECORATION_STYLE_OPTIONS,
-  ROTATE_PRESETS, SCALE_PRESETS, TRANSFORM_ORIGIN_OPTIONS,
-  BLUR_PRESETS, FILTER_PERCENT_PRESETS, HUE_ROTATE_PRESETS,
-  DURATION_PRESETS, TIMING_FUNCTION_OPTIONS, ANIMATION_OPTIONS, TRANSITION_PROPERTY_OPTIONS,
-  CURSOR_OPTIONS, POINTER_EVENTS_OPTIONS, USER_SELECT_OPTIONS,
-  RESIZE_OPTIONS, SCROLL_BEHAVIOR_OPTIONS, WILL_CHANGE_OPTIONS,
-  BG_ATTACHMENT_OPTIONS, BG_CLIP_OPTIONS, BG_ORIGIN_OPTIONS,
-  BG_REPEAT_OPTIONS, BG_SIZE_OPTIONS, BG_POSITION_PRESETS, BG_IMAGE_PRESETS,
+  ASPECT_RATIO_PRESETS,
+  OBJECT_FIT_OPTIONS, OBJECT_POSITION_PRESETS,
+  FLEX_WRAP_OPTIONS, ALIGN_CONTENT_OPTIONS,
   BLEND_MODE_OPTIONS,
-  BORDER_COLLAPSE_OPTIONS, TABLE_LAYOUT_OPTIONS, CAPTION_SIDE_OPTIONS,
 } from "./PropertiesPanel.presets.js";
+import { Slider } from "./ui/slider.js";
+import { ColorField } from "./ui/color-field.js";
+import { FieldGroup } from "./ui/field-group.js";
+import { GradientEditor, gradientToCss, type GradientValue } from "./ui/gradient-editor.js";
+import { ImageFillEditor, imageFillToCss, type ImageFillValue } from "./ui/image-fill-editor.js";
 import {
   X,
-  AlignLeft, AlignCenter, AlignRight,
-  AlignStartVertical, AlignCenterVertical, AlignEndVertical,
-  MoveRight, MoveDown, MoveLeft, MoveUp,
-  Square, Columns3, Grid3x3, EyeOff,
+  MoveRight, MoveDown,
+  Square, Columns3, Grid3x3, Eye, EyeOff, Plus, BorderAll,
+  CircleDot,
 } from "./icons.js";
+import { THEME } from "../theme.js";
 
 const C = THEME;
 
@@ -82,22 +77,6 @@ function clearInlineAfterClassUpdate(el: HTMLElement, cssProp: string) {
 }
 
 // ── Font-size presets (keyword + px label) ──
-const FONT_SIZE_PRESETS = [
-  { value: "xs", label: "12px" },
-  { value: "sm", label: "14px" },
-  { value: "base", label: "16px" },
-  { value: "lg", label: "18px" },
-  { value: "xl", label: "20px" },
-  { value: "2xl", label: "24px" },
-  { value: "3xl", label: "30px" },
-  { value: "4xl", label: "36px" },
-  { value: "5xl", label: "48px" },
-  { value: "6xl", label: "60px" },
-  { value: "7xl", label: "72px" },
-  { value: "8xl", label: "96px" },
-  { value: "9xl", label: "128px" },
-];
-
 // ── Type for shared helpers ──
 type ClassHelpers = ReturnType<typeof useClassHelpers>;
 
@@ -108,86 +87,6 @@ type ClassHelpers = ReturnType<typeof useClassHelpers>;
 // enter arbitrary values (1.5rem, 50%, calc(...), -12px) while still getting
 // scrub-drag on the label for quick px tweaks.
 // ══════════════════════════════════════════════════════════════════════════════
-
-interface LengthRowProps {
-  label: string;
-  value: string;                                    // Tailwind value (scale key or "[...]")
-  presets?: { value: string; label?: string }[];
-  /** Called during scrub drag — emit live preview CSS value */
-  onLivePreview?: (px: number) => void;
-  /** Called when user commits via scrub end / typed entry */
-  onCommit: (value: string) => void;
-  /** Optional: starting px value used as scrub base (override auto-decoded). */
-  initialPx?: number;
-  placeholder?: string;
-}
-
-function LengthRow({
-  label,
-  value,
-  presets,
-  onLivePreview,
-  onCommit,
-  initialPx,
-  placeholder,
-}: LengthRowProps) {
-  const startRef = useRef({ x: 0, v: 0 });
-  const scrubbing = useRef(false);
-
-  const handleLabelDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const base = initialPx ?? twValueToPx(value);
-    startRef.current = { x: e.clientX, v: base };
-    scrubbing.current = true;
-
-    const handleMove = (ev: MouseEvent) => {
-      const dx = ev.clientX - startRef.current.x;
-      const step = ev.shiftKey ? 10 : 1;
-      // 0.5 px per pixel travelled feels right for spacing work
-      const next = Math.round(startRef.current.v + dx * step * 0.5);
-      onLivePreview?.(next);
-    };
-
-    const handleUp = (ev: MouseEvent) => {
-      const dx = ev.clientX - startRef.current.x;
-      const step = ev.shiftKey ? 10 : 1;
-      const next = Math.round(startRef.current.v + dx * step * 0.5);
-      onCommit(pxToTwScale(next));
-      document.removeEventListener("mousemove", handleMove);
-      document.removeEventListener("mouseup", handleUp);
-      document.body.style.cursor = "";
-      scrubbing.current = false;
-    };
-
-    document.body.style.cursor = "ew-resize";
-    document.addEventListener("mousemove", handleMove);
-    document.addEventListener("mouseup", handleUp);
-  }, [value, initialPx, onLivePreview, onCommit]);
-
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <span
-        onMouseDown={handleLabelDown}
-        title={`Drag to scrub — shift for ×10. Click the input to type any value.`}
-        style={{
-          fontSize: 10, color: C.fgDim, width: 52, flexShrink: 0,
-          cursor: "ew-resize", userSelect: "none", fontWeight: 400,
-        }}
-      >
-        {label}
-      </span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <ValueInput
-          value={value}
-          presets={presets}
-          onChange={onCommit}
-          strategy={LENGTH}
-          placeholder={placeholder}
-        />
-      </div>
-    </div>
-  );
-}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Main PropertiesPanel — thin shell that delegates to memoized sections
@@ -260,29 +159,18 @@ export const PropertiesPanel = React.memo(function PropertiesPanel() {
         </div>
       )}
 
-      <div style={{ overflowY: "auto", overflowX: "hidden", flex: 1, minHeight: 0 }}>
-        <PositionSection h={helpers} sel={sel} />
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         <LayoutSection h={helpers} sel={sel} />
-        <SizeSection h={helpers} />
-        <FlexItemSection h={helpers} sel={sel} />
         <SpacingSection h={helpers} sel={sel} />
-        <TypographySection h={helpers} sel={sel} />
-        <TextColorSection h={helpers} sel={sel} />
-        <FillSection h={helpers} sel={sel} />
-        <BorderSection h={helpers} sel={sel} />
-        <OutlineSection h={helpers} sel={sel} />
         <RadiusSection h={helpers} sel={sel} />
-        <ShadowSection h={helpers} />
-        <OpacitySection h={helpers} />
-        <BackgroundSection h={helpers} sel={sel} />
-        <TransformsSection h={helpers} sel={sel} />
+        <BlendingSection h={helpers} sel={sel} />
+        <FillSection h={helpers} sel={sel} />
+        <OutlineSection h={helpers} sel={sel} />
+        <BorderSection h={helpers} sel={sel} />
+        <ShadowSection h={helpers} sel={sel} />
+        <InnerShadowSection h={helpers} sel={sel} />
+        <SelectionColorsSection h={helpers} sel={sel} />
         <FiltersSection h={helpers} sel={sel} />
-        <TransitionsSection h={helpers} sel={sel} />
-        <InteractivitySection h={helpers} sel={sel} />
-        <SvgSection h={helpers} sel={sel} />
-        <TablesSection h={helpers} sel={sel} />
-        <CSSVariablesSection h={helpers} sel={sel} />
-        <ClassesSection h={helpers} sel={sel} />
       </div>
     </div>
   );
@@ -292,220 +180,127 @@ export const PropertiesPanel = React.memo(function PropertiesPanel() {
 // Memoized Sections
 // ══════════════════════════════════════════════════════════════════════════════
 
-const PositionSection = React.memo(function PositionSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
-  const cs0 = sel.element ? getCachedStyle(sel.element) : null;
-  const rect = {
-    x: sel.element?.offsetLeft ?? sel.rect.left,
-    y: sel.element?.offsetTop ?? sel.rect.top,
-    width: parseFloat(cs0?.width || "") || sel.rect.width,
-    height: parseFloat(cs0?.height || "") || sel.rect.height,
-  };
-
-  const setTextAlign = (v: string) => {
-    const map: Record<string, string> = { left: "text-left", center: "text-center", right: "text-right" };
-    const remove = ["text-left", "text-center", "text-right"].map(c => h.actual(c)).filter(Boolean) as string[];
-    const add = map[v] ? [h.prefixCls(map[v])] : [];
-    if (sel.source) h.trackedSendMutation({ type: "modify-class", source: sel.source, remove: remove.length ? remove : undefined, add: add.length ? add : undefined });
-  };
-
-  const setVerticalAlign = (v: string) => {
-    const map: Record<string, string> = { start: "self-start", center: "self-center", end: "self-end" };
-    const remove = ["self-start", "self-center", "self-end"].map(c => h.actual(c)).filter(Boolean) as string[];
-    const add = map[v] ? [h.prefixCls(map[v])] : [];
-    if (sel.source) h.trackedSendMutation({ type: "modify-class", source: sel.source, remove: remove.length ? remove : undefined, add: add.length ? add : undefined });
-  };
-
-  return (
-    <Section title="Position" defaultOpen>
-      <SubLabel>Text Alignment</SubLabel>
-      <div style={{ display: "flex", gap: 6 }}>
-        <ToggleGroup
-          value={h.has("text-left") ? "left" : h.has("text-center") ? "center" : h.has("text-right") ? "right" : ""}
-          items={[
-            { value: "left", icon: <AlignLeft size={14} />, title: "Align Text Left" },
-            { value: "center", icon: <AlignCenter size={14} />, title: "Align Text Center" },
-            { value: "right", icon: <AlignRight size={14} />, title: "Align Text Right" },
-          ]}
-          onChange={setTextAlign}
-        />
-        <ToggleGroup
-          value={h.has("self-start") ? "start" : h.has("self-center") ? "center" : h.has("self-end") ? "end" : ""}
-          items={[
-            { value: "start", icon: <AlignStartVertical size={14} />, title: "Align Self: Top" },
-            { value: "center", icon: <AlignCenterVertical size={14} />, title: "Align Self: Center" },
-            { value: "end", icon: <AlignEndVertical size={14} />, title: "Align Self: Bottom" },
-          ]}
-          onChange={setVerticalAlign}
-        />
-      </div>
-      <SubLabel>Dimensions</SubLabel>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-        <NumberInput label="X" value={Math.round(rect.x)} readOnly suffix="px" />
-        <NumberInput label="Y" value={Math.round(rect.y)} readOnly suffix="px" />
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginTop: 4 }}>
-        <PropRow label="W">
-          <ValueInput value={h.get("w")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("w", v)} placeholder={`${Math.round(rect.width)}px`} />
-        </PropRow>
-        <PropRow label="H">
-          <ValueInput value={h.get("h")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("h", v)} placeholder={`${Math.round(rect.height)}px`} />
-        </PropRow>
-      </div>
-    </Section>
-  );
-});
-
 // Compact icon + input row. Unlike PropRow (52px label column), this gives
 // the input ~26px for the glyph and the rest of the row for the value —
 // much more usable at 280px panel width.
-function CompactField({ icon, children, iconWidth }: { icon: React.ReactNode; children: React.ReactNode; iconWidth?: "sm" | "md" }) {
-  return (
-    <div className="flex items-center gap-1 min-w-0">
-      <span
-        className={cn(
-          "text-[10px] text-canvas-muted-fg shrink-0 inline-flex items-center justify-center",
-          iconWidth === "md" ? "w-6" : "w-[18px]",
-        )}
-      >
-        {icon}
-      </span>
-      <div className="flex-1 min-w-0">{children}</div>
-    </div>
-  );
-}
+// Gap glyph — rotates with the flex direction so the dashed separator tracks
+// whichever axis the gap actually lives on (horizontal for row, vertical for col).
+// Stroke-weight glyph — thin line over a thick line. Reads as "border/outline
+// thickness" in the same way Figma/Framer's weight control does.
+const StrokeWeightGlyph = () => (
+  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+    <line x1="1" y1="4" x2="11" y2="4" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+    <line x1="1" y1="8.5" x2="11" y2="8.5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+  </svg>
+);
 
-const GapGlyph = () => (
+const GapGlyphRow = () => (
   <svg width="13" height="12" viewBox="0 0 13 12" fill="none" stroke="currentColor" aria-hidden>
     <rect x="0.5" y="1.5" width="3" height="9" rx="0.5" />
     <rect x="9.5" y="1.5" width="3" height="9" rx="0.5" />
     <line x1="6.5" y1="0" x2="6.5" y2="12" strokeDasharray="1.5 1.5" />
   </svg>
 );
+const GapGlyphCol = () => (
+  <svg width="12" height="13" viewBox="0 0 12 13" fill="none" stroke="currentColor" aria-hidden>
+    <rect x="1.5" y="0.5" width="9" height="3" rx="0.5" />
+    <rect x="1.5" y="9.5" width="9" height="3" rx="0.5" />
+    <line x1="0" y1="6.5" x2="12" y2="6.5" strokeDasharray="1.5 1.5" />
+  </svg>
+);
 
-const PadXGlyph = () => (
+// Padding edge glyphs — small box with a thicker accent on one side.
+// Kept inline per CLAUDE.md: these are edge indicators, not general icons.
+const PadLGlyph = () => (
   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" aria-hidden>
-    <rect x="0.5" y="0.5" width="11" height="11" rx="1.5" />
-    <line x1="3.5" y1="3" x2="3.5" y2="9" />
-    <line x1="8.5" y1="3" x2="8.5" y2="9" />
+    <rect x="0.75" y="0.75" width="10.5" height="10.5" rx="1.5" strokeOpacity="0.45" />
+    <line x1="2" y1="2.75" x2="2" y2="9.25" strokeWidth="1.75" strokeLinecap="round" />
   </svg>
 );
-
-const PadYGlyph = () => (
+const PadRGlyph = () => (
   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" aria-hidden>
-    <rect x="0.5" y="0.5" width="11" height="11" rx="1.5" />
-    <line x1="3" y1="3.5" x2="9" y2="3.5" />
-    <line x1="3" y1="8.5" x2="9" y2="8.5" />
+    <rect x="0.75" y="0.75" width="10.5" height="10.5" rx="1.5" strokeOpacity="0.45" />
+    <line x1="10" y1="2.75" x2="10" y2="9.25" strokeWidth="1.75" strokeLinecap="round" />
+  </svg>
+);
+const PadTGlyph = () => (
+  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" aria-hidden>
+    <rect x="0.75" y="0.75" width="10.5" height="10.5" rx="1.5" strokeOpacity="0.45" />
+    <line x1="2.75" y1="2" x2="9.25" y2="2" strokeWidth="1.75" strokeLinecap="round" />
+  </svg>
+);
+const PadBGlyph = () => (
+  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" aria-hidden>
+    <rect x="0.75" y="0.75" width="10.5" height="10.5" rx="1.5" strokeOpacity="0.45" />
+    <line x1="2.75" y1="10" x2="9.25" y2="10" strokeWidth="1.75" strokeLinecap="round" />
+  </svg>
+);
+const PadAllGlyph = () => (
+  <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" aria-hidden>
+    <rect x="0.75" y="0.75" width="11.5" height="11.5" rx="1.5" />
+    <rect x="3.5" y="3.5" width="6" height="6" strokeDasharray="1.25 1.25" strokeOpacity="0.7" />
   </svg>
 );
 
-const RotateGlyph = () => (
-  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <path d="M10 5.5A4.5 4.5 0 1 1 5.5 1v2.5" />
-    <path d="M5.5 0.5L7 2L5.5 3.5" />
-  </svg>
-);
-const FlipHGlyph = () => (
-  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeLinejoin="round" aria-hidden>
-    <path d="M1 9.5h4.5V2.5L1 9.5z" />
-    <path d="M11 9.5H6.5V2.5L11 9.5z" />
-  </svg>
-);
-const FlipVGlyph = () => (
-  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeLinejoin="round" aria-hidden>
-    <path d="M9.5 1v4.5H2.5L9.5 1z" />
-    <path d="M9.5 11V6.5H2.5L9.5 11z" />
-  </svg>
-);
-const AngleGlyph = () => (
-  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <path d="M1 11 L11 11" />
-    <path d="M1 11 L9 3" />
-    <path d="M3.5 10.5 A5 5 0 0 0 5.3 8.3" />
-  </svg>
-);
-const MinusGlyph = () => (
-  <svg width="9" height="2" viewBox="0 0 9 2" fill="none" stroke="currentColor" aria-hidden>
-    <line x1="0" y1="1" x2="9" y2="1" strokeLinecap="round" />
-  </svg>
-);
-
-// ── Figma/Framer-style padding: 2-value (px/py) default, toggle to 4 individual sides.
-// Any individually-set side drops the matching axis class to keep Tailwind output clean.
-function FlexPadding({ h, sel, cs }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]>; cs: CSSStyleDeclaration | null }) {
-  const px = h.get("px");
-  const py = h.get("py");
-  const pt = h.get("pt");
-  const pr = h.get("pr");
-  const pb = h.get("pb");
-  const pl = h.get("pl");
-  const hasIndividual = !!(pt || pr || pb || pl);
-  const [mode, setMode] = useState<"linked" | "individual">(hasIndividual ? "individual" : "linked");
-
-  const phSide = (side: "Top" | "Right" | "Bottom" | "Left") => {
-    const v = cs ? (cs as unknown as Record<string, string>)[`padding${side}`] : undefined;
-    if (!v) return "0";
-    const n = parseFloat(v);
-    return Number.isFinite(n) && n !== 0 ? `${Math.round(n)}px` : "0";
-  };
+// Padding block inside the Flex sub-section. Mirrors Figma's auto-layout:
+// split mode lays out 2x2 per-side inputs; linked mode collapses to a single
+// `p-*` input. Side-by-side with the pad-link toggle in the outer 3-col grid
+// so the toggle aligns with the sliders icon in the row above.
+function FlexPadding({
+  h, sel, cs, phPx,
+}: {
+  h: ClassHelpers;
+  sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]>;
+  cs: CSSStyleDeclaration | null;
+  phPx: (raw: string | undefined, fallback?: string) => string;
+}) {
+  void sel;
+  const plRaw = h.get("pl"), prRaw = h.get("pr"), ptRaw = h.get("pt"), pbRaw = h.get("pb");
+  const hasSplit = !!(plRaw || prRaw || ptRaw || pbRaw);
+  const [mode, setMode] = useState<LinkMode>(hasSplit ? "split" : "linked");
 
   const toggleBtn = (
     <Button
       variant="ghost"
       size="icon"
-      aria-pressed={mode === "individual"}
-      title={mode === "linked" ? "Individual sides" : "Linked sides"}
-      onClick={() => setMode(mode === "linked" ? "individual" : "linked")}
-      className="size-6 text-canvas-muted-fg"
+      onClick={() => setMode(mode === "linked" ? "split" : "linked")}
+      className={cn(
+        "size-7 row-span-2 self-center text-canvas-muted-fg hover:text-canvas-fg",
+        mode === "split" && "text-canvas-fg bg-canvas-muted",
+      )}
+      title={mode === "linked" ? "Split padding into sides" : "Link padding sides"}
+      aria-label="Toggle padding link"
     >
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor">
-        <rect x="0.5" y="0.5" width="11" height="11" rx="1.5" />
-        {mode === "linked"
-          ? <rect x="3.5" y="3.5" width="5" height="5" />
-          : <>
-              <line x1="3.5" y1="1" x2="3.5" y2="11" />
-              <line x1="8.5" y1="1" x2="8.5" y2="11" />
-              <line x1="1" y1="3.5" x2="11" y2="3.5" />
-              <line x1="1" y1="8.5" x2="11" y2="8.5" />
-            </>}
-      </svg>
+      <PadAllGlyph />
     </Button>
   );
 
   if (mode === "linked") {
     return (
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 6, alignItems: "center" }}>
-        <CompactField icon={<PadXGlyph />}>
-          <ValueInput value={px} strategy={LENGTH} placeholder="0"
-            onChange={v => h.set("px", v)} />
-        </CompactField>
-        <CompactField icon={<PadYGlyph />}>
-          <ValueInput value={py} strategy={LENGTH} placeholder="0"
-            onChange={v => h.set("py", v)} />
-        </CompactField>
+      <div className="grid grid-cols-[1fr_1fr_auto] gap-1.5 items-center">
+        <div className="col-span-2">
+          <ScrubField
+            label={<PadAllGlyph />}
+            title="Padding"
+            {...lengthProps(h, "p", phPx(cs?.paddingLeft, "0"))}
+          />
+        </div>
         {toggleBtn}
       </div>
     );
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 6, rowGap: 4, alignItems: "center" }}>
-      <CompactField icon="T">
-        <ValueInput value={pt} strategy={LENGTH} placeholder={phSide("Top")}
-          onChange={v => h.set("pt", v)} />
-      </CompactField>
-      <CompactField icon="R">
-        <ValueInput value={pr} strategy={LENGTH} placeholder={phSide("Right")}
-          onChange={v => h.set("pr", v)} />
-      </CompactField>
-      <div style={{ gridRow: "1 / span 2" }}>{toggleBtn}</div>
-      <CompactField icon="B">
-        <ValueInput value={pb} strategy={LENGTH} placeholder={phSide("Bottom")}
-          onChange={v => h.set("pb", v)} />
-      </CompactField>
-      <CompactField icon="L">
-        <ValueInput value={pl} strategy={LENGTH} placeholder={phSide("Left")}
-          onChange={v => h.set("pl", v)} />
-      </CompactField>
+    <div className="grid grid-cols-[1fr_1fr_auto] gap-1.5 items-center">
+      <ScrubField label={<PadLGlyph />} title="Padding left"
+        {...lengthProps(h, "pl", phPx(cs?.paddingLeft, "0"))} />
+      <ScrubField label={<PadRGlyph />} title="Padding right"
+        {...lengthProps(h, "pr", phPx(cs?.paddingRight, "0"))} />
+      {toggleBtn}
+      <ScrubField label={<PadTGlyph />} title="Padding top"
+        {...lengthProps(h, "pt", phPx(cs?.paddingTop, "0"))} />
+      <ScrubField label={<PadBGlyph />} title="Padding bottom"
+        {...lengthProps(h, "pb", phPx(cs?.paddingBottom, "0"))} />
     </div>
   );
 }
@@ -514,8 +309,8 @@ function FlexPadding({ h, sel, cs }: { h: ClassHelpers; sel: NonNullable<ReturnT
 // remains available further down the Layout section for scroll/auto/visible.
 function ClipContent({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
   const isClipping = !!h.has("overflow-hidden");
-  const toggle = () => {
-    if (isClipping) {
+  const toggle = (next: boolean) => {
+    if (!next) {
       const actual = h.actual("overflow-hidden") || "overflow-hidden";
       h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: [actual] });
     } else {
@@ -523,29 +318,262 @@ function ClipContent({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<
     }
   };
   return (
-    <label className="flex items-center gap-1.5 text-[11px] text-canvas-fg cursor-pointer select-none">
-      <span
-        role="checkbox"
-        aria-checked={isClipping}
-        tabIndex={0}
-        onClick={toggle}
-        onKeyDown={e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggle(); } }}
-        className={cn(
-          "inline-flex items-center justify-center size-3.5 rounded-[3px] shrink-0 border transition-colors",
-          isClipping
-            ? "border-canvas-accent bg-canvas-accent text-canvas-accent-fg"
-            : "border-canvas-border bg-transparent",
-        )}
-      >
-        {isClipping && (
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M1.75 5.75L4.2 8L8.25 2.25" />
-          </svg>
-        )}
-      </span>
-      Clip content
-      <span className="ml-auto text-[10px] text-canvas-muted-fg font-mono">⌥C</span>
-    </label>
+    <CheckboxRow
+      checked={isClipping}
+      onChange={toggle}
+      label="Clip content"
+      kbd="⌥C"
+    />
+  );
+}
+
+// ── Length display helpers ──────────────────────────────────────────────────
+// The sidebar always SHOWS px / % / keywords to the user. Tailwind scale
+// classes (`p-4`, `w-1/2`, `m-[18px]`) get decoded to the user-facing form for
+// display, and any user input is re-encoded back to the canonical Tailwind
+// value for `h.set()` — preferring scale matches, falling back to bracket
+// forms when nothing matches.
+const TW_SCALE_PX: Record<string, number> = {
+  "0": 0, "0.5": 2, "1": 4, "1.5": 6, "2": 8, "2.5": 10, "3": 12, "3.5": 14,
+  "4": 16, "5": 20, "6": 24, "7": 28, "8": 32, "9": 36, "10": 40, "11": 44,
+  "12": 48, "14": 56, "16": 64, "20": 80, "24": 96, "28": 112, "32": 128,
+  "36": 144, "40": 160, "44": 176, "48": 192, "56": 224, "64": 256, "72": 288,
+  "80": 320, "96": 384,
+};
+
+function pxToScale(px: number): string {
+  if (px === 0) return "0";
+  for (const [k, v] of Object.entries(TW_SCALE_PX)) if (v === px) return k;
+  return `[${px}px]`;
+}
+
+const SIZE_KEYWORDS = new Set(["auto", "none", "full", "screen", "fit", "min", "max", "px"]);
+
+// Every length-shaped field in the sidebar shows px or % (with suffix), so
+// scale classes and bracket values decode to the same user-facing format.
+function lengthDisplay(v: string): string {
+  if (!v) return "";
+  const bracketPx = v.match(/^\[(-?\d+(?:\.\d+)?)(?:px)?\]$/);
+  if (bracketPx) return `${parseFloat(bracketPx[1])}px`;
+  const bracketRem = v.match(/^\[(-?\d+(?:\.\d+)?)rem\]$/);
+  if (bracketRem) return `${Math.round(parseFloat(bracketRem[1]) * 16)}px`;
+  const bracketPct = v.match(/^\[(-?\d+(?:\.\d+)?)%\]$/);
+  if (bracketPct) return `${parseFloat(bracketPct[1])}%`;
+  const bracketAny = v.match(/^\[(.+)\]$/);
+  if (bracketAny) return bracketAny[1].replace(/_/g, " ");
+  if (v === "full" || v === "screen") return "100%";
+  if (SIZE_KEYWORDS.has(v)) return v;
+  const frac = v.match(/^(\d+)\/(\d+)$/);
+  if (frac) {
+    const pct = (+frac[1] / +frac[2]) * 100;
+    return `${Math.round(pct * 100) / 100}%`;
+  }
+  if (TW_SCALE_PX[v] !== undefined) return `${TW_SCALE_PX[v]}px`;
+  if (v.startsWith("-") && TW_SCALE_PX[v.slice(1)] !== undefined) return `-${TW_SCALE_PX[v.slice(1)]}px`;
+  if (/^-?\d+(?:\.\d+)?$/.test(v)) return `${v}px`;
+  return v;
+}
+
+// Prefixes where Tailwind exposes fraction classes (`w-1/2`, `h-2/3`, …).
+// Other length utilities (padding, margin, gap, insets, radius) treat a
+// percent input as arbitrary → bracket form so the written class stays valid.
+const FRACTIONAL_PREFIXES = new Set([
+  "w", "h", "min-w", "max-w", "min-h", "max-h", "basis",
+]);
+
+function lengthToTailwind(raw: string, prefix?: string): string {
+  const t = raw.trim();
+  if (!t) return "";
+  const px = t.match(/^(-?\d+(?:\.\d+)?)\s*(?:px)?$/);
+  if (px) return pxToScale(Math.round(parseFloat(px[1])));
+  const pct = t.match(/^(-?\d+(?:\.\d+)?)\s*%$/);
+  if (pct) {
+    const n = parseFloat(pct[1]);
+    if (!prefix || FRACTIONAL_PREFIXES.has(prefix)) {
+      if (n === 100) return "full";
+      if (n === 50) return "1/2";
+      if (Math.abs(n - 33.33) < 0.5) return "1/3";
+      if (Math.abs(n - 66.66) < 0.5 || Math.abs(n - 66.67) < 0.5) return "2/3";
+      if (n === 25) return "1/4";
+      if (n === 75) return "3/4";
+      if (n === 20) return "1/5";
+      if (n === 40) return "2/5";
+      if (n === 60) return "3/5";
+      if (n === 80) return "4/5";
+    }
+    return `[${n}%]`;
+  }
+  if (SIZE_KEYWORDS.has(t)) return t;
+  if (/^\d+\/\d+$/.test(t)) return t;
+  if (/^\[.+\]$/.test(t)) return t;
+  const rem = t.match(/^(-?\d+(?:\.\d+)?)rem$/);
+  if (rem) return pxToScale(Math.round(parseFloat(rem[1]) * 16));
+  return `[${t.replace(/\s+/g, "_")}]`;
+}
+
+const NUMERIC_PREFIX_RE = /^(-?\d+(?:\.\d+)?)/;
+
+/** Spread-ready props for a length-flavoured ScrubField bound to `prefix`.
+ * The displayed value is always px / % (or a keyword); writes encode back.
+ * `format`/`parse` keep the current unit while scrubbing — dragging "50%"
+ * yields "51%" (not a bare "51"), and "16px" yields "17px". */
+function lengthProps(h: ClassHelpers, prefix: string, placeholder?: string) {
+  const display = lengthDisplay(h.get(prefix));
+  const suffix = display.endsWith("%") ? "%" : "px";
+  return {
+    value: display,
+    placeholder,
+    onChange: (raw: string) => h.set(prefix, lengthToTailwind(raw, prefix)),
+    format: (n: number) => `${Math.round(n)}${suffix}`,
+    parse: (v: string) => {
+      const m = v.match(NUMERIC_PREFIX_RE);
+      return m ? parseFloat(m[1]) : NaN;
+    },
+  };
+}
+
+// Option shim — presets carry label?: string to stay compatible with the old
+// CustomSelect. SelectField demands a concrete label, so we normalize once.
+const opts = <T extends { value: string; label?: string }>(arr: readonly T[]) =>
+  arr.map(o => ({ value: o.value, label: o.label ?? o.value }));
+
+const FLEX_WRAP_SELECT = opts(FLEX_WRAP_OPTIONS);
+const ALIGN_CONTENT_SELECT = opts(ALIGN_CONTENT_OPTIONS);
+const ALIGN_SELECT = opts(ALIGN_OPTIONS);
+const POSITION_SELECT = opts(POSITION_OPTIONS);
+const OVERFLOW_SELECT = opts(OVERFLOW_OPTIONS);
+const OBJECT_FIT_SELECT = opts(OBJECT_FIT_OPTIONS);
+const BORDER_STYLE_SELECT = opts(BORDER_STYLE_PRESETS);
+const BORDER_SIDE_SELECT = [
+  { value: "", label: "All" },
+  { value: "t", label: "Top" },
+  { value: "r", label: "Right" },
+  { value: "b", label: "Bottom" },
+  { value: "l", label: "Left" },
+];
+
+// Flex advanced popover — absorbs wrap, reverse, align-content, and the
+// old FlexItemSection's grow/shrink/self/order. Opens from a sliders icon
+// in the Flex sub-block's Subheader actions.
+function FlexAdvancedPopover({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
+  const portalContainer = usePortalContainer();
+  const flexDir = h.findPrefixedCls("flex-", FLEX_DIR_OPTS);
+  const flexDirVal = flexDir ? flexDir.replace("flex-", "") : "row";
+  const baseAxis = flexDirVal.startsWith("col") ? "col" : "row";
+  const isReversed = flexDirVal.endsWith("-reverse");
+
+  // Wrap: detect which wrap class (if any) is present.
+  const currentWrap = h.findCls(FLEX_WRAP_OPTIONS.map(o => o.value).filter(Boolean)) || "";
+
+  // Flex-item controls only make sense when this element is itself an item
+  // of a flex parent. Toggle visibility so the popover doesn't render
+  // irrelevant rows.
+  const parentIsFlex = sel.element?.parentElement
+    ? getCachedStyle(sel.element.parentElement).display.includes("flex")
+    : false;
+
+  // Flex shorthand preset match: "flex-1", "flex-auto", etc. Bare numbers
+  // (e.g. "flex-2") are preserved too.
+  const flexPresetValues = FLEX_ITEM_PRESETS.map(o => o.value).filter(Boolean);
+  const currentFlex = h.findCls(flexPresetValues)
+    || h.classes.find(c => /^flex-\d+$/.test(c) || /^flex-\[/.test(c))
+    || "";
+
+  const setWrap = useCallback((v: string) => {
+    const oldActual = FLEX_WRAP_OPTIONS
+      .map(o => o.value)
+      .filter(Boolean)
+      .map(c => h.actual(c))
+      .filter(Boolean) as string[];
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source!,
+      remove: oldActual.length ? oldActual : undefined,
+      add: v ? [v] : undefined,
+    });
+  }, [h, sel]);
+
+  const setReversed = useCallback((next: boolean) => {
+    const nextDir = next ? `${baseAxis}-reverse` : baseAxis;
+    const oldActual = flexDir ? (h.actual(flexDir) || flexDir) : undefined;
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source!,
+      remove: oldActual ? [oldActual] : undefined,
+      add: nextDir === "row" ? undefined : [`flex-${nextDir}`],
+    });
+  }, [h, sel, baseAxis, flexDir]);
+
+  const setFlex = useCallback((v: string) => {
+    const old = flexPresetValues.map(c => h.actual(c)).filter(Boolean) as string[];
+    const numericExisting = h.classes.filter(c => /^flex-\d+$/.test(c) || /^flex-\[/.test(c));
+    const removeList = [...old, ...numericExisting];
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source!,
+      remove: removeList.length ? removeList : undefined,
+      add: v ? [v.startsWith("flex-") ? v : `flex-${v}`] : undefined,
+    });
+  }, [h, sel, flexPresetValues]);
+
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          title="Advanced flex options"
+          aria-label="Advanced flex options"
+          className="size-6 text-canvas-muted-fg hover:text-canvas-fg"
+        >
+          <SlidersHorizontal size={12} />
+        </Button>
+      </Popover.Trigger>
+      <Popover.Portal container={portalContainer}>
+        <Popover.Content
+          side="bottom"
+          align="end"
+          sideOffset={6}
+          collisionPadding={8}
+          className={cn(
+            "z-[2147483647] w-60 rounded-md border border-canvas-border bg-canvas-bg",
+            "shadow-md p-2.5 space-y-2 text-xs",
+          )}
+        >
+          <div className="text-[11px] font-medium text-canvas-fg">Advanced flex</div>
+
+          <CheckboxRow
+            checked={isReversed}
+            onChange={setReversed}
+            label={`Reverse ${baseAxis === "row" ? "row" : "column"}`}
+          />
+
+          <div className="grid grid-cols-[auto_1fr] gap-2 items-center">
+            <span className="text-canvas-muted-fg">Wrap</span>
+            <SelectField value={currentWrap} options={FLEX_WRAP_SELECT} onChange={setWrap} />
+            <span className="text-canvas-muted-fg">Content</span>
+            <SelectField value={h.get("content")} options={ALIGN_CONTENT_SELECT} onChange={v => h.set("content", v)} />
+          </div>
+
+          {parentIsFlex && (
+            <>
+              <div className="pt-1 text-[11px] font-medium text-canvas-fg">As item</div>
+              <div className="grid grid-cols-[auto_1fr] gap-2 items-center">
+                <span className="text-canvas-muted-fg">Flex</span>
+                <ScrubField value={currentFlex}
+                  presets={FLEX_ITEM_PRESETS.map(p => ({ value: p.value, label: p.label ?? p.value }))}
+                  onChange={setFlex} placeholder="default" title="Flex shorthand" />
+                <span className="text-canvas-muted-fg">Self</span>
+                <SelectField value={h.get("self")} options={ALIGN_SELECT} onChange={v => h.set("self", v)} />
+                <span className="text-canvas-muted-fg">Order</span>
+                <ScrubField
+                  value={h.get("order")}
+                  onChange={v => h.set("order", v)}
+                  placeholder="0"
+                />
+              </div>
+            </>
+          )}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
@@ -561,7 +589,9 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
   // Computed-style placeholders: let the user see the real current value
   // even when no Tailwind class is set.
   const cs = sel.element ? getCachedStyle(sel.element) : null;
-  const phPx = (v: string | undefined, fallback = "0") => {
+  // Always returns a px-suffixed string ("0px", "16px", "auto", "none") so
+  // placeholders match the user-facing display in length-shaped ScrubFields.
+  const phPx = (v: string | undefined, fallback = "0px") => {
     if (!cs || v === undefined) return fallback;
     const n = parseFloat(v);
     return Number.isFinite(n) && n !== 0 ? `${Math.round(n)}px` : fallback;
@@ -590,58 +620,36 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
       h.sendPrefixed({ type: "modify-class", source: sel.source!, add: [cls] });
     }
   };
-  const rotateBy90 = () => {
-    const cur = h.get("rotate");
-    const n = parseInt(cur, 10) || 0;
-    const next = (n + 90) % 360;
-    h.set("rotate", next === 0 ? "" : String(next));
-  };
+  const sizePresets = SIZE_PRESETS.map(p => ({ value: p.value, label: p.label }));
 
   return (
     <Section title="Layout" defaultOpen>
-      <div className="grid grid-cols-3 gap-1.5">
-        <CompactField icon="X">
-          <ValueInput value={h.get("translate-x")} strategy={LENGTH} placeholder="0"
-            onChange={v => h.set("translate-x", v)} />
-        </CompactField>
-        <CompactField icon="Y">
-          <ValueInput value={h.get("translate-y")} strategy={LENGTH} placeholder="0"
-            onChange={v => h.set("translate-y", v)} />
-        </CompactField>
-        <CompactField icon={<AngleGlyph />}>
-          <ValueInput value={h.get("rotate")} strategy={ANGLE} placeholder="0°"
-            onChange={v => h.set("rotate", v)} />
-        </CompactField>
-      </div>
-      <div className="grid grid-cols-[1fr_1fr_auto] gap-1.5 mt-1.5">
-        <CompactField icon="W">
-          <ValueInput value={h.get("w")} presets={SIZE_PRESETS} strategy={LENGTH}
-            placeholder={phPx(cs?.width, "auto")}
-            onChange={v => h.set("w", v)} />
-        </CompactField>
-        <CompactField icon="H">
-          <ValueInput value={h.get("h")} presets={SIZE_PRESETS} strategy={LENGTH}
-            placeholder={phPx(cs?.height, "auto")}
-            onChange={v => h.set("h", v)} />
-        </CompactField>
+      {/* W · H · mirror */}
+      <div className="grid grid-cols-[1fr_1fr_auto] gap-1.5">
+        <ScrubField label="W" presets={sizePresets} {...lengthProps(h, "w", phPx(cs?.width, "auto"))} />
+        <ScrubField label="H" presets={sizePresets} {...lengthProps(h, "h", phPx(cs?.height, "auto"))} />
         <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="icon" className="size-6 text-canvas-muted-fg"
-            title="Rotate 90°" onClick={rotateBy90}>
-            <RotateGlyph />
-          </Button>
           <Button variant="ghost" size="icon"
             aria-pressed={flipX}
-            className={cn("size-6", flipX ? "text-canvas-accent" : "text-canvas-muted-fg")}
+            className={cn("size-7", flipX ? "text-canvas-accent" : "text-canvas-muted-fg")}
             title="Flip horizontal" onClick={() => toggleScale("-scale-x-100")}>
-            <FlipHGlyph />
+            <FlipHorizontal size={12} />
           </Button>
           <Button variant="ghost" size="icon"
             aria-pressed={flipY}
-            className={cn("size-6", flipY ? "text-canvas-accent" : "text-canvas-muted-fg")}
+            className={cn("size-7", flipY ? "text-canvas-accent" : "text-canvas-muted-fg")}
             title="Flip vertical" onClick={() => toggleScale("-scale-y-100")}>
-            <FlipVGlyph />
+            <FlipVertical size={12} />
           </Button>
         </div>
+      </div>
+
+      {/* Min/Max W·H — heavily-used Tailwind constraints, paired with W/H */}
+      <div className="grid grid-cols-2 gap-1.5">
+        <ScrubField label="MIN W" presets={sizePresets} {...lengthProps(h, "min-w", phPx(cs?.minWidth, "0"))} />
+        <ScrubField label="MAX W" presets={sizePresets} {...lengthProps(h, "max-w", phPx(cs?.maxWidth, "none"))} />
+        <ScrubField label="MIN H" presets={sizePresets} {...lengthProps(h, "min-h", phPx(cs?.minHeight, "0"))} />
+        <ScrubField label="MAX H" presets={sizePresets} {...lengthProps(h, "max-h", phPx(cs?.maxHeight, "none"))} />
       </div>
 
       <SubLabel>Display Mode</SubLabel>
@@ -664,19 +672,25 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
         }}
       />
       {isFlex && (
-        <div style={{ display: "grid", gap: 6, marginTop: 10 }}>
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-canvas-fg">Flex</span>
-            <Button variant="ghost" size="icon" className="size-5 text-canvas-muted-fg"
-              title="Remove flex"
-              onClick={() => {
-                const actualFlex = h.actual("flex") || "flex";
-                h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: [actualFlex] });
-              }}>
-              <MinusGlyph />
-            </Button>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, alignItems: "stretch" }}>
+        <div className="grid gap-1.5 mt-2.5">
+          <Subheader
+            actions={
+              <Button variant="ghost" size="icon" className="size-6 text-canvas-muted-fg hover:text-canvas-fg"
+                title="Remove flex"
+                onClick={() => {
+                  const actualFlex = h.actual("flex") || "flex";
+                  h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: [actualFlex] });
+                }}>
+                <Minus size={12} />
+              </Button>
+            }
+          >
+            Flex
+          </Subheader>
+          {/* Row 1: direction | alignment (rowspan 2) | sliders.
+              Row 2: gap (col 1). Alignment picker fills col 2 across both rows
+              so its 3x3 grid has enough height without squishing. */}
+          <div className="grid grid-cols-[1fr_1fr_auto] gap-1.5 items-center">
             <ToggleGroup
               value={flexDirVal.startsWith("col") ? "col" : "row"}
               items={[
@@ -692,495 +706,319 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
                 });
               }}
             />
-            <AlignmentPicker
-              direction={flexDirVal.startsWith("col") ? "col" : "row"}
-              justify={h.get("justify")}
-              align={h.get("items")}
-              onChange={(j, a) => {
-                h.set("justify", j);
-                h.set("items", a);
-              }}
+            <div className="row-span-2 self-stretch">
+              <AlignmentPicker
+                direction={flexDirVal.startsWith("col") ? "col" : "row"}
+                justify={h.get("justify")}
+                align={h.get("items")}
+                onChange={(j, a) => {
+                  h.set("justify", j);
+                  h.set("items", a);
+                }}
+              />
+            </div>
+            <FlexAdvancedPopover h={h} sel={sel} />
+            <ScrubField
+              label={flexDirVal.startsWith("col") ? <GapGlyphCol /> : <GapGlyphRow />}
+              title="Gap"
+              {...lengthProps(h, "gap", phPx(cs?.gap, "0"))}
             />
+            <div />
           </div>
-          <CompactField icon={<GapGlyph />}>
-            <ValueInput value={h.get("gap")} presets={INSET_PRESETS} strategy={LENGTH}
-              onChange={v => h.set("gap", v)}
-              placeholder={phPx(cs?.gap, "0")}
-            />
-          </CompactField>
-          <FlexPadding h={h} sel={sel} cs={cs} />
+          <FlexPadding h={h} sel={sel} cs={cs} phPx={phPx} />
           <ClipContent h={h} sel={sel} />
         </div>
       )}
       {isGrid && (
-        <>
-          <PropRow label="Columns">
-            <ValueInput value={h.get("grid-cols")} presets={GRID_COLS_PRESETS} strategy={GRID_COLS} onChange={v => h.set("grid-cols", v)} />
-          </PropRow>
-          <PropRow label="Gap">
-            <ValueInput value={h.get("gap")} presets={INSET_PRESETS} strategy={LENGTH}
-              onChange={v => h.set("gap", v)}
-              placeholder={phPx(cs?.gap, "0")}
-            />
-          </PropRow>
-        </>
-      )}
-      <PropRow label="Position">
-        <CustomSelect value={positionType} options={POSITION_OPTIONS} onChange={v => {
-          const oldActual = ["relative","absolute","fixed","sticky"].map(c => h.actual(c)).filter(Boolean) as string[];
-          h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [v] : undefined });
-        }} />
-      </PropRow>
-      {isPositioned && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-          <PropRow label="Top"><ValueInput value={h.get("top")} presets={INSET_PRESETS} strategy={LENGTH} onChange={v => setLengthClass("top", v)} placeholder={phInset("top")} /></PropRow>
-          <PropRow label="Right"><ValueInput value={h.get("right")} presets={INSET_PRESETS} strategy={LENGTH} onChange={v => setLengthClass("right", v)} placeholder={phInset("right")} /></PropRow>
-          <PropRow label="Bottom"><ValueInput value={h.get("bottom")} presets={INSET_PRESETS} strategy={LENGTH} onChange={v => setLengthClass("bottom", v)} placeholder={phInset("bottom")} /></PropRow>
-          <PropRow label="Left"><ValueInput value={h.get("left")} presets={INSET_PRESETS} strategy={LENGTH} onChange={v => setLengthClass("left", v)} placeholder={phInset("left")} /></PropRow>
+        <div className="grid grid-cols-2 gap-1.5">
+          <ScrubField label="Cols" value={h.get("grid-cols")}
+            presets={GRID_COLS_PRESETS.map(p => ({ value: p.value, label: p.label ?? p.value }))}
+            onChange={v => h.set("grid-cols", v)} placeholder="1" title="Grid columns" />
+          <ScrubField label="Gap"
+            presets={INSET_PRESETS.map(p => ({ value: p.value, label: p.label ?? p.value }))}
+            title="Gap"
+            {...lengthProps(h, "gap", phPx(cs?.gap, "0"))}
+          />
         </div>
       )}
-      <PropRow label="Z-Index">
-        <ValueInput value={h.get("z")} presets={Z_INDEX_PRESETS} strategy={INTEGER} onChange={v => h.set("z", v)} placeholder={cs?.zIndex && cs.zIndex !== "auto" ? cs.zIndex : "auto"} />
-      </PropRow>
-      <PropRow label="Overflow">
-        <CustomSelect value={h.get("overflow")} options={OVERFLOW_OPTIONS} onChange={v => h.set("overflow", v)} />
-      </PropRow>
-      <PropRow label="Aspect">
-        <ValueInput value={h.get("aspect")} presets={ASPECT_RATIO_PRESETS} strategy={KEYWORD}
-          onChange={v => h.set("aspect", v)} placeholder="auto" />
-      </PropRow>
-      <PropRow label="Object fit">
-        <CustomSelect
+      <div className="grid grid-cols-[1fr_1fr] gap-1.5">
+        <SelectField value={positionType} options={POSITION_SELECT}
+          placeholder="Static"
+          title="Position"
+          onChange={v => {
+            const oldActual = ["relative","absolute","fixed","sticky"].map(c => h.actual(c)).filter(Boolean) as string[];
+            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [v] : undefined });
+          }}
+        />
+        <ScrubField label="Z" value={h.get("z")}
+          presets={Z_INDEX_PRESETS.map(p => ({ value: p.value, label: p.label ?? p.value }))}
+          onChange={v => h.set("z", v)}
+          placeholder={cs?.zIndex && cs.zIndex !== "auto" ? cs.zIndex : "auto"}
+          title="Z-Index"
+        />
+      </div>
+      {isPositioned && (
+        <div className="grid grid-cols-2 gap-1.5">
+          <ScrubField label="T" title="Top"    {...lengthProps(h, "top",    phInset("top"))} />
+          <ScrubField label="R" title="Right"  {...lengthProps(h, "right",  phInset("right"))} />
+          <ScrubField label="B" title="Bottom" {...lengthProps(h, "bottom", phInset("bottom"))} />
+          <ScrubField label="L" title="Left"   {...lengthProps(h, "left",   phInset("left"))} />
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-1.5">
+        <SelectField value={h.get("overflow")} options={OVERFLOW_SELECT}
+          placeholder="Visible" title="Overflow"
+          onChange={v => h.set("overflow", v)} />
+        <ScrubField label="AR" value={h.get("aspect")}
+          presets={ASPECT_RATIO_PRESETS.map(p => ({ value: p.value, label: p.label ?? p.value }))}
+          onChange={v => h.set("aspect", v)} placeholder="auto" title="Aspect ratio" />
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        <SelectField
           value={["contain","cover","fill","none","scale-down"].find(c => h.has(`object-${c}`)) || ""}
-          options={OBJECT_FIT_OPTIONS}
+          options={OBJECT_FIT_SELECT}
+          placeholder="Fill" title="Object fit"
           onChange={v => {
             const oldActual = ["contain","cover","fill","none","scale-down"].map(c => h.actual(`object-${c}`)).filter(Boolean) as string[];
             h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`object-${v}`] : undefined });
           }}
         />
-      </PropRow>
-      <PropRow label="Object pos">
-        <ValueInput value={h.get("object")} presets={OBJECT_POSITION_PRESETS} strategy={KEYWORD}
-          onChange={v => h.set("object", v)} placeholder="center" />
-      </PropRow>
-    </Section>
-  );
-});
-
-const SizeSection = React.memo(function SizeSection({ h }: { h: ClassHelpers }) {
-  const sel = useEditorStore(s => s.selectedElement);
-  const cs = sel?.element ? getCachedStyle(sel.element) : null;
-  const phPx = (v: string | undefined, fallback: string) => {
-    if (!cs || !v || v === "none") return fallback;
-    const n = parseFloat(v);
-    return Number.isFinite(n) ? `${Math.round(n)}px` : fallback;
-  };
-  return (
-    <Section title="Size" defaultOpen={false}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-        <PropRow label="W"><ValueInput value={h.get("w")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("w", v)} placeholder={phPx(cs?.width, "auto")} /></PropRow>
-        <PropRow label="H"><ValueInput value={h.get("h")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("h", v)} placeholder={phPx(cs?.height, "auto")} /></PropRow>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginTop: 4 }}>
-        <PropRow label="Min W"><ValueInput value={h.get("min-w")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("min-w", v)} placeholder={phPx(cs?.minWidth, "0")} /></PropRow>
-        <PropRow label="Max W"><ValueInput value={h.get("max-w")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("max-w", v)} placeholder={phPx(cs?.maxWidth, "none")} /></PropRow>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginTop: 4 }}>
-        <PropRow label="Min H"><ValueInput value={h.get("min-h")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("min-h", v)} placeholder={phPx(cs?.minHeight, "0")} /></PropRow>
-        <PropRow label="Max H"><ValueInput value={h.get("max-h")} presets={SIZE_PRESETS} strategy={LENGTH} onChange={v => h.set("max-h", v)} placeholder={phPx(cs?.maxHeight, "none")} /></PropRow>
+        <ScrubField label="Pos" value={h.get("object")}
+          presets={OBJECT_POSITION_PRESETS.map(p => ({ value: p.value, label: p.label ?? p.value }))}
+          onChange={v => h.set("object", v)} placeholder="center" title="Object position" />
       </div>
     </Section>
   );
 });
 
-const FlexItemSection = React.memo(function FlexItemSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
-  const parentIsFlex = sel.element?.parentElement ? getCachedStyle(sel.element.parentElement).display.includes("flex") : false;
-  if (!parentIsFlex) return null;
+// Padding uses h.get/h.set directly — values are non-negative.
+// Margin allows negatives, so we read/write through helpers that
+// inspect the element's classList for both `mx-N` and `-mx-N` forms.
+function readMargin(el: Element | null, axis: string): string {
+  if (!el) return "";
+  const classList = (typeof el.className === "string" ? el.className : (el.getAttribute?.("class") ?? ""))
+    .split(/\s+/).filter(Boolean);
+  for (const c of classList) {
+    const bare = c.replace(/^[a-z0-9]+:/, ""); // strip bp prefix
+    if (bare === `-${axis}` || bare.startsWith(`-${axis}-`)) {
+      return bare === `-${axis}` ? "" : `-${bare.slice(axis.length + 2)}`;
+    }
+    if (bare === axis || bare.startsWith(`${axis}-`)) {
+      return bare === axis ? "" : bare.slice(axis.length + 1);
+    }
+  }
+  return "";
+}
 
-  // "flex-*" classes are emitted as exact class names (presets contain
-  // "flex-1", "flex-auto"…). Typing a bare number emits e.g. "flex-2".
-  const flexPresetValues = FLEX_ITEM_PRESETS.map(o => o.value).filter(Boolean);
-  const currentFlex = h.findCls(flexPresetValues) || h.classes.find(c => /^flex-\d+$/.test(c) || /^flex-\[/.test(c)) || "";
-
-  return (
-    <Section title="Flex Item" defaultOpen>
-      <PropRow label="Flex">
-        <ValueInput
-          value={currentFlex}
-          presets={FLEX_ITEM_PRESETS}
-          strategy={KEYWORD}
-          onChange={v => {
-            const old = flexPresetValues.map(c => h.actual(c)).filter(Boolean) as string[];
-            const numericExisting = h.classes.filter(c => /^flex-\d+$/.test(c) || /^flex-\[/.test(c));
-            h.sendPrefixed({
-              type: "modify-class", source: sel.source!,
-              remove: [...old, ...numericExisting].length ? [...old, ...numericExisting] : undefined,
-              add: v ? [v.startsWith("flex-") ? v : `flex-${v}`] : undefined,
-            });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Self">
-        <CustomSelect value={h.get("self")} options={ALIGN_OPTIONS} onChange={v => h.set("self", v)} />
-      </PropRow>
-      <PropRow label="Order">
-        <ValueInput value={h.get("order")} strategy={INTEGER} onChange={v => h.set("order", v)} placeholder="0" />
-      </PropRow>
-    </Section>
-  );
-});
-
-// ── Spacing visualizer (combined padding + margin) ──
-//
-// Figma-style box-in-box diagram: outer rect = margin, inner rect = padding.
-// Each of the 8 sides gets a compact ValueInput straddling the matching
-// border. Click-and-drag the input wrapper to scrub; type any CSS value
-// (27, 27px, 1.5rem, 50%, -12px, calc(...)) directly.
-//
-// Geometry note: the four "middle-row" inputs (ML/PL/PR/MR) are centered
-// ON the vertical borders, so they hang off by INPUT_W/2 on each side.
-// That means (gap between outer border and inner border) MUST be ≥ INPUT_W
-// or ML and PL collide, and PR and MR collide. The numbers below satisfy
-// that with room to spare.
-const SPACING_INPUT_W = 44;
-const SPACING_INPUT_H = 20;
-const OUTER_X = 24;
-const OUTER_Y = 24;
-const OUTER_W = 208;
-const OUTER_H = 132;
-const OUTER_RIGHT = OUTER_X + OUTER_W;
-const OUTER_BOTTOM = OUTER_Y + OUTER_H;
-// Inner box: leaves a 60-px margin strip on each side (OUTER_W - INNER_W)/2 ≥ INPUT_W.
-const INNER_W = 88;
-const INNER_H = 50;
-const INNER_X = OUTER_X + (OUTER_W - INNER_W) / 2;
-const INNER_Y = OUTER_Y + (OUTER_H - INNER_H) / 2;
-const INNER_RIGHT = INNER_X + INNER_W;
-const INNER_BOTTOM = INNER_Y + INNER_H;
-const SPACING_CONTAINER_W = OUTER_RIGHT + OUTER_X;            // 256 — symmetric
-const SPACING_CONTAINER_H = OUTER_BOTTOM + OUTER_Y;            // 180
-
-// Centered input positions (top-left x/y of the input element).
-const pos = {
-  mt: { x: (OUTER_X + OUTER_RIGHT) / 2 - SPACING_INPUT_W / 2, y: OUTER_Y - SPACING_INPUT_H / 2 },
-  mr: { x: OUTER_RIGHT - SPACING_INPUT_W / 2,                 y: (OUTER_Y + OUTER_BOTTOM) / 2 - SPACING_INPUT_H / 2 },
-  mb: { x: (OUTER_X + OUTER_RIGHT) / 2 - SPACING_INPUT_W / 2, y: OUTER_BOTTOM - SPACING_INPUT_H / 2 },
-  ml: { x: OUTER_X - SPACING_INPUT_W / 2,                      y: (OUTER_Y + OUTER_BOTTOM) / 2 - SPACING_INPUT_H / 2 },
-  pt: { x: (INNER_X + INNER_RIGHT) / 2 - SPACING_INPUT_W / 2, y: INNER_Y - SPACING_INPUT_H / 2 },
-  pr: { x: INNER_RIGHT - SPACING_INPUT_W / 2,                  y: (INNER_Y + INNER_BOTTOM) / 2 - SPACING_INPUT_H / 2 },
-  pb: { x: (INNER_X + INNER_RIGHT) / 2 - SPACING_INPUT_W / 2, y: INNER_BOTTOM - SPACING_INPUT_H / 2 },
-  pl: { x: INNER_X - SPACING_INPUT_W / 2,                      y: (INNER_Y + INNER_BOTTOM) / 2 - SPACING_INPUT_H / 2 },
-} as const;
-
-function SpacingInput({
-  x, y, value, onScrubStart, onChange, initialPx, title,
-}: {
-  x: number; y: number; value: string; initialPx: number;
-  onScrubStart: (startPx: number) => (ev: MouseEvent, shift: boolean) => number;
-  onChange: (v: string) => void;
-  title?: string;
-}) {
-  // Placeholder reflects the computed px so the user can always see the
-  // current value even when no Tailwind class is set (e.g. browser reset
-  // or inherited spacing from a parent rule).
-  const placeholder = initialPx > 0 ? `${initialPx}px` : (initialPx === 0 ? "0" : "auto");
-  const startRef = useRef({ x: 0, base: 0 });
-  const handleLabelMouseDown = useCallback((e: React.MouseEvent) => {
-    // Only scrub when the user drags on the edge "grip" area — clicking the
-    // input itself should focus it for typing. We read the mousedown; if
-    // movement exceeds a threshold before mouseup, we treat it as a scrub.
-    if ((e.target as HTMLElement).tagName === "INPUT") return;
-    e.preventDefault();
-    startRef.current = { x: e.clientX, base: initialPx };
-    let moved = false;
-
-    const updater = onScrubStart(initialPx);
-    const handleMove = (ev: MouseEvent) => {
-      if (!moved && Math.abs(ev.clientX - startRef.current.x) < 2) return;
-      moved = true;
-      document.body.style.cursor = "ew-resize";
-      updater(ev, ev.shiftKey);
-    };
-    const handleUp = (ev: MouseEvent) => {
-      document.body.style.cursor = "";
-      if (moved) {
-        const px = updater(ev, ev.shiftKey);
-        onChange(pxToTwScale(px));
-      }
-      document.removeEventListener("mousemove", handleMove);
-      document.removeEventListener("mouseup", handleUp);
-    };
-    document.addEventListener("mousemove", handleMove);
-    document.addEventListener("mouseup", handleUp);
-  }, [initialPx, onScrubStart, onChange]);
-
-  return (
-    <div
-      onMouseDown={handleLabelMouseDown}
-      title={title}
-      style={{
-        position: "absolute",
-        left: x,
-        top: y,
-        width: SPACING_INPUT_W,
-        height: SPACING_INPUT_H,
-        cursor: "ew-resize",
-      }}
-    >
-      <ValueInput
-        value={value}
-        presets={INSET_PRESETS}
-        onChange={onChange}
-        strategy={LENGTH}
-        placeholder={placeholder}
-        height={SPACING_INPUT_H}
-        align="center"
-        fontSize={10}
-      />
-    </div>
-  );
+function findMarginActuals(el: Element | null, axis: string): string[] {
+  if (!el) return [];
+  const classList = (typeof el.className === "string" ? el.className : (el.getAttribute?.("class") ?? ""))
+    .split(/\s+/).filter(Boolean);
+  return classList.filter(c => {
+    const bare = c.replace(/^[a-z0-9]+:/, "");
+    return bare === axis || bare.startsWith(`${axis}-`)
+      || bare === `-${axis}` || bare.startsWith(`-${axis}-`);
+  });
 }
 
 const SpacingSection = React.memo(function SpacingSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
   const el = sel.element;
   const cs = el ? getCachedStyle(el) : null;
 
-  const currentPx = (prefix: keyof typeof pos): number => {
-    if (!cs) return twValueToPx(h.get(prefix));
-    switch (prefix) {
-      case "mt": return parseFloat(cs.marginTop) || 0;
-      case "mr": return parseFloat(cs.marginRight) || 0;
-      case "mb": return parseFloat(cs.marginBottom) || 0;
-      case "ml": return parseFloat(cs.marginLeft) || 0;
-      case "pt": return parseFloat(cs.paddingTop) || 0;
-      case "pr": return parseFloat(cs.paddingRight) || 0;
-      case "pb": return parseFloat(cs.paddingBottom) || 0;
-      case "pl": return parseFloat(cs.paddingLeft) || 0;
+  // Padding values
+  const px = h.get("px"), py = h.get("py");
+  const pt = h.get("pt"), pr = h.get("pr"), pb = h.get("pb"), pl = h.get("pl");
+  const padHasIndividual = !!(pt || pr || pb || pl);
+  const [padMode, setPadMode] = useState<LinkMode>(padHasIndividual ? "split" : "linked");
+
+  // Margin values
+  const mx = readMargin(el, "mx"), my = readMargin(el, "my");
+  const mt = readMargin(el, "mt"), mr = readMargin(el, "mr"), mb = readMargin(el, "mb"), ml = readMargin(el, "ml");
+  const marHasIndividual = !!(mt || mr || mb || ml);
+  const [marMode, setMarMode] = useState<LinkMode>(marHasIndividual ? "split" : "linked");
+
+  const writeMargin = useCallback((axis: string, v: string) => {
+    if (!sel.source) return;
+    const remove = findMarginActuals(el, axis);
+    const trimmed = v.trim();
+    if (!trimmed) {
+      if (remove.length) h.sendPrefixed({ type: "modify-class", source: sel.source, remove });
+      return;
     }
+    const n = parseFloat(trimmed);
+    const isNumericNeg = Number.isFinite(n) && n < 0 && /^-?\d+(\.\d+)?$/.test(trimmed);
+    const cls = isNumericNeg ? `-${axis}-${Math.abs(n)}` : `${axis}-${trimmed}`;
+    h.sendPrefixed({
+      type: "modify-class",
+      source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add: [cls],
+    });
+  }, [el, sel.source, h]);
+
+  const phPx = (raw: string | undefined, fallback = "0px") => {
+    if (!raw) return fallback;
+    const n = parseFloat(raw);
+    return Number.isFinite(n) && n !== 0 ? `${Math.round(n)}px` : fallback;
   };
 
-  const livePreview = useCallback((prefix: string, px: number) => {
-    const cssProp = PREFIX_TO_CSS[prefix];
-    if (el && cssProp) setStyleProp(el, cssProp, px + "px");
-  }, [el]);
-
-  const commitCls = useCallback((prefix: string, v: string) => {
-    h.set(prefix, v, false, true);
-    const cssProp = PREFIX_TO_CSS[prefix];
-    if (el && cssProp) {
-      const observer = new MutationObserver(() => {
-        setStyleProp(el, cssProp, "");
-        observer.disconnect();
-        clearTimeout(fallback);
-      });
-      observer.observe(el, { attributes: true, attributeFilter: ["class"] });
-      const fallback = setTimeout(() => { setStyleProp(el, cssProp, ""); observer.disconnect(); }, 5000);
-    }
-  }, [el, h]);
-
-  // Build a scrub-updater closure per-side. Returns the new px so the caller
-  // can emit both a live preview during move AND a final commit on mouseup.
-  const makeScrub = useCallback((prefix: string) => (startPx: number) => {
-    let startX: number | null = null;
-    return (ev: MouseEvent, shift: boolean) => {
-      if (startX === null) startX = ev.clientX;
-      const dx = ev.clientX - startX;
-      const step = shift ? 10 : 1;
-      const next = Math.max(0, Math.round(startPx + dx * step * 0.5));
-      livePreview(prefix, next);
-      return next;
-    };
-  }, [livePreview]);
+  // Expand when any padding or margin token is present on the element —
+  // otherwise this is just clutter for a freshly-selected element.
+  const hasSpacing = !!(
+    h.get("p") || h.get("px") || h.get("py") ||
+    h.get("pt") || h.get("pr") || h.get("pb") || h.get("pl") ||
+    mx || my || mt || mr || mb || ml
+  );
 
   return (
-    <Section title="Spacing" defaultOpen>
-      {/* Legend row — colored dots + labels above the visualizer so we don't
-          have to cram "MARGIN" / "PADDING" text inside the tiny inner box. */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 12,
-        padding: "0 4px 4px", fontSize: 9, color: C.fgDim,
-        fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase",
-      }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 2, background: "#fe7338" }} />
-          Margin
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 2, background: "#24ca71" }} />
-          Padding
-        </span>
-      </div>
-      <div style={{ position: "relative", width: SPACING_CONTAINER_W, height: SPACING_CONTAINER_H, margin: "0 auto" }}>
-        {/* Margin box */}
-        <div style={{
-          position: "absolute",
-          left: OUTER_X, top: OUTER_Y,
-          width: OUTER_W, height: OUTER_H,
-          border: "1px solid rgba(254, 115, 56, 0.45)", borderRadius: 6,
-          background: "rgba(254, 115, 56, 0.05)",
-        }} />
-        {/* Padding box */}
-        <div style={{
-          position: "absolute",
-          left: INNER_X, top: INNER_Y,
-          width: INNER_W, height: INNER_H,
-          border: "1px solid rgba(36, 202, 113, 0.5)", borderRadius: 5,
-          background: "rgba(36, 202, 113, 0.07)",
-        }} />
+    <Section title="Spacing" defaultOpen autoOpenKey={sel.element} hasValue={hasSpacing}>
+      {/* Padding */}
+      <Subheader>Padding</Subheader>
+      <LinkedInput
+        mode={padMode}
+        onModeChange={setPadMode}
+        toggleTitle={padMode === "linked" ? "Individual sides" : "Linked sides"}
+        splitIcon={<EdgesGlyph mode="linked" />}
+        linkIcon={<EdgesGlyph mode="split" />}
+      >
+        {mode => mode === "linked" ? (
+          <div className="grid grid-cols-2 gap-1.5">
+            <ScrubField label="PX" {...lengthProps(h, "px", phPx(cs?.paddingLeft))} />
+            <ScrubField label="PY" {...lengthProps(h, "py", phPx(cs?.paddingTop))} />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-1.5">
+            <ScrubField label="L" {...lengthProps(h, "pl", phPx(cs?.paddingLeft))} />
+            <ScrubField label="T" {...lengthProps(h, "pt", phPx(cs?.paddingTop))} />
+            <ScrubField label="R" {...lengthProps(h, "pr", phPx(cs?.paddingRight))} />
+            <ScrubField label="B" {...lengthProps(h, "pb", phPx(cs?.paddingBottom))} />
+          </div>
+        )}
+      </LinkedInput>
 
-        {/* 8 inputs */}
-        {(["mt","mr","mb","ml","pt","pr","pb","pl"] as const).map(prefix => (
-          <SpacingInput
-            key={prefix}
-            x={pos[prefix].x}
-            y={pos[prefix].y}
-            value={h.get(prefix)}
-            initialPx={currentPx(prefix)}
-            title={`Drag to scrub (shift ×10); type any value — px, rem, %, calc(), negatives.`}
-            onScrubStart={makeScrub(prefix)}
-            onChange={v => commitCls(prefix, v)}
-          />
-        ))}
-      </div>
+      {/* Margin (supports negatives) — `writeMargin` handles `-mx-N` form. */}
+      <Subheader>Margin</Subheader>
+      <LinkedInput
+        mode={marMode}
+        onModeChange={setMarMode}
+        toggleTitle={marMode === "linked" ? "Individual sides" : "Linked sides"}
+        splitIcon={<EdgesGlyph mode="linked" />}
+        linkIcon={<EdgesGlyph mode="split" />}
+      >
+        {mode => mode === "linked" ? (
+          <div className="grid grid-cols-2 gap-1.5">
+            <ScrubField label="MX" value={lengthDisplay(mx)} placeholder={phPx(cs?.marginLeft)}
+              onChange={v => writeMargin("mx", lengthToTailwind(v))} />
+            <ScrubField label="MY" value={lengthDisplay(my)} placeholder={phPx(cs?.marginTop)}
+              onChange={v => writeMargin("my", lengthToTailwind(v))} />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-1.5">
+            <ScrubField label="L" value={lengthDisplay(ml)} placeholder={phPx(cs?.marginLeft)}
+              onChange={v => writeMargin("ml", lengthToTailwind(v))} />
+            <ScrubField label="T" value={lengthDisplay(mt)} placeholder={phPx(cs?.marginTop)}
+              onChange={v => writeMargin("mt", lengthToTailwind(v))} />
+            <ScrubField label="R" value={lengthDisplay(mr)} placeholder={phPx(cs?.marginRight)}
+              onChange={v => writeMargin("mr", lengthToTailwind(v))} />
+            <ScrubField label="B" value={lengthDisplay(mb)} placeholder={phPx(cs?.marginBottom)}
+              onChange={v => writeMargin("mb", lengthToTailwind(v))} />
+          </div>
+        )}
+      </LinkedInput>
     </Section>
   );
 });
 
-const TypographySection = React.memo(function TypographySection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
-  const cs = sel.element ? getCachedStyle(sel.element) : null;
-  const computedFont = cs?.fontFamily?.split(",")[0]?.replace(/['"]/g, "").trim() || "";
-
-  const setTextAlign = useCallback((v: string) => {
-    const map: Record<string, string> = { left: "text-left", center: "text-center", right: "text-right" };
-    const remove = ["text-left", "text-center", "text-right"].map(c => h.actual(c)).filter(Boolean) as string[];
-    const add = map[v] ? [h.prefixCls(map[v])] : [];
-    if (sel.source) h.trackedSendMutation({ type: "modify-class", source: sel.source, remove: remove.length ? remove : undefined, add: add.length ? add : undefined });
-  }, [h, sel.source]);
-
+// Tiny 2-state edges glyph: filled inner square (linked) vs vertical+horizontal grid (split).
+function EdgesGlyph({ mode }: { mode: LinkMode }) {
   return (
-    <Section title="Typography" defaultOpen>
-      <PropRow label="Font">
-        <span style={{ fontSize: 10, fontFamily: C.mono, color: C.fgDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
-          {computedFont || "system-ui"}
-        </span>
-      </PropRow>
-      <SliderValueInput
-        label="Size"
-        value={h.get("text")}
-        sliderValue={cs ? Math.round(parseFloat(cs.fontSize) || 16) : 16}
-        min={8} max={96} step={1}
-        presets={FONT_SIZE_PRESETS}
-        strategy={LENGTH}
-        encode={n => `[${n}px]`}
-        onLivePreview={v => { if (sel.element) sel.element.style.fontSize = v + "px"; }}
-        onChange={v => { h.set("text", v, false, true); if (sel.element) clearInlineAfterClassUpdate(sel.element, "fontSize"); }}
-        placeholder={cs ? `${Math.round(parseFloat(cs.fontSize) || 16)}px` : "inherit"}
-      />
-      <SliderValueInput
-        label="Weight"
-        value={h.get("font")}
-        sliderValue={cs ? (parseInt(cs.fontWeight, 10) || 400) : 400}
-        min={100} max={900} step={100}
-        presets={FONT_WEIGHT_PRESETS}
-        strategy={KEYWORD}
-        encode={n => `[${n}]`}
-        onLivePreview={v => { if (sel.element) sel.element.style.fontWeight = String(v); }}
-        onChange={v => { h.set("font", v, false, true); if (sel.element) clearInlineAfterClassUpdate(sel.element, "fontWeight"); }}
-        placeholder={cs ? String(parseInt(cs.fontWeight, 10) || 400) : "inherit"}
-      />
-      <SliderValueInput
-        label="Leading"
-        value={h.get("leading")}
-        sliderValue={cs ? Math.round((parseFloat(cs.lineHeight) / (parseFloat(cs.fontSize) || 16)) * 100) || 150 : 150}
-        min={80} max={300} step={5}
-        presets={LEADING_PRESETS}
-        strategy={KEYWORD}
-        encode={n => `[${(n / 100).toFixed(2).replace(/\.?0+$/, "")}]`}
-        onLivePreview={v => { if (sel.element) sel.element.style.lineHeight = String(v / 100); }}
-        onChange={v => { h.set("leading", v); if (sel.element) clearInlineAfterClassUpdate(sel.element, "lineHeight"); }}
-        placeholder={cs ? `${Math.round((parseFloat(cs.lineHeight) / (parseFloat(cs.fontSize) || 16)) * 100) || 150}%` : "normal"}
-        suffix="%"
-      />
-      <SliderValueInput
-        label="Tracking"
-        value={h.get("tracking")}
-        sliderValue={cs ? Math.round((parseFloat(cs.letterSpacing) || 0) * 1000) / 1000 : 0}
-        min={-5} max={10} step={1}
-        presets={TRACKING_PRESETS}
-        strategy={KEYWORD}
-        encode={n => `[${(n / 100).toFixed(3).replace(/\.?0+$/, "")}em]`}
-        onLivePreview={v => { if (sel.element) sel.element.style.letterSpacing = `${v / 100}em`; }}
-        onChange={v => { h.set("tracking", v); if (sel.element) clearInlineAfterClassUpdate(sel.element, "letterSpacing"); }}
-        placeholder={cs ? `${(parseFloat(cs.letterSpacing) || 0).toFixed(2)}px` : "normal"}
-      />
-      <PropRow label="Style">
-        <CustomSelect value={h.has("italic") ? "italic" : h.has("not-italic") ? "not-italic" : ""} options={FONT_STYLE_OPTIONS} onChange={v => {
-          const oldActual = ["italic","not-italic"].map(c => h.actual(c)).filter(Boolean) as string[];
-          h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [v] : undefined });
-        }} />
-      </PropRow>
-      <PropRow label="Transform">
-        <CustomSelect
-          value={["uppercase","lowercase","capitalize","normal-case"].find(c => h.has(c)) || ""}
-          options={TEXT_TRANSFORM_OPTIONS}
-          onChange={v => {
-            const oldActual = ["uppercase","lowercase","capitalize","normal-case"].map(c => h.actual(c)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [v] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Decoration">
-        <CustomSelect
-          value={["underline","overline","line-through","no-underline"].find(c => h.has(c)) || ""}
-          options={TEXT_DECORATION_LINE_OPTIONS}
-          onChange={v => {
-            const oldActual = ["underline","overline","line-through","no-underline"].map(c => h.actual(c)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [v] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Overflow">
-        <CustomSelect
-          value={h.has("truncate") ? "truncate" : ["text-ellipsis","text-clip"].map(c => c.replace("text-","")).find(c => h.has(`text-${c}`)) || ""}
-          options={TEXT_OVERFLOW_OPTIONS}
-          onChange={v => {
-            const oldActual = ["truncate","text-ellipsis","text-clip"].map(c => h.actual(c)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v === "truncate" ? ["truncate"] : v ? [`text-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <SubLabel>Text Align</SubLabel>
-      <ToggleGroup
-        value={h.has("text-left") ? "left" : h.has("text-center") ? "center" : h.has("text-right") ? "right" : ""}
-        items={[
-          { value: "left", icon: <AlignLeft size={14} />, label: "Left", title: "Text Align: Left" },
-          { value: "center", icon: <AlignCenter size={14} />, label: "Center", title: "Text Align: Center" },
-          { value: "right", icon: <AlignRight size={14} />, label: "Right", title: "Text Align: Right" },
-        ]}
-        showLabels
-        onChange={setTextAlign}
-      />
-    </Section>
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" aria-hidden>
+      <rect x="0.5" y="0.5" width="11" height="11" rx="1.5" />
+      {mode === "linked"
+        ? <rect x="3.5" y="3.5" width="5" height="5" />
+        : <>
+            <line x1="3.5" y1="1" x2="3.5" y2="11" />
+            <line x1="8.5" y1="1" x2="8.5" y2="11" />
+            <line x1="1" y1="3.5" x2="11" y2="3.5" />
+            <line x1="1" y1="8.5" x2="11" y2="8.5" />
+          </>}
+    </svg>
   );
-});
+}
 
-const TextColorSection = React.memo(function TextColorSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
-  const inlineColor = sel.element && sourceStyleHasProperty(sel.element, "color");
-  const warning = inlineColor ? "color is set in style={{ ... }} — edit the source or remove the inline declaration" : undefined;
-  return (
-    <Section title="Text" defaultOpen={false} warning={warning}>
-      <ColorPicker
-        label="Color"
-        prefix="text"
-        classes={h.classes}
-        disabledReason={warning}
-        onApply={(remove, add) => {
-          if (sel.source) h.sendPrefixed({ type: "modify-class", source: sel.source, remove, add });
-        }}
-      />
-    </Section>
-  );
-});
+// ── Fill tab state ────────────────────────────────────────────────────────
+// The Fill section supports three mutually exclusive types:
+//   - Solid:    bg-[<color>] arbitrary class (and inherits any bg-<name> set
+//               outside the overlay)
+//   - Gradient: bg-[linear-gradient(...)] / bg-[radial-gradient(...)]
+//   - Image:    bg-[url(...)]
+// Switching tabs keeps the in-progress editor state so flipping back and
+// forth doesn't reset — persistence lives in whatever bg-* class is on the
+// element.
+type FillType = "solid" | "gradient" | "image";
+
+const FILL_TYPE_OPTS = [
+  { value: "solid", label: "Solid" },
+  { value: "gradient", label: "Gradient" },
+  { value: "image", label: "Image" },
+];
+
+const BG_BRACKET_RE = /^bg-\[(.+)\]$/;
+
+function classifyFillClass(cls: string | undefined): FillType | null {
+  if (!cls) return null;
+  const m = cls.match(BG_BRACKET_RE);
+  if (!m) return "solid";
+  const v = m[1];
+  if (/^(linear|radial|conic)-gradient/i.test(v)) return "gradient";
+  if (/^url\(/i.test(v)) return "image";
+  return "solid";
+}
+
+// Tailwind arbitrary values treat `_` as a literal space, so we swap spaces
+// for underscores before writing the class.
+function cssToArbitrary(css: string): string {
+  return css.replace(/\s+/g, "_").replace(/,_/g, ",");
+}
+
+// When a hex exactly matches a named Tailwind color (as of the default
+// palette), prefer the named class — this is the "if it happens to map to
+// a Tailwind class" rule. Anything else rides the arbitrary-value track.
+const NAMED_BG_COLORS: Record<string, string> = {
+  "#FFFFFF": "white",
+  "#FFF":    "white",
+  "#000000": "black",
+  "#000":    "black",
+  "TRANSPARENT": "transparent",
+};
+
+function hexToNamedBgClass(color: string): string | null {
+  const normalized = color.trim().replace(/\s+/g, "").toUpperCase();
+  return NAMED_BG_COLORS[normalized] ?? null;
+}
+
+const DEFAULT_GRADIENT: GradientValue = {
+  type: "linear",
+  angle: 90,
+  stops: [
+    { position: 0, color: "#FFFFFF" },
+    { position: 100, color: "#BEBEBE" },
+  ],
+};
+
+const DEFAULT_IMAGE: ImageFillValue = {
+  url: "",
+  fit: "cover",
+  positionX: 50,
+  positionY: 50,
+  repeat: "no-repeat",
+};
+
+// Classes that describe background *behavior* (size, position, repeat) —
+// excluded from the "current fill value" lookup so they don't get nuked
+// when the user picks a new colour.
+const BG_MODIFIER_RE = /^bg-(cover|contain|auto|fixed|local|scroll|top|bottom|left|right|center|(bottom|top)-(right|left))$/;
+const BG_MODIFIER_PREFIX_RE = /^bg-(repeat|origin|clip)(-|$)/;
 
 const FillSection = React.memo(function FillSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
   const inlineBg = sel.element && (
@@ -1188,20 +1026,199 @@ const FillSection = React.memo(function FillSection({ h, sel }: { h: ClassHelper
     sourceStyleHasProperty(sel.element, "background")
   );
   const warning = inlineBg ? "background is set in style={{ ... }} — edit the source or remove the inline declaration" : undefined;
+  const cs = sel.element ? getCachedStyle(sel.element) : null;
+
+  const currentBg = h.classes.find(c => {
+    const bare = h.stripBpPrefix(c);
+    if (!bare.startsWith("bg-")) return false;
+    if (BG_MODIFIER_RE.test(bare)) return false;
+    if (BG_MODIFIER_PREFIX_RE.test(bare)) return false;
+    return true;
+  });
+
+  const detectedType = classifyFillClass(currentBg);
+  const [type, setType] = useState<FillType>(detectedType ?? "solid");
+  const [gradient, setGradient] = useState<GradientValue>(DEFAULT_GRADIENT);
+  const [image, setImage] = useState<ImageFillValue>(DEFAULT_IMAGE);
+  const [visible, setVisible] = useState(true);
+
+  // If the class list changes to a type we weren't on (e.g. undo brings
+  // back a gradient while we're looking at Solid), follow the class.
+  React.useEffect(() => {
+    if (detectedType && detectedType !== type) setType(detectedType);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detectedType]);
+
+  const removeCurrentBg = useCallback((): string[] | undefined => {
+    return currentBg ? [currentBg] : undefined;
+  }, [currentBg]);
+
+  const writeSolidHex = useCallback((color: string) => {
+    if (!sel.source) return;
+    const cleaned = color.replace(/\s+/g, "");
+    if (!cleaned) {
+      h.sendPrefixed({ type: "modify-class", source: sel.source, remove: removeCurrentBg() });
+      return;
+    }
+    const named = hexToNamedBgClass(cleaned);
+    const add = [named ? `bg-${named}` : `bg-[${cleaned}]`];
+    h.sendPrefixed({
+      type: "modify-class",
+      source: sel.source,
+      remove: removeCurrentBg(),
+      add,
+    });
+  }, [h, sel, removeCurrentBg]);
+
+  const writeGradient = useCallback((g: GradientValue) => {
+    if (!sel.source) return;
+    const css = gradientToCss(g);
+    h.sendPrefixed({
+      type: "modify-class",
+      source: sel.source,
+      remove: removeCurrentBg(),
+      add: [`bg-[${cssToArbitrary(css)}]`],
+    });
+  }, [h, sel, removeCurrentBg]);
+
+  const writeImage = useCallback((v: ImageFillValue) => {
+    if (!sel.source || !v.url) return;
+    const { backgroundImage } = imageFillToCss(v);
+    h.sendPrefixed({
+      type: "modify-class",
+      source: sel.source,
+      remove: removeCurrentBg(),
+      add: [`bg-[${cssToArbitrary(backgroundImage)}]`],
+    });
+  }, [h, sel, removeCurrentBg]);
+
+  const handleTypeChange = useCallback((next: string) => {
+    if (!next) return;
+    const nextType = next as FillType;
+    setType(nextType);
+    // Commit whatever the new tab has so the element visibly matches the
+    // tab we just switched to.
+    if (nextType === "gradient") writeGradient(gradient);
+    else if (nextType === "image" && image.url) writeImage(image);
+  }, [gradient, image, writeGradient, writeImage]);
+
+  const handleAddFill = useCallback(() => {
+    if (currentBg) return;
+    // Anti-flash: paint the fill inline now so the user sees it before HMR.
+    if (sel.element) setStyleProp(sel.element, "backgroundColor", "#FFFFFF");
+    writeSolidHex("#FFFFFF");
+    if (sel.element) clearInlineAfterClassUpdate(sel.element, "backgroundColor");
+  }, [currentBg, writeSolidHex, sel.element]);
+
+  const handleRemoveFill = useCallback(() => {
+    if (!sel.source) return;
+    // Strip every bg-* (and bg-modifier) class on the element, not just the
+    // one our type-detection settled on. Prevents stale color/gradient/image
+    // classes lingering after a remove when multiple bg-* tokens coexist.
+    const remove = h.classes.filter(c => {
+      const bare = h.stripBpPrefix(c);
+      return bare.startsWith("bg-");
+    });
+    if (!remove.length) return;
+    // Anti-flash: clear the visible bg before HMR lands.
+    if (sel.element) setStyleProp(sel.element, "background", "");
+    h.sendPrefixed({
+      type: "modify-class",
+      source: sel.source,
+      remove,
+    });
+    if (sel.element) clearInlineAfterClassUpdate(sel.element, "background");
+  }, [h, sel]);
+
+  // Visibility is a UI-only dim today. Multi-layer fills would back this
+  // with a persisted hidden flag.
+  const handleVisibilityToggle = useCallback(() => setVisible(v => !v), []);
+
+  const bracket = currentBg?.match(BG_BRACKET_RE)?.[1];
+  const solidValue = type === "solid"
+    ? ((bracket && !/^(linear|radial|conic)-gradient|^url\(/i.test(bracket) ? bracket : "")
+      || (cs?.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)" ? cs.backgroundColor : ""))
+    : "";
+
+  const hasFill = !!currentBg || (!!cs?.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)");
   return (
-    <Section title="Fill" defaultOpen warning={warning}>
-      <ColorPicker
-        label="BG"
-        prefix="bg"
-        classes={h.classes}
-        disabledReason={warning}
-        onApply={(remove, add) => {
-          if (sel.source) h.sendPrefixed({ type: "modify-class", source: sel.source, remove, add });
-        }}
-      />
+    <Section
+      title="Fill"
+      defaultOpen
+      autoOpenKey={sel.element}
+      hasValue={hasFill}
+      warning={warning}
+      headerAction={
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-5 w-5 text-canvas-muted-fg hover:text-canvas-fg"
+          title="Add fill"
+          onClick={handleAddFill}
+          disabled={!!warning}
+        >
+          <Plus size={12} />
+        </Button>
+      }
+    >
+      <div className={cn("flex flex-col gap-1.5", !visible && "opacity-50")}>
+        <div className="flex items-center gap-1">
+          <ToggleGroup
+            value={type}
+            items={FILL_TYPE_OPTS}
+            onChange={handleTypeChange}
+            showLabels
+            className="flex-1"
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-canvas-muted-fg hover:text-canvas-fg"
+            title={visible ? "Hide fill" : "Show fill"}
+            onClick={handleVisibilityToggle}
+          >
+            {visible ? <Eye size={12} /> : <EyeOff size={12} />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-canvas-muted-fg hover:text-canvas-fg"
+            title="Remove fill"
+            onClick={handleRemoveFill}
+            disabled={!!warning}
+          >
+            <Minus size={12} />
+          </Button>
+        </div>
+
+        {type === "solid" && (
+          <ColorField
+            value={solidValue}
+            onChange={writeSolidHex}
+            title="Fill color"
+          />
+        )}
+
+        {type === "gradient" && (
+          <GradientEditor
+            value={gradient}
+            onChange={(g) => { setGradient(g); writeGradient(g); }}
+          />
+        )}
+
+        {type === "image" && (
+          <ImageFillEditor
+            value={image}
+            onChange={(v) => { setImage(v); writeImage(v); }}
+          />
+        )}
+      </div>
     </Section>
   );
 });
+
+const BORDER_WIDTH_CLASS_RE = /^border(?:-(?:t|r|b|l|x|y))?(?:-(?:\d+|\[(?:-?\d+(?:\.\d+)?)(?:px|rem|em)?\]))?$/;
+const BORDER_STYLE_CLASSES = ["border-solid","border-dashed","border-dotted","border-double","border-hidden","border-none"];
 
 const BorderSection = React.memo(function BorderSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
   const inlineBorder = sel.element && (
@@ -1209,78 +1226,318 @@ const BorderSection = React.memo(function BorderSection({ h, sel }: { h: ClassHe
     sourceStyleHasProperty(sel.element, "border")
   );
   const warning = inlineBorder ? "border is set in style={{ ... }} — edit the source or remove the inline declaration" : undefined;
-  // Current border style among presets
-  const borderStyleVal = ["dashed","dotted","double","hidden","none"].find(s => h.has(`border-${s}`)) || "";
-  // Decode current border width into a px number for the slider.
-  const currentBorderPx = (() => {
-    const cs = sel.element ? getCachedStyle(sel.element) : null;
-    if (cs) return Math.round(parseFloat(cs.borderTopWidth) || 0);
-    const arbitrary = h.classes.find(c => /^border-\[(\d+)px\]$/.test(c));
-    if (arbitrary) return parseInt(arbitrary.match(/\[(\d+)px\]/)![1], 10);
-    const numbered = h.classes.find(c => /^border-\d+$/.test(c));
-    if (numbered) return parseInt(numbered.replace("border-", ""), 10);
-    if (h.has("border")) return 1;
-    return 0;
-  })();
-  const currentBorderWidthVal = (() => {
-    const arbitrary = h.classes.find(c => /^border-\[/.test(c));
-    if (arbitrary) return arbitrary;
-    const numbered = h.classes.find(c => /^border-\d+$/.test(c));
-    if (numbered) return numbered;
-    if (h.has("border")) return "border";
+  const cs = sel.element ? getCachedStyle(sel.element) : null;
+  const computedBorderPx = cs ? Math.round(parseFloat(cs.borderTopWidth) || 0) : 0;
+  const portalContainer = usePortalContainer();
+
+  // Detect the currently-active side. Priority: single side > all. Strip the
+  // responsive prefix when matching so `md:border-t-2` still counts as top.
+  const currentSide = (() => {
+    for (const s of ["t", "r", "b", "l"] as const) {
+      const pre = `border-${s}`;
+      if (h.classes.some(c => {
+        const bare = h.stripBpPrefix(c);
+        return bare === pre ||
+          new RegExp(`^${pre}-\\d+$`).test(bare) ||
+          new RegExp(`^${pre}-\\[`).test(bare);
+      })) return s;
+    }
     return "";
   })();
+  const widthPrefix = currentSide ? `border-${currentSide}` : "border";
+
+  const readBorderWidth = (): string => {
+    const findBare = (re: RegExp) => {
+      const hit = h.classes.find(c => re.test(h.stripBpPrefix(c)));
+      return hit ? h.stripBpPrefix(hit) : undefined;
+    };
+    const bracket = findBare(new RegExp(`^${widthPrefix}-\\[(\\d+(?:\\.\\d+)?)(?:px)?\\]$`));
+    if (bracket) return bracket.match(/\[(\d+(?:\.\d+)?)(?:px)?\]/)![1];
+    const numbered = findBare(new RegExp(`^${widthPrefix}-\\d+$`));
+    if (numbered) return numbered.replace(`${widthPrefix}-`, "");
+    if (h.has(widthPrefix)) return "1";
+    return "";
+  };
+  const currentBorderWidth = readBorderWidth();
+  const currentBorderPx = currentBorderWidth ? parseInt(currentBorderWidth, 10) : computedBorderPx;
+
+  // Strip the responsive prefix before matching so `md:border-2` counts as a
+  // border-width class just like bare `border-2`. The class list (with prefix)
+  // is still what we pass to `remove`, so HMR removes the correct token.
+  const hasBorderClass = h.classes.some(c => BORDER_WIDTH_CLASS_RE.test(h.stripBpPrefix(c)));
+  const hasBorder = hasBorderClass || computedBorderPx > 0;
+  const isHidden = h.has("border-none") || h.has("border-hidden");
+
+  const allBorderWidthClasses = () => h.classes.filter(c => BORDER_WIDTH_CLASS_RE.test(h.stripBpPrefix(c)));
+
+  const writeSideAndWidth = useCallback((side: string, n: number) => {
+    if (!sel.source) return;
+    const remove = allBorderWidthClasses();
+    const prefix = side ? `border-${side}` : "border";
+    // Tailwind border-width scale: bare `border` = 1px, then 2/4/8. Anything
+    // else uses bracket notation with the raw px value.
+    let add: string | undefined;
+    if (n <= 0) add = undefined;
+    else if (n === 1) add = prefix;
+    else if ([2, 4, 8].includes(n)) add = `${prefix}-${n}`;
+    else add = `${prefix}-[${n}px]`;
+    // Anti-flash: paint the new width inline now so the user sees the change
+    // without waiting for the file-write → HMR round trip. Width alone
+    // renders nothing without a style — paint `solid` too, cleared on HMR.
+    if (sel.element) {
+      const sideProp = side === "t" ? "borderTopWidth"
+        : side === "r" ? "borderRightWidth"
+        : side === "b" ? "borderBottomWidth"
+        : side === "l" ? "borderLeftWidth"
+        : "borderWidth";
+      setStyleProp(sel.element, sideProp, n > 0 ? `${n}px` : "0px");
+      if (n > 0) setStyleProp(sel.element, "borderStyle", "solid");
+    }
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add: add ? [add] : undefined,
+    });
+    if (sel.element) {
+      clearInlineAfterClassUpdate(sel.element, "borderWidth");
+      clearInlineAfterClassUpdate(sel.element, "borderTopWidth");
+      clearInlineAfterClassUpdate(sel.element, "borderRightWidth");
+      clearInlineAfterClassUpdate(sel.element, "borderBottomWidth");
+      clearInlineAfterClassUpdate(sel.element, "borderLeftWidth");
+      clearInlineAfterClassUpdate(sel.element, "borderStyle");
+    }
+  }, [h, sel]);
+
+  const writeBorderWidth = (n: number) => writeSideAndWidth(currentSide, n);
+  const setSide = (s: string) => writeSideAndWidth(s, currentBorderPx > 0 ? currentBorderPx : 1);
+
+  const borderStyleVal = ["solid","dashed","dotted","double","hidden","none"].find(s => h.has(`border-${s}`)) || "";
+  const setBorderStyle = (v: string) => {
+    if (!sel.source) return;
+    const remove = BORDER_STYLE_CLASSES.map(c => h.actual(c)).filter(Boolean) as string[];
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add: v ? [`border-${v}`] : undefined,
+    });
+  };
+
+  const addBorder = () => writeSideAndWidth(currentSide, currentBorderPx > 0 ? currentBorderPx : 1);
+
+  const removeBorder = () => {
+    if (!sel.source) return;
+    const widths = allBorderWidthClasses();
+    const styles = BORDER_STYLE_CLASSES.map(c => h.actual(c)).filter(Boolean) as string[];
+    const colors = h.classes.filter(c => {
+      const m = h.stripBpPrefix(c).match(/^border-\[(.+)\]$/);
+      return !!m && /^(#|rgb|rgba|hsl|hsla|lch|color\(|var\()/i.test(m[1]);
+    });
+    const remove = [...widths, ...styles, ...colors];
+    // Anti-flash: drop the border visually before the class update lands.
+    if (sel.element) {
+      setStyleProp(sel.element, "borderWidth", "0px");
+      setStyleProp(sel.element, "borderStyle", "none");
+    }
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+    });
+    if (sel.element) {
+      clearInlineAfterClassUpdate(sel.element, "borderWidth");
+      clearInlineAfterClassUpdate(sel.element, "borderStyle");
+    }
+  };
+
+  const toggleVisibility = () => {
+    if (!sel.source) return;
+    if (isHidden) {
+      const remove = [h.actual("border-none"), h.actual("border-hidden")].filter(Boolean) as string[];
+      h.sendPrefixed({
+        type: "modify-class", source: sel.source,
+        remove: remove.length ? remove : undefined,
+      });
+    } else {
+      h.sendPrefixed({
+        type: "modify-class", source: sel.source,
+        add: ["border-none"],
+      });
+    }
+  };
+
+  const headerAction = (
+    <div className="flex items-center gap-0.5">
+      <Popover.Root>
+        <Popover.Trigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            title="Border style"
+            aria-label="Border style"
+            className="size-6 text-canvas-muted-fg hover:text-canvas-fg"
+          >
+            <SlidersHorizontal size={12} />
+          </Button>
+        </Popover.Trigger>
+        <Popover.Portal container={portalContainer}>
+          <Popover.Content
+            side="bottom"
+            align="end"
+            sideOffset={6}
+            collisionPadding={8}
+            className={cn(
+              "z-[2147483647] w-56 rounded-md border border-canvas-border bg-canvas-bg",
+              "shadow-md p-2.5 space-y-2 text-xs",
+            )}
+          >
+            <div className="text-[11px] font-medium text-canvas-fg">Border style</div>
+            <SelectField
+              value={borderStyleVal}
+              options={BORDER_STYLE_SELECT}
+              onChange={setBorderStyle}
+              placeholder="Solid"
+              title="Border style"
+            />
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
+      <Button
+        variant="ghost"
+        size="icon"
+        title={hasBorder ? "Reset border" : "Add border"}
+        aria-label={hasBorder ? "Reset border" : "Add border"}
+        onClick={addBorder}
+        className="size-6 text-canvas-muted-fg hover:text-canvas-fg"
+      >
+        <Plus size={12} />
+      </Button>
+    </div>
+  );
+
   return (
-    <Section title="Border" defaultOpen={false} warning={warning}>
-      <SliderValueInput
-        label="Width"
-        value={currentBorderWidthVal}
-        sliderValue={currentBorderPx}
-        min={0} max={16} step={1}
-        presets={[
-          { value: "", label: "0" },
-          { value: "border", label: "1px" },
-          { value: "border-2", label: "2px" },
-          { value: "border-4", label: "4px" },
-          { value: "border-8", label: "8px" },
-        ]}
-        strategy={KEYWORD}
-        encode={n => n === 0 ? "" : n === 1 ? "border" : [2,4,8].includes(n) ? `border-${n}` : `border-[${n}px]`}
-        placeholder={currentBorderPx > 0 ? `${currentBorderPx}px` : "0"}
-        onLivePreview={v => { if (sel.element) setStyleProp(sel.element, "borderWidth", `${v}px`); }}
-        onChange={v => {
-          const bareBorder = h.classes.find(c => c === "border" || /^border-[0-9]+$/.test(c) || /^border-\[/.test(c));
-          const prefixedBorder = h.bpPrefix ? h.classes.find(c => c === `${h.bpPrefix}:border` || new RegExp(`^${h.bpPrefix}:border-[0-9]+$`).test(c) || new RegExp(`^${h.bpPrefix}:border-\\[`).test(c)) : undefined;
-          const old = prefixedBorder || bareBorder;
-          let add: string | undefined = v || undefined;
-          if (v && /^\[\d+\]$/.test(v)) add = `border-[${v.slice(1, -1)}px]`;
-          else if (v === "border" || v === "") add = v || undefined;
-          else if (v && !v.startsWith("border")) add = `border-${v.replace(/^\[(.+)\]$/, "[$1]")}`;
-          h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: old ? [old] : undefined, add: add ? [add] : undefined });
-          if (sel.element) clearInlineAfterClassUpdate(sel.element, "borderWidth");
-        }}
-        suffix="px"
-      />
-      <PropRow label="Style">
-        <CustomSelect
-          value={borderStyleVal}
-          options={BORDER_STYLE_PRESETS}
-          onChange={v => {
-            const oldActual = ["border-solid","border-dashed","border-dotted","border-double","border-hidden","border-none"].map(c => h.actual(c)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`border-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <ColorPicker
-        label="Color"
-        prefix="border"
-        classes={h.classes}
-        disabledReason={warning}
-        onApply={(remove, add) => { if (sel.source) h.sendPrefixed({ type: "modify-class", source: sel.source, remove, add }); }}
-      />
+    <Section title="Border" defaultOpen={false} warning={warning} headerAction={headerAction}
+      autoOpenKey={sel.element} hasValue={hasBorder}>
+      <div className={cn("flex flex-col gap-1.5", isHidden && "opacity-50")}>
+        <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-1 items-center">
+          <ScrubField
+            label={<StrokeWeightGlyph />}
+            value={currentBorderWidth ? `${currentBorderWidth}px` : ""}
+            onChange={raw => {
+              const n = parseInt(raw, 10);
+              writeBorderWidth(Number.isFinite(n) ? n : 0);
+            }}
+            placeholder={`${computedBorderPx}px`}
+            title="Border weight"
+            format={n => `${Math.round(n)}px`}
+          />
+          <SelectField
+            icon={<BorderAll size={12} />}
+            value={currentSide}
+            options={BORDER_SIDE_SELECT}
+            onChange={setSide}
+            placeholder="All"
+            title="Border sides"
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-canvas-muted-fg hover:text-canvas-fg disabled:opacity-40"
+            onClick={toggleVisibility}
+            disabled={!hasBorder}
+            title={isHidden ? "Show border" : "Hide border"}
+            aria-label={isHidden ? "Show border" : "Hide border"}
+          >
+            {isHidden ? <EyeOff size={12} /> : <Eye size={12} />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-canvas-muted-fg hover:text-canvas-fg disabled:opacity-40"
+            onClick={removeBorder}
+            disabled={!hasBorder}
+            title="Remove border"
+            aria-label="Remove border"
+          >
+            <Minus size={12} />
+          </Button>
+        </div>
+        <ClassColorField h={h} sel={sel} prefix="border"
+          computed={cs?.borderTopColor} title="Border color" />
+      </div>
     </Section>
   );
 });
+
+// ── Tailwind-class ↔ CSS-color bridge ──────────────────────────────────────
+// ColorField speaks CSS strings ("#ff0000", "rgba(…)") but our mutations are
+// Tailwind classes. This helper reads the current color class (bracketed
+// forms like `outline-[#abc]`, `bg-[rgba(0,0,0,.5)]`), falls back to the
+// computed style, and writes the next class as `{prefix}-[<color>]` while
+// stripping any prior bracketed color of the same prefix.
+//
+// Width/length classes (e.g. `outline-2`, `outline-[2px]`) are preserved —
+// we only touch bracket values whose contents look like a color.
+const COLOR_CONTENT = /^(#|rgb|rgba|hsl|hsla|lch|color\(|var\()/i;
+
+function ClassColorField({
+  h, sel, prefix, computed, title,
+}: {
+  h: ClassHelpers;
+  sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]>;
+  prefix: string;
+  computed?: string;
+  title?: string;
+}) {
+  // Find a `{prefix}-[<color>]` class (bracketed form only — named Tailwind
+  // color classes stay intact until the user picks a new color). The class
+  // list may carry a responsive prefix (e.g. `md:border-[#abc]`), so we match
+  // on the bare form and keep the prefixed token for removals.
+  const bracketRe = new RegExp(`^${prefix}-\\[(.+)\\]$`);
+  const colorClass = h.classes.find(c => {
+    const m = h.stripBpPrefix(c).match(bracketRe);
+    return m ? COLOR_CONTENT.test(m[1]) : false;
+  });
+  const currentBracketed = colorClass ? h.stripBpPrefix(colorClass).match(bracketRe)?.[1] : undefined;
+  const current = currentBracketed ?? (computed && computed !== "rgba(0, 0, 0, 0)" ? computed : "");
+
+  const onChange = useCallback((next: string) => {
+    if (!sel.source) return;
+    // Remove any prior bracketed color class for this prefix.
+    const remove = h.classes.filter(c => {
+      const m = h.stripBpPrefix(c).match(bracketRe);
+      return m ? COLOR_CONTENT.test(m[1]) : false;
+    });
+    const cleaned = next.replace(/\s+/g, "");
+    const add = cleaned ? [`${prefix}-[${cleaned}]`] : undefined;
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add,
+    });
+  }, [h, sel, prefix]);
+
+  return <ColorField value={current} onChange={onChange} title={title} />;
+}
+
+// Is this class a WIDTH (length) class for the given prefix? Matches bare,
+// numeric (e.g. `outline-2`, `border-4`), and bracketed-length (`outline-[2px]`).
+// Used to target only width classes during width edits so we don't nuke the
+// color class (which also starts with `outline-…`).
+const LEN_BRACKET = /^\[(-?\d+(?:\.\d+)?)(?:px|rem|em)?\]$/;
+function isWidthClassBare(bare: string, prefix: string): boolean {
+  if (bare === prefix) return true;
+  if (!bare.startsWith(prefix + "-")) return false;
+  const rest = bare.slice(prefix.length + 1);
+  if (/^\d+$/.test(rest)) return true;
+  return LEN_BRACKET.test(rest);
+}
+// Keeps the old call sites working — they pass raw (possibly-prefixed) class
+// names but only care whether the bare token is a width class.
+function isWidthClass(cls: string, prefix: string, stripBp?: (c: string) => string): boolean {
+  return isWidthClassBare(stripBp ? stripBp(cls) : cls, prefix);
+}
+
+const OUTLINE_STYLE_CLASSES = ["outline-solid","outline-dashed","outline-dotted","outline-double","outline-hidden","outline-none"];
+const OUTLINE_STYLE_SELECT = opts(BORDER_STYLE_PRESETS);
 
 const OutlineSection = React.memo(function OutlineSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
   const inlineOutline = sel.element && (
@@ -1288,104 +1545,611 @@ const OutlineSection = React.memo(function OutlineSection({ h, sel }: { h: Class
     sourceStyleHasProperty(sel.element, "outline")
   );
   const warning = inlineOutline ? "outline is set in style={{ ... }} — edit the source or remove the inline declaration" : undefined;
-  const outlineWidthPx = (() => {
-    const cs = sel.element ? getCachedStyle(sel.element) : null;
-    if (cs) return Math.round(parseFloat(cs.outlineWidth) || 0);
-    const v = h.get("outline");
-    const m = v.match(/^\[(\d+)(px)?\]$/);
-    if (m) return parseInt(m[1], 10);
-    const n = parseInt(v, 10);
-    return Number.isFinite(n) ? n : 0;
-  })();
-  const outlineOffsetPx = (() => {
-    const cs = sel.element ? getCachedStyle(sel.element) : null;
-    if (cs) return Math.round(parseFloat(cs.outlineOffset) || 0);
+  const cs = sel.element ? getCachedStyle(sel.element) : null;
+  const outlineWidthPx = cs ? Math.round(parseFloat(cs.outlineWidth) || 0) : 0;
+  const outlineOffsetPx = cs ? Math.round(parseFloat(cs.outlineOffset) || 0) : 0;
+  const portalContainer = usePortalContainer();
+
+  const readWidth = (): string => {
+    const hit = h.classes.find(c => isWidthClass(c, "outline", h.stripBpPrefix));
+    if (!hit) return "";
+    const bare = h.stripBpPrefix(hit);
+    if (bare === "outline") return "1";
+    const rest = bare.slice("outline-".length);
+    const m = rest.match(LEN_BRACKET);
+    if (m) return m[1];
+    return rest;
+  };
+  const readOffset = (): string => {
     const v = h.get("outline-offset");
-    const m = v.match(/^\[(-?\d+)(px)?\]$/);
-    if (m) return parseInt(m[1], 10);
-    const n = parseInt(v, 10);
-    return Number.isFinite(n) ? n : 0;
-  })();
+    const m = v.match(LEN_BRACKET);
+    if (m) return m[1];
+    return v || "";
+  };
+
+  const currentWidth = readWidth();
+  const currentWidthPx = currentWidth ? parseInt(currentWidth, 10) : outlineWidthPx;
+  const hasOutline = h.classes.some(c => isWidthClass(c, "outline", h.stripBpPrefix)) || outlineWidthPx > 0;
+  const isHidden = h.has("outline-none") || h.has("outline-hidden");
+
+  const writeWidth = useCallback((n: number) => {
+    if (!sel.source) return;
+    const remove = h.classes.filter(c => isWidthClass(c, "outline", h.stripBpPrefix));
+    // Tailwind outline-width scale: bare `outline` = 1px, then 2/4/8.
+    // Bracket notation for anything off-scale.
+    let add: string | undefined;
+    if (n <= 0) add = undefined;
+    else if (n === 1) add = "outline";
+    else if ([2, 4, 8].includes(n)) add = `outline-${n}`;
+    else add = `outline-[${n}px]`;
+    // Anti-flash: paint outline inline now so change lands before HMR.
+    if (sel.element) {
+      setStyleProp(sel.element, "outlineWidth", n > 0 ? `${n}px` : "0px");
+      if (n > 0) setStyleProp(sel.element, "outlineStyle", "solid");
+    }
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add: add ? [add] : undefined,
+    });
+    if (sel.element) {
+      clearInlineAfterClassUpdate(sel.element, "outlineWidth");
+      clearInlineAfterClassUpdate(sel.element, "outlineStyle");
+    }
+  }, [h, sel]);
+
+  const writeOffset = useCallback((raw: string) => {
+    const n = parseInt(raw, 10);
+    if (!Number.isFinite(n)) { h.set("outline-offset", ""); return; }
+    h.set("outline-offset", n === 0 ? "" : `[${n}px]`);
+  }, [h]);
+
+  const outlineStyleVal = ["solid","dashed","dotted","double","hidden","none"].find(s => h.has(`outline-${s}`)) || "";
+  const setOutlineStyle = (v: string) => {
+    if (!sel.source) return;
+    const remove = OUTLINE_STYLE_CLASSES.map(c => h.actual(c)).filter(Boolean) as string[];
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add: v ? [`outline-${v}`] : undefined,
+    });
+  };
+
+  const addOutline = () => writeWidth(currentWidthPx > 0 ? currentWidthPx : 1);
+
+  const removeOutline = () => {
+    if (!sel.source) return;
+    const widths = h.classes.filter(c => isWidthClass(c, "outline", h.stripBpPrefix));
+    const styles = OUTLINE_STYLE_CLASSES.map(c => h.actual(c)).filter(Boolean) as string[];
+    const offsets = h.classes.filter(c => /^outline-offset(?:-|$)/.test(h.stripBpPrefix(c)));
+    const colors = h.classes.filter(c => {
+      const m = h.stripBpPrefix(c).match(/^outline-\[(.+)\]$/);
+      return !!m && /^(#|rgb|rgba|hsl|hsla|lch|color\(|var\()/i.test(m[1]);
+    });
+    const remove = [...widths, ...styles, ...offsets, ...colors];
+    // Anti-flash: drop the outline visually before the class update lands.
+    if (sel.element) {
+      setStyleProp(sel.element, "outlineWidth", "0px");
+      setStyleProp(sel.element, "outlineStyle", "none");
+    }
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+    });
+    if (sel.element) {
+      clearInlineAfterClassUpdate(sel.element, "outlineWidth");
+      clearInlineAfterClassUpdate(sel.element, "outlineStyle");
+    }
+  };
+
+  const toggleVisibility = () => {
+    if (!sel.source) return;
+    if (isHidden) {
+      const remove = [h.actual("outline-none"), h.actual("outline-hidden")].filter(Boolean) as string[];
+      h.sendPrefixed({
+        type: "modify-class", source: sel.source,
+        remove: remove.length ? remove : undefined,
+      });
+    } else {
+      h.sendPrefixed({
+        type: "modify-class", source: sel.source,
+        add: ["outline-none"],
+      });
+    }
+  };
+
+  const headerAction = (
+    <div className="flex items-center gap-0.5">
+      <Popover.Root>
+        <Popover.Trigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            title="Outline offset"
+            aria-label="Outline offset"
+            className="size-6 text-canvas-muted-fg hover:text-canvas-fg"
+          >
+            <SlidersHorizontal size={12} />
+          </Button>
+        </Popover.Trigger>
+        <Popover.Portal container={portalContainer}>
+          <Popover.Content
+            side="bottom"
+            align="end"
+            sideOffset={6}
+            collisionPadding={8}
+            className={cn(
+              "z-[2147483647] w-56 rounded-md border border-canvas-border bg-canvas-bg",
+              "shadow-md p-2.5 space-y-2 text-xs",
+            )}
+          >
+            <div className="text-[11px] font-medium text-canvas-fg">Outline offset</div>
+            <ScrubField
+              label="Off"
+              value={readOffset() ? `${readOffset()}px` : ""}
+              onChange={writeOffset}
+              placeholder={`${outlineOffsetPx}px`}
+              title="Outline offset"
+              format={n => `${Math.round(n)}px`}
+            />
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
+      <Button
+        variant="ghost"
+        size="icon"
+        title={hasOutline ? "Reset outline" : "Add outline"}
+        aria-label={hasOutline ? "Reset outline" : "Add outline"}
+        onClick={addOutline}
+        className="size-6 text-canvas-muted-fg hover:text-canvas-fg"
+      >
+        <Plus size={12} />
+      </Button>
+    </div>
+  );
+
   return (
-    <Section title="Outline" defaultOpen={false} warning={warning}>
-      <SliderValueInput
-        label="Width"
-        value={h.get("outline")}
-        sliderValue={outlineWidthPx}
-        min={0} max={16} step={1}
-        strategy={INTEGER}
-        encode={n => n === 0 ? "" : `[${n}px]`}
-        placeholder={outlineWidthPx > 0 ? `${outlineWidthPx}px` : "0"}
-        onLivePreview={v => { if (sel.element) setStyleProp(sel.element, "outlineWidth", `${v}px`); }}
-        onChange={v => { h.set("outline", v); if (sel.element) clearInlineAfterClassUpdate(sel.element, "outlineWidth"); }}
-        suffix="px"
-      />
-      <SliderValueInput
-        label="Offset"
-        value={h.get("outline-offset")}
-        sliderValue={outlineOffsetPx}
-        min={-8} max={16} step={1}
-        strategy={INTEGER}
-        encode={n => n === 0 ? "" : `[${n}px]`}
-        placeholder={`${outlineOffsetPx}px`}
-        onLivePreview={v => { if (sel.element) setStyleProp(sel.element, "outlineOffset", `${v}px`); }}
-        onChange={v => { h.set("outline-offset", v); if (sel.element) clearInlineAfterClassUpdate(sel.element, "outlineOffset"); }}
-        suffix="px"
-      />
-      <ColorPicker
-        label="Color"
-        prefix="outline"
-        classes={h.classes}
-        disabledReason={warning}
-        onApply={(remove, add) => { if (sel.source) h.sendPrefixed({ type: "modify-class", source: sel.source, remove, add }); }}
-      />
+    <Section title="Outline" defaultOpen={false} warning={warning} headerAction={headerAction}
+      autoOpenKey={sel.element} hasValue={hasOutline}>
+      <div className={cn("flex flex-col gap-1.5", isHidden && "opacity-50")}>
+        <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-1 items-center">
+          <ScrubField
+            label={<StrokeWeightGlyph />}
+            value={currentWidth ? `${currentWidth}px` : ""}
+            onChange={raw => {
+              const n = parseInt(raw, 10);
+              writeWidth(Number.isFinite(n) ? n : 0);
+            }}
+            placeholder={`${outlineWidthPx}px`}
+            title="Outline weight"
+            format={n => `${Math.round(n)}px`}
+          />
+          <SelectField
+            icon={<Square size={12} />}
+            value={outlineStyleVal}
+            options={OUTLINE_STYLE_SELECT}
+            onChange={setOutlineStyle}
+            placeholder="Solid"
+            title="Outline style"
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-canvas-muted-fg hover:text-canvas-fg disabled:opacity-40"
+            onClick={toggleVisibility}
+            disabled={!hasOutline}
+            title={isHidden ? "Show outline" : "Hide outline"}
+            aria-label={isHidden ? "Show outline" : "Hide outline"}
+          >
+            {isHidden ? <EyeOff size={12} /> : <Eye size={12} />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-canvas-muted-fg hover:text-canvas-fg disabled:opacity-40"
+            onClick={removeOutline}
+            disabled={!hasOutline}
+            title="Remove outline"
+            aria-label="Remove outline"
+          >
+            <Minus size={12} />
+          </Button>
+        </div>
+        <ClassColorField h={h} sel={sel} prefix="outline"
+          computed={cs?.outlineColor} title="Outline color" />
+      </div>
     </Section>
   );
 });
+
+// Tiny corner glyphs — kept inline, allowed per CLAUDE.md as edge indicators.
+const CornerGlyph = ({ corner }: { corner: "tl" | "tr" | "bl" | "br" }) => (
+  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.25" aria-hidden>
+    {corner === "tl" && <path d="M9 1H5a4 4 0 0 0-4 4v4" strokeLinecap="round" />}
+    {corner === "tr" && <path d="M1 1h4a4 4 0 0 1 4 4v4" strokeLinecap="round" />}
+    {corner === "bl" && <path d="M9 9H5a4 4 0 0 1-4-4V1" strokeLinecap="round" />}
+    {corner === "br" && <path d="M1 9h4a4 4 0 0 0 4-4V1" strokeLinecap="round" />}
+  </svg>
+);
+
+// Four corner brackets enclosing a box — signals "per-corner" radius mode.
+// Shown in the Radius section header as the linked→split toggle.
+const CornersGlyph = () => (
+  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M1 4V2a1 1 0 0 1 1-1h2" />
+    <path d="M11 4V2a1 1 0 0 0-1-1H8" />
+    <path d="M1 8v2a1 1 0 0 0 1 1h2" />
+    <path d="M11 8v2a1 1 0 0 1-1 1H8" />
+  </svg>
+);
+
+// All radius Tailwind prefixes: the linked one + every side/corner variant.
+const RADIUS_PREFIXES = ["rounded", "rounded-t", "rounded-r", "rounded-b", "rounded-l",
+  "rounded-tl", "rounded-tr", "rounded-bl", "rounded-br"];
 
 const RadiusSection = React.memo(function RadiusSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
   const cs = sel.element ? getCachedStyle(sel.element) : null;
   const computedRadius = cs ? Math.round(parseFloat(cs.borderRadius) || 0) : 0;
 
+  const tl = h.get("rounded-tl");
+  const tr = h.get("rounded-tr");
+  const br = h.get("rounded-br");
+  const bl = h.get("rounded-bl");
+  const hasSplit = !!(tl || tr || br || bl);
+  const [mode, setMode] = useState<LinkMode>(hasSplit ? "split" : "linked");
+
+  // Decode whatever Tailwind form the class is in (named scale like `md`,
+  // bracket like `[8px]`, or bare `rounded`) back to a px number. If the
+  // suffix doesn't name a scale we fall back to the computed CSS value so
+  // the panel always shows what the element actually renders.
+  const decodeCornerPx = (suffix: string, cssProp: "borderTopLeftRadius" | "borderTopRightRadius" | "borderBottomLeftRadius" | "borderBottomRightRadius"): number => {
+    const fromSuffix = radiusSuffixToPx(suffix);
+    if (fromSuffix !== null) return Math.round(fromSuffix);
+    if (cs) {
+      const n = parseFloat(cs[cssProp]);
+      if (Number.isFinite(n)) return Math.round(n);
+    }
+    return 0;
+  };
+
+  // Linked writer: remove every existing radius class (whole + per-side +
+  // per-corner) so the linked value is canonical and we never leave a
+  // stale `rounded-tl-*` contradicting it.
+  const writeLinked = useCallback((n: number) => {
+    if (!sel.source) return;
+    const remove = h.classes.filter(c => {
+      return RADIUS_PREFIXES.some(p => c === p || c.startsWith(p + "-"));
+    });
+    const suffix = pxToRadiusSuffix(n);
+    // `suffix === ""` represents the bare `rounded` class (4px) — emit it
+    // as-is instead of `rounded-` which isn't a valid utility.
+    const add = n <= 0 ? undefined : [suffix === "" ? "rounded" : `rounded-${suffix}`];
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add,
+    });
+  }, [h, sel]);
+
+  const writeCorner = useCallback((corner: "tl" | "tr" | "bl" | "br", n: number) => {
+    h.set(`rounded-${corner}`, pxToRadiusSuffix(n));
+  }, [h]);
+
+  const linkedPx = (() => {
+    const decoded = radiusSuffixToPx(h.get("rounded"));
+    return decoded !== null ? Math.round(decoded) : computedRadius;
+  })();
+
+  const tlPx = decodeCornerPx(tl, "borderTopLeftRadius");
+  const trPx = decodeCornerPx(tr, "borderTopRightRadius");
+  const blPx = decodeCornerPx(bl, "borderBottomLeftRadius");
+  const brPx = decodeCornerPx(br, "borderBottomRightRadius");
+
+  const toggle = (
+    <button
+      type="button"
+      onClick={() => setMode(mode === "linked" ? "split" : "linked")}
+      title={mode === "linked" ? "Per-corner radius" : "Linked radius"}
+      aria-label={mode === "linked" ? "Switch to per-corner radius" : "Switch to linked radius"}
+      aria-pressed={mode === "split"}
+      className={cn(
+        "inline-flex items-center justify-center h-6 w-6 rounded-md",
+        "text-canvas-muted-fg hover:text-canvas-fg hover:bg-canvas-muted/60",
+        "transition-colors",
+        mode === "split" && "text-canvas-fg bg-canvas-muted",
+      )}
+    >
+      <CornersGlyph />
+    </button>
+  );
+
   return (
-    <Section title="Radius" defaultOpen={false}>
-      <SliderValueInput
-        label="Radius"
-        value={h.get("rounded")}
-        sliderValue={computedRadius}
-        min={0} max={80} step={1}
-        presets={RADIUS_PRESETS}
-        strategy={LENGTH}
-        encode={n => n === 0 ? "none" : `[${n}px]`}
-        placeholder={computedRadius > 0 ? `${computedRadius}px` : "0"}
-        onLivePreview={v => { if (sel.element) setStyleProp(sel.element, "borderRadius", `${v}px`); }}
-        onChange={v => {
-          h.set("rounded", v);
-          if (sel.element) clearInlineAfterClassUpdate(sel.element, "borderRadius");
-        }}
-        suffix="px"
-      />
+    <Section title="Radius" defaultOpen={false} headerAction={toggle}
+      autoOpenKey={sel.element}
+      hasValue={computedRadius > 0 || !!h.classes.find(c => /^rounded(?:-|$)/.test(h.stripBpPrefix(c)))}>
+      {mode === "linked" ? (
+        <div className="grid grid-cols-[1fr_4rem] gap-1.5 items-center">
+          <Slider
+            value={linkedPx}
+            min={0} max={80} step={1}
+            onChange={n => { if (sel.element) setStyleProp(sel.element, "borderRadius", `${n}px`); }}
+            onCommit={n => {
+              writeLinked(n);
+              if (sel.element) clearInlineAfterClassUpdate(sel.element, "borderRadius");
+            }}
+            showValue={false}
+          />
+          <ScrubField
+            value={`${linkedPx}px`}
+            onChange={raw => {
+              const n = parseInt(raw, 10);
+              writeLinked(Number.isFinite(n) ? n : 0);
+            }}
+            placeholder={`${computedRadius}px`}
+            format={n => `${Math.round(n)}px`}
+          />
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-1.5">
+          <ScrubField label={<CornerGlyph corner="tl" />} value={`${tlPx}px`}
+            onChange={v => writeCorner("tl", parseInt(v, 10) || 0)}
+            placeholder={`${tlPx}px`} title="Top-left"
+            format={n => `${Math.round(n)}px`} />
+          <ScrubField label={<CornerGlyph corner="tr" />} value={`${trPx}px`}
+            onChange={v => writeCorner("tr", parseInt(v, 10) || 0)}
+            placeholder={`${trPx}px`} title="Top-right"
+            format={n => `${Math.round(n)}px`} />
+          <ScrubField label={<CornerGlyph corner="bl" />} value={`${blPx}px`}
+            onChange={v => writeCorner("bl", parseInt(v, 10) || 0)}
+            placeholder={`${blPx}px`} title="Bottom-left"
+            format={n => `${Math.round(n)}px`} />
+          <ScrubField label={<CornerGlyph corner="br" />} value={`${brPx}px`}
+            onChange={v => writeCorner("br", parseInt(v, 10) || 0)}
+            placeholder={`${brPx}px`} title="Bottom-right"
+            format={n => `${Math.round(n)}px`} />
+        </div>
+      )}
     </Section>
   );
 });
 
-const ShadowSection = React.memo(function ShadowSection({ h }: { h: ClassHelpers }) {
+// Tailwind shadow presets — none/sm/md/lg/xl/2xl + inner. We drop the
+// empty-value sentinel so the SelectField falls back to its "None" placeholder
+// instead of showing the literal "default" label for unset shadows.
+const SHADOW_SELECT = SHADOW_PRESETS
+  .filter(p => p.value !== "")
+  .map(p => ({ value: p.value, label: p.label ?? p.value }));
+
+// ── Multi-layer shadow model ────────────────────────────────────────────────
+// CSS `box-shadow` supports comma-separated stacking. Tailwind expresses this
+// via a single arbitrary class with commas inside the bracket:
+//   shadow-[2px_4px_8px_0px_rgb(0,0,0,0.1),inset_0px_1px_0px_0px_#fff]
+// We model the union as a single ordered list of `ShadowLayer`s and split it
+// into the two visible sections (drop / inset) by the `inset` flag.
+
+interface ShadowLayer { id: string; inset: boolean; x: number; y: number; blur: number; spread: number; color: string; }
+
+function nextShadowId(): string {
+  return `s${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function shadowLayerToToken(l: ShadowLayer): string {
+  return [
+    l.inset ? "inset" : "",
+    `${l.x}px`, `${l.y}px`, `${l.blur}px`, `${l.spread}px`,
+    (l.color || "rgb(0,0,0)").replace(/\s+/g, ""),
+  ].filter(Boolean).join("_");
+}
+
+function parseShadowToken(token: string, id: string): ShadowLayer | null {
+  // Tokens use `_` as the within-shadow separator. A leading `inset_` flips
+  // the flag; otherwise the four lengths come first, then everything else
+  // is the color (which may itself contain underscores e.g. `rgb(0,0,0,0.1)`).
+  const parts = token.split("_");
+  let i = 0;
+  let inset = false;
+  if (parts[0] === "inset") { inset = true; i++; }
+  const px = (s: string | undefined) => (s ? parseInt(s, 10) || 0 : 0);
+  if (parts.length - i < 4) return null;
+  return {
+    id, inset,
+    x: px(parts[i]),
+    y: px(parts[i + 1]),
+    blur: px(parts[i + 2]),
+    spread: px(parts[i + 3]),
+    color: parts.slice(i + 4).join("_") || "",
+  };
+}
+
+/** Find the unified `shadow-[...]` class (if any) and return all layers. */
+function readShadowLayers(h: ClassHelpers): ShadowLayer[] {
+  // Strip any responsive prefix so `xl:shadow-[...]` still parses.
+  const cls = h.classes.find(c => /^shadow-\[/.test(h.stripBpPrefix(c)));
+  if (!cls) return [];
+  const m = h.stripBpPrefix(cls).match(/^shadow-\[(.+)\]$/);
+  if (!m) return [];
+  // Top-level commas split layers. Commas inside `rgb(…)` / `rgba(…)` /
+  // `hsl(…)` are fine — those parens never nest, so a depth counter is enough.
+  const tokens: string[] = [];
+  let depth = 0, buf = "";
+  for (const ch of m[1]) {
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    if (ch === "," && depth === 0) { tokens.push(buf); buf = ""; }
+    else buf += ch;
+  }
+  if (buf) tokens.push(buf);
+  return tokens.map((t, i) => parseShadowToken(t, `s${i}`)).filter((l): l is ShadowLayer => l !== null);
+}
+
+function writeShadowLayers(h: ClassHelpers, sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]>, layers: ShadowLayer[]) {
+  if (!sel.source) return;
+  // Strip the responsive prefix so `xl:shadow-[...]` gets swept up too — we
+  // keep the original (prefixed) class name in `remove` so sendPrefixed
+  // targets the exact token on the element.
+  const remove = h.classes.filter(c => /^shadow-\[/.test(h.stripBpPrefix(c)));
+  const tokens = layers.map(shadowLayerToToken);
+  const add = tokens.length ? [`shadow-[${tokens.join(",")}]`] : undefined;
+  h.sendPrefixed({
+    type: "modify-class", source: sel.source,
+    remove: remove.length ? remove : undefined,
+    add,
+  });
+}
+
+function ShadowLayerRow({ layer, onChange }: {
+  layer: ShadowLayer;
+  onChange: (next: ShadowLayer) => void;
+}) {
+  const setField = (field: "x" | "y" | "blur" | "spread") => (raw: string) => {
+    const n = parseInt(raw, 10);
+    onChange({ ...layer, [field]: Number.isFinite(n) ? n : 0 });
+  };
   return (
-    <Section title="Shadow" defaultOpen={false}>
-      <ValueInput
-        value={h.get("shadow")}
-        presets={SHADOW_PRESETS}
-        strategy={KEYWORD}
-        onChange={v => h.set("shadow", v)}
-        placeholder="none"
+    <div className="flex flex-col gap-1.5">
+      <FieldGroup>
+        <ScrubField label="X" value={`${layer.x}px`} onChange={setField("x")} title="X offset"
+          format={n => `${Math.round(n)}px`} />
+        <ScrubField label="Y" value={`${layer.y}px`} onChange={setField("y")} title="Y offset"
+          format={n => `${Math.round(n)}px`} />
+        <ScrubField label="B" value={`${layer.blur}px`} onChange={setField("blur")} title="Blur"
+          format={n => `${Math.round(n)}px`} />
+        <ScrubField label="S" value={`${layer.spread}px`} onChange={setField("spread")} title="Spread"
+          format={n => `${Math.round(n)}px`} />
+      </FieldGroup>
+      <ColorField
+        value={layer.color}
+        onChange={c => onChange({ ...layer, color: c.replace(/\s+/g, "") })}
+        title={layer.inset ? "Inner shadow color" : "Shadow color"}
       />
+    </div>
+  );
+}
+
+/** Shared body for Shadow / Inner shadow — one LayerStack of the matching flavor. */
+function ShadowFlavorBody({ h, sel, inset }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]>; inset: boolean }) {
+  const allLayers = readShadowLayers(h);
+  // Visibility of layers we removed locally is held in component state — once
+  // the class round-trips through HMR the actual class disappears. For now we
+  // always treat layers as visible (Phase 8 polish: per-layer visibility toggle).
+  const myLayers = allLayers.filter(l => l.inset === inset);
+
+  const updateLayer = (id: string, next: ShadowLayer) => {
+    const updated = allLayers.map(l => l.id === id ? next : l);
+    writeShadowLayers(h, sel, updated);
+  };
+  const removeLayer = (id: string) => {
+    writeShadowLayers(h, sel, allLayers.filter(l => l.id !== id));
+  };
+  const addLayer = () => {
+    const next: ShadowLayer = {
+      id: nextShadowId(), inset,
+      x: 0, y: inset ? 1 : 4, blur: inset ? 2 : 8, spread: 0,
+      color: "rgba(0,0,0,0.1)",
+    };
+    writeShadowLayers(h, sel, [...allLayers, next]);
+  };
+
+  return (
+    <>
+      {myLayers.length === 0 && (
+        <div className="text-[11px] text-canvas-muted-fg italic">No {inset ? "inner " : ""}shadows.</div>
+      )}
+      {myLayers.map(layer => (
+        <div key={layer.id} className="flex flex-col gap-1.5 pb-2 mb-1 border-b border-canvas-border/40 last:border-b-0 last:pb-0 last:mb-0">
+          <ShadowLayerRow layer={layer} onChange={next => updateLayer(layer.id, next)} />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => removeLayer(layer.id)}
+            className="self-start h-6 px-2 text-[10px] text-canvas-muted-fg hover:text-canvas-fg"
+            title="Remove this shadow layer"
+          >
+            <Minus size={10} />
+            <span className="ml-1">Remove</span>
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={addLayer}
+        className="h-7 justify-start text-xs text-canvas-muted-fg hover:text-canvas-fg"
+        title={`Add ${inset ? "inner " : ""}shadow layer`}
+      >
+        <Plus size={12} />
+        <span className="ml-1.5">Add {inset ? "inner " : ""}shadow</span>
+      </Button>
+    </>
+  );
+}
+
+const ShadowSection = React.memo(function ShadowSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
+  // Preset shadows (`shadow-md` etc.) live independently of the multi-layer
+  // bracket form. They map to Tailwind's pre-baked elevations. Selecting a
+  // preset clears the bracket-class custom shadows so they don't double up.
+  const presetVal = ["sm","md","lg","xl","2xl","inner","none"].find(s => h.has(`shadow-${s}`)) || "";
+  const setPreset = useCallback((v: string) => {
+    if (!sel.source) return;
+    const remove = h.classes.filter(c => {
+      const bare = h.stripBpPrefix(c);
+      return bare === "shadow" || /^shadow-(sm|md|lg|xl|2xl|inner|none)$/.test(bare);
+    });
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add: v ? [`shadow-${v}`] : undefined,
+    });
+  }, [h, sel]);
+  const hasShadowClass = h.classes.some(c => {
+    const bare = h.stripBpPrefix(c);
+    if (/^shadow-(sm|md|lg|xl|2xl|inner)$/.test(bare)) return true;
+    const m = bare.match(/^shadow-\[(.+)\]$/);
+    return !!m && !m[1].startsWith("inset_");
+  });
+  // Also honour shadows that come from a plain stylesheet / inline style so
+  // the section opens even when the source isn't a Tailwind utility.
+  const cs = sel.element ? getCachedStyle(sel.element) : null;
+  const csShadow = cs?.boxShadow;
+  const hasComputedShadow = !!csShadow && csShadow !== "none" && !/^inset\b/.test(csShadow);
+  const hasShadow = hasShadowClass || hasComputedShadow;
+  return (
+    <Section title="Shadow" defaultOpen={false}
+      autoOpenKey={sel.element} hasValue={hasShadow}>
+      <SelectField value={presetVal} options={SHADOW_SELECT} onChange={setPreset}
+        placeholder="None" title="Shadow preset" />
+      <ShadowFlavorBody h={h} sel={sel} inset={false} />
     </Section>
   );
 });
 
-const OpacitySection = React.memo(function OpacitySection({ h }: { h: ClassHelpers }) {
+const InnerShadowSection = React.memo(function InnerShadowSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
+  const hasInnerClass = h.classes.some(c => {
+    const bare = h.stripBpPrefix(c);
+    const m = bare.match(/^shadow-\[(.+)\]$/);
+    return !!m && m[1].startsWith("inset_");
+  });
+  const cs = sel.element ? getCachedStyle(sel.element) : null;
+  const csShadow = cs?.boxShadow;
+  const hasComputedInner = !!csShadow && /(^|, )inset\b/.test(csShadow);
+  const hasInner = hasInnerClass || hasComputedInner;
+  return (
+    <Section title="Inner shadow" defaultOpen={false}
+      autoOpenKey={sel.element} hasValue={hasInner}>
+      <ShadowFlavorBody h={h} sel={sel} inset={true} />
+    </Section>
+  );
+});
+
+// Normalize BLEND_MODE_OPTIONS: presets' Option.label is optional, and the
+// array also contains `{ separator: true }` markers that we pass through.
+const BLEND_MODE_SELECT = BLEND_MODE_OPTIONS.map(o =>
+  "separator" in o ? o : { value: o.value, label: o.label ?? o.value },
+);
+
+const BlendingSection = React.memo(function BlendingSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
+  // Opacity — decode Tailwind scale (0..100) or bracket (`[0.37]`, `[50%]`).
   const opacityVal = h.get("opacity");
-  // Decode: preset step ("50") → 50, bracket ("[0.37]") → 37, bracket ("[50%]") → 50
   const opacityNum = (() => {
     if (!opacityVal) return 100;
     if (OPACITY_MAP[opacityVal] !== undefined) return OPACITY_MAP[opacityVal];
@@ -1397,24 +2161,78 @@ const OpacitySection = React.memo(function OpacitySection({ h }: { h: ClassHelpe
     if (whole) return Math.min(100, parseInt(whole[1], 10));
     return 100;
   })();
+  const encodeOpacity = (v: number): string => {
+    if (v === 100) return "";
+    const scaleKey = Object.entries(OPACITY_MAP).find(([, n]) => n === v)?.[0];
+    if (scaleKey !== undefined) return scaleKey;
+    return `[${(v / 100).toFixed(2).replace(/\.?0+$/, "") || "0"}]`;
+  };
 
+  // Mix-blend-mode. Read from Tailwind class first, then fall back to the
+  // CSS value in inline style — so the dropdown reflects what's actually
+  // applied regardless of which path wrote it.
+  const hasInlineBlend = !!(sel.element && sourceStyleHasProperty(sel.element, "mix-blend-mode"));
+  const blendMode = (() => {
+    const found = h.classes.find(c => /^mix-blend-/.test(c));
+    if (found) return found.replace(/^mix-blend-/, "");
+    if (sel.element) {
+      const raw = sel.element.getAttribute("style") || "";
+      const m = raw.match(/(?:^|;)\s*mix-blend-mode\s*:\s*([^;]+)/i);
+      if (m) return m[1].trim();
+    }
+    return "";
+  })();
+  const setBlend = useCallback((v: string) => {
+    if (!sel.source) return;
+    // If the source already sets mix-blend-mode inline, edit the inline style.
+    // Adding a utility class here would lose to inline-style specificity, so
+    // the sidebar change would silently no-op.
+    if (hasInlineBlend) {
+      h.trackedSendMutation({
+        type: "modify-style",
+        source: sel.source,
+        property: "mixBlendMode",
+        value: v,
+      });
+      return;
+    }
+    const remove = h.classes.filter(c => /^mix-blend-/.test(c));
+    h.sendPrefixed({
+      type: "modify-class", source: sel.source,
+      remove: remove.length ? remove : undefined,
+      add: v ? [`mix-blend-${v}`] : undefined,
+    });
+  }, [h, sel, hasInlineBlend]);
+
+  const hasBlending = opacityNum !== 100 || !!blendMode;
   return (
-    <Section title="Opacity" defaultOpen={false}>
-      <SliderValueInput
-        label="Opacity"
-        value={h.get("opacity")}
-        sliderValue={opacityNum}
-        min={0} max={100} step={1}
-        strategy={NUMBER}
-        encode={v => {
-          if (v === 100) return "";
-          const scaleKey = Object.entries(OPACITY_MAP).find(([, n]) => n === v)?.[0];
-          if (scaleKey !== undefined) return scaleKey;
-          return `[${(v / 100).toFixed(2).replace(/\.?0+$/, "") || "0"}]`;
-        }}
-        onChange={v => h.set("opacity", v)}
-        suffix="%"
-      />
+    <Section title="Blending" defaultOpen={false}
+      autoOpenKey={sel.element} hasValue={hasBlending}>
+      <div className="grid grid-cols-2 gap-1.5 items-center">
+        <div className="flex items-center gap-1.5">
+          <Slider
+            value={opacityNum}
+            min={0} max={100} step={1}
+            onChange={() => { /* live preview via sliderValue binding only */ }}
+            onCommit={n => h.set("opacity", encodeOpacity(n))}
+            showValue={false}
+          />
+        </div>
+        <ScrubField
+          value={`${opacityNum}%`}
+          onChange={raw => {
+            const n = Math.max(0, Math.min(100, parseInt(raw, 10) || 0));
+            h.set("opacity", encodeOpacity(n));
+          }}
+          placeholder="100%"
+          title="Opacity"
+          format={n => `${Math.max(0, Math.min(100, Math.round(n)))}%`}
+        />
+      </div>
+      <div className="mt-1.5">
+        <SelectField value={blendMode} options={BLEND_MODE_SELECT} onChange={setBlend}
+          placeholder="Normal" title="Blend mode" />
+      </div>
     </Section>
   );
 });
@@ -1427,500 +2245,160 @@ const OpacitySection = React.memo(function OpacitySection({ h }: { h: ClassHelpe
 
 type Sel = NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]>;
 
-const BackgroundSection = React.memo(function BackgroundSection({ h, sel }: { h: ClassHelpers; sel: Sel }) {
+// ── Selection colors ────────────────────────────────────────────────────────
+// Summary of every bracketed color utility class (e.g. `bg-[#fff]`,
+// `text-[rgba(...)]`) found in the selected element's subtree. Editing a row
+// replaces the color across every occurrence, preserving each element's own
+// prefix + variant (`md:hover:bg-[...]` keeps its variants).
+
+const SELECTION_COLOR_DEBOUNCE_MS = 250;
+
+function CountChip({ count }: { count: number }) {
   return (
-    <Section title="Background" defaultOpen={false}>
-      <PropRow label="Image">
-        <ValueInput value={h.get("bg")} presets={BG_IMAGE_PRESETS} strategy={KEYWORD}
-          onChange={v => h.set("bg", v)} placeholder="none" />
-      </PropRow>
-      <PropRow label="Repeat">
-        <CustomSelect value={["repeat","no-repeat","repeat-x","repeat-y","round","space"].find(c => h.has(`bg-${c}`)) || ""}
-          options={BG_REPEAT_OPTIONS}
-          onChange={v => {
-            const oldActual = ["repeat","no-repeat","repeat-x","repeat-y","round","space"].map(c => h.actual(`bg-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`bg-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Size">
-        <CustomSelect value={["auto","cover","contain"].find(c => h.has(`bg-${c}`)) || ""}
-          options={BG_SIZE_OPTIONS}
-          onChange={v => {
-            const oldActual = ["auto","cover","contain"].map(c => h.actual(`bg-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`bg-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Position">
-        <ValueInput value={h.get("bg")} presets={BG_POSITION_PRESETS} strategy={KEYWORD}
-          onChange={v => h.set("bg", v)} placeholder="center" />
-      </PropRow>
+    <div
+      className={cn(
+        "flex items-center gap-1 px-2 h-7 rounded-md shrink-0",
+        "bg-canvas-muted text-canvas-muted-fg text-[10px] font-mono tabular-nums",
+      )}
+      title={`${count} element${count === 1 ? "" : "s"}`}
+    >
+      <CircleDot size={10} />
+      <span>{count}</span>
+    </div>
+  );
+}
+
+function buildReplacementClass(occ: ColorGroup["occurrences"][number], nextColor: string): string {
+  return `${occ.variant}${occ.prefix}-[${nextColor.replace(/\s+/g, "")}]`;
+}
+
+const SelectionColorsSection = React.memo(function SelectionColorsSection({ h, sel }: { h: ClassHelpers; sel: Sel }) {
+  const groups = useSelectionColors(sel);
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const timersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // Clear a preview once the scan no longer contains its old color key —
+  // that means the mutation landed and the group moved to a new key.
+  useEffect(() => {
+    setPreviews(prev => {
+      let changed = false;
+      const next: Record<string, string> = {};
+      for (const key of Object.keys(prev)) {
+        if (groups.some(g => g.key === key)) {
+          next[key] = prev[key];
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [groups]);
+
+  // Cancel any pending debounce on unmount.
+  useEffect(() => () => {
+    for (const t of Object.values(timersRef.current)) clearTimeout(t);
+    timersRef.current = {};
+  }, []);
+
+  const apply = useCallback((group: ColorGroup, nextColor: string) => {
+    setPreviews(p => ({ ...p, [group.key]: nextColor }));
+    const existing = timersRef.current[group.key];
+    if (existing) clearTimeout(existing);
+    timersRef.current[group.key] = setTimeout(() => {
+      delete timersRef.current[group.key];
+      for (const occ of group.occurrences) {
+        const add = buildReplacementClass(occ, nextColor);
+        if (add === occ.fullClass) continue;
+        h.trackedSendMutation({
+          type: "modify-class",
+          source: occ.source,
+          remove: [occ.fullClass],
+          add: [add],
+        });
+      }
+    }, SELECTION_COLOR_DEBOUNCE_MS);
+  }, [h]);
+
+  if (groups.length === 0) return null;
+
+  return (
+    <Section title="Selection colors" defaultOpen={false}
+      autoOpenKey={sel?.element} hasValue={groups.length > 0}>
+      {groups.map(g => (
+        <div key={g.key} className="grid grid-cols-[1fr_auto] gap-1.5 items-center">
+          <ColorField
+            value={previews[g.key] ?? g.colorCss}
+            onChange={v => apply(g, v)}
+            title={`Used on ${g.occurrences.length} element${g.occurrences.length === 1 ? "" : "s"}`}
+          />
+          <CountChip count={g.occurrences.length} />
+        </div>
+      ))}
     </Section>
   );
 });
 
-function decodeAngle(v: string): number {
-  const m = v.match(/^\[(-?\d*\.?\d+)deg\]$/);
-  if (m) return Math.round(parseFloat(m[1]));
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function decodeScale(v: string): number {
-  const m = v.match(/^\[(\d*\.?\d+)\]$/);
-  if (m) return Math.round(parseFloat(m[1]) * 100);
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? n : 100;
-}
-
-function decodePx(v: string): number {
-  const m = v.match(/^\[(-?\d+)px\]$/);
-  if (m) return parseInt(m[1], 10);
-  return twValueToPx(v);
-}
-
-const TransformsSection = React.memo(function TransformsSection({ h, sel }: { h: ClassHelpers; sel: Sel }) {
-  // Decode the computed transform matrix so the user sees the current
-  // rotation/scale/translation even if it came from somewhere other than
-  // a Tailwind class.
-  const cs = sel.element ? getCachedStyle(sel.element) : null;
-  const tx = cs?.transform;
-  let computedRotate = 0, computedScaleX = 1, computedScaleY = 1, computedTx = 0, computedTy = 0;
-  if (tx && tx !== "none") {
-    const m2d = tx.match(/matrix\(([^)]+)\)/);
-    if (m2d) {
-      const [a, b, c, d, e, f] = m2d[1].split(",").map(s => parseFloat(s));
-      computedRotate = Math.round(Math.atan2(b, a) * (180 / Math.PI));
-      computedScaleX = Math.round(Math.sqrt(a * a + b * b) * 100) / 100;
-      computedScaleY = Math.round(Math.sqrt(c * c + d * d) * 100) / 100;
-      computedTx = Math.round(e);
-      computedTy = Math.round(f);
-    }
-  }
-  const scaleAvg = Math.round(((computedScaleX + computedScaleY) / 2) * 100);
-  return (
-    <Section title="Transforms" defaultOpen={false}>
-      <SliderValueInput
-        label="Rotate"
-        value={h.get("rotate")}
-        sliderValue={decodeAngle(h.get("rotate")) || computedRotate}
-        min={-180} max={180} step={1}
-        presets={ROTATE_PRESETS}
-        strategy={ANGLE}
-        encode={n => n === 0 ? "" : `[${n}deg]`}
-        placeholder={computedRotate !== 0 ? `${computedRotate}deg` : "0deg"}
-        onChange={v => h.set("rotate", v)}
-        suffix="deg"
-      />
-      <SliderValueInput
-        label="Scale"
-        value={h.get("scale")}
-        sliderValue={decodeScale(h.get("scale")) || scaleAvg || 100}
-        min={0} max={200} step={1}
-        presets={SCALE_PRESETS}
-        strategy={NUMBER}
-        encode={n => n === 100 ? "" : String(n)}
-        placeholder={scaleAvg !== 100 ? `${scaleAvg}%` : "100%"}
-        onChange={v => h.set("scale", v)}
-        suffix="%"
-      />
-      <SliderValueInput
-        label="Translate X"
-        value={h.get("translate-x")}
-        sliderValue={decodePx(h.get("translate-x")) || computedTx}
-        min={-200} max={200} step={1}
-        presets={INSET_PRESETS}
-        strategy={LENGTH}
-        encode={n => n === 0 ? "" : `[${n}px]`}
-        placeholder={computedTx !== 0 ? `${computedTx}px` : "0"}
-        onChange={v => h.set("translate-x", v)}
-        suffix="px"
-      />
-      <SliderValueInput
-        label="Translate Y"
-        value={h.get("translate-y")}
-        sliderValue={decodePx(h.get("translate-y")) || computedTy}
-        min={-200} max={200} step={1}
-        presets={INSET_PRESETS}
-        strategy={LENGTH}
-        encode={n => n === 0 ? "" : `[${n}px]`}
-        placeholder={computedTy !== 0 ? `${computedTy}px` : "0"}
-        onChange={v => h.set("translate-y", v)}
-        suffix="px"
-      />
-      <PropRow label="Origin">
-        <CustomSelect value={TRANSFORM_ORIGIN_OPTIONS.map(o => o.value).find(v => v && h.has(`origin-${v}`)) || ""}
-          options={TRANSFORM_ORIGIN_OPTIONS}
-          onChange={v => {
-            const oldActual = TRANSFORM_ORIGIN_OPTIONS.map(o => o.value).filter(Boolean).map(c => h.actual(`origin-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`origin-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-    </Section>
-  );
-});
-
-// A filter row: slider + input for a single filter function.
+// A filter row: slider + scrub input for a single filter function.
 function FilterRow({
-  h, label, prefix, min, max, step, suffix, presets, encode, decode, defaultN,
+  h, label, prefix, min, max, step, suffix, encode, decode, defaultN,
 }: {
   h: ClassHelpers; label: string; prefix: string;
-  min: number; max: number; step: number; suffix?: string;
-  presets?: { value: string; label?: string }[];
+  min: number; max: number; step: number;
+  /** Display unit appended to the scrub value ("px" / "%"). */
+  suffix: "px" | "%";
   encode: (n: number) => string;
   decode: (v: string) => number;
   defaultN: number;
 }) {
   const current = h.get(prefix);
+  const n = current ? decode(current) : defaultN;
   return (
-    <SliderValueInput
-      label={label}
-      value={current}
-      sliderValue={current ? decode(current) : defaultN}
-      min={min} max={max} step={step}
-      presets={presets}
-      strategy={KEYWORD}
-      encode={encode}
-      onChange={v => h.set(prefix, v)}
-      suffix={suffix}
-    />
+    <div className="grid grid-cols-[1fr_5rem] gap-1.5 items-center">
+      <Slider
+        value={n}
+        min={min} max={max} step={step}
+        onChange={() => { /* live preview only via Tailwind class */ }}
+        onCommit={v => h.set(prefix, encode(v))}
+        showValue={false}
+      />
+      <ScrubField
+        label={label}
+        value={`${n}${suffix}`}
+        onChange={raw => {
+          const v = parseInt(raw, 10);
+          h.set(prefix, encode(Number.isFinite(v) ? v : defaultN));
+        }}
+        format={x => `${Math.round(x)}${suffix}`}
+      />
+    </div>
   );
 }
 
+const FILTER_PREFIXES = ["blur", "brightness", "contrast", "saturate", "hue-rotate", "grayscale", "invert", "sepia"];
 const FiltersSection = React.memo(function FiltersSection({ h, sel }: { h: ClassHelpers; sel: Sel }) {
-  void sel;
+  const hasFilter = h.classes.some(c => {
+    const bare = h.stripBpPrefix(c);
+    return FILTER_PREFIXES.some(p => bare === p || bare.startsWith(p + "-"));
+  });
   return (
-    <Section title="Filters" defaultOpen={false}>
-      <FilterRow h={h} label="Blur"      prefix="blur"        min={0} max={64} step={1}  suffix="px"  presets={BLUR_PRESETS}
+    <Section title="Filters" defaultOpen={false}
+      autoOpenKey={sel?.element} hasValue={hasFilter}>
+      <FilterRow h={h} label="Blur"   prefix="blur"       min={0} max={64}  step={1} suffix="px"
         encode={n => n === 0 ? "" : `[${n}px]`}
         decode={v => { const m = v.match(/^\[(\d+)px\]$/); return m ? parseInt(m[1], 10) : 0; }}
         defaultN={0} />
-      <FilterRow h={h} label="Bright"    prefix="brightness"  min={0} max={200} step={5} suffix="%" presets={FILTER_PERCENT_PRESETS}
+      <FilterRow h={h} label="Bright" prefix="brightness" min={0} max={200} step={5} suffix="%"
         encode={n => n === 100 ? "" : String(n)}
         decode={v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 100; }}
         defaultN={100} />
-      <FilterRow h={h} label="Contrast"  prefix="contrast"    min={0} max={200} step={5} suffix="%" presets={FILTER_PERCENT_PRESETS}
+      <FilterRow h={h} label="Cntr"   prefix="contrast"   min={0} max={200} step={5} suffix="%"
         encode={n => n === 100 ? "" : String(n)}
         decode={v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 100; }}
         defaultN={100} />
-      <FilterRow h={h} label="Saturate"  prefix="saturate"    min={0} max={200} step={5} suffix="%" presets={FILTER_PERCENT_PRESETS}
+      <FilterRow h={h} label="Satur"  prefix="saturate"   min={0} max={200} step={5} suffix="%"
         encode={n => n === 100 ? "" : String(n)}
         decode={v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 100; }}
         defaultN={100} />
-    </Section>
-  );
-});
-
-const TransitionsSection = React.memo(function TransitionsSection({ h, sel }: { h: ClassHelpers; sel: Sel }) {
-  void sel;
-  const durNum = (() => {
-    const v = h.get("duration");
-    const m = v.match(/^\[(\d+)ms\]$/);
-    if (m) return parseInt(m[1], 10);
-    const n = parseInt(v, 10);
-    return Number.isFinite(n) ? n : 0;
-  })();
-  const delayNum = (() => {
-    const v = h.get("delay");
-    const m = v.match(/^\[(\d+)ms\]$/);
-    if (m) return parseInt(m[1], 10);
-    const n = parseInt(v, 10);
-    return Number.isFinite(n) ? n : 0;
-  })();
-  return (
-    <Section title="Transitions" defaultOpen={false}>
-      <PropRow label="Property">
-        <CustomSelect
-          value={["transition","transition-all","transition-colors","transition-opacity","transition-shadow","transition-transform","transition-none"].find(c => h.has(c)) || ""}
-          options={TRANSITION_PROPERTY_OPTIONS}
-          onChange={v => {
-            const oldActual = ["transition","transition-all","transition-colors","transition-opacity","transition-shadow","transition-transform","transition-none"].map(c => h.actual(c)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [v === "all" || v === "none" || v === "colors" || v === "opacity" || v === "shadow" || v === "transform" ? `transition-${v}` : "transition"] : undefined });
-          }}
-        />
-      </PropRow>
-      <SliderValueInput
-        label="Duration"
-        value={h.get("duration")}
-        sliderValue={durNum}
-        min={0} max={2000} step={25}
-        presets={DURATION_PRESETS}
-        strategy={DURATION}
-        encode={n => n === 0 ? "" : `[${n}ms]`}
-        onChange={v => h.set("duration", v)}
-        suffix="ms"
-      />
-      <SliderValueInput
-        label="Delay"
-        value={h.get("delay")}
-        sliderValue={delayNum}
-        min={0} max={2000} step={25}
-        presets={DURATION_PRESETS}
-        strategy={DURATION}
-        encode={n => n === 0 ? "" : `[${n}ms]`}
-        onChange={v => h.set("delay", v)}
-        suffix="ms"
-      />
-      <PropRow label="Timing">
-        <CustomSelect
-          value={["linear","in","out","in-out"].find(c => h.has(`ease-${c}`)) || ""}
-          options={TIMING_FUNCTION_OPTIONS}
-          onChange={v => {
-            const oldActual = ["linear","in","out","in-out"].map(c => h.actual(`ease-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`ease-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Animate">
-        <CustomSelect
-          value={["spin","ping","pulse","bounce","none"].find(c => h.has(`animate-${c}`)) || ""}
-          options={ANIMATION_OPTIONS}
-          onChange={v => {
-            const oldActual = ["spin","ping","pulse","bounce","none"].map(c => h.actual(`animate-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`animate-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-    </Section>
-  );
-});
-
-const InteractivitySection = React.memo(function InteractivitySection({ h, sel }: { h: ClassHelpers; sel: Sel }) {
-  const cursorVal = CURSOR_OPTIONS.map(o => o.value).find(v => v && h.has(`cursor-${v}`)) || "";
-  return (
-    <Section title="Interactivity" defaultOpen={false}>
-      <PropRow label="Cursor">
-        <CustomSelect
-          value={cursorVal}
-          options={CURSOR_OPTIONS}
-          onChange={v => {
-            const oldActual = CURSOR_OPTIONS.map(o => o.value).filter(Boolean).map(c => h.actual(`cursor-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`cursor-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Pointer">
-        <CustomSelect value={["auto","none"].find(c => h.has(`pointer-events-${c}`)) || ""}
-          options={POINTER_EVENTS_OPTIONS}
-          onChange={v => {
-            const oldActual = ["auto","none"].map(c => h.actual(`pointer-events-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`pointer-events-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Select">
-        <CustomSelect value={["none","text","all","auto"].find(c => h.has(`select-${c}`)) || ""}
-          options={USER_SELECT_OPTIONS}
-          onChange={v => {
-            const oldActual = ["none","text","all","auto"].map(c => h.actual(`select-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`select-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Resize">
-        <CustomSelect value={["none","y","x"].find(c => h.has(`resize-${c}`)) || (h.has("resize") ? "resize" : "")}
-          options={RESIZE_OPTIONS}
-          onChange={v => {
-            const oldActual = ["resize","resize-none","resize-y","resize-x"].map(c => h.actual(c)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [v === "resize" ? "resize" : `resize-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-    </Section>
-  );
-});
-
-const SvgSection = React.memo(function SvgSection({ h, sel }: { h: ClassHelpers; sel: Sel }) {
-  if (sel.tagName !== "svg" && sel.tagName !== "path" && sel.tagName !== "circle" &&
-      sel.tagName !== "rect" && sel.tagName !== "line" && sel.tagName !== "polyline" &&
-      sel.tagName !== "polygon" && sel.tagName !== "g") {
-    return null;
-  }
-  const cs = sel.element ? getCachedStyle(sel.element) : null;
-  const strokeWidthPx = cs ? Math.round(parseFloat(cs.strokeWidth) || 0) : 0;
-  return (
-    <Section title="SVG" defaultOpen={false}>
-      <ColorPicker label="Fill" prefix="fill" classes={h.classes}
-        onApply={(remove, add) => { if (sel.source) h.sendPrefixed({ type: "modify-class", source: sel.source, remove, add }); }} />
-      <ColorPicker label="Stroke" prefix="stroke" classes={h.classes}
-        onApply={(remove, add) => { if (sel.source) h.sendPrefixed({ type: "modify-class", source: sel.source, remove, add }); }} />
-      <SliderValueInput
-        label="Stroke W"
-        value={h.get("stroke")}
-        sliderValue={strokeWidthPx}
-        min={0} max={16} step={1}
-        strategy={INTEGER}
-        encode={n => n === 0 ? "" : String(n)}
-        onChange={v => h.set("stroke", v)}
-        suffix="px"
-      />
-    </Section>
-  );
-});
-
-const TablesSection = React.memo(function TablesSection({ h, sel }: { h: ClassHelpers; sel: Sel }) {
-  if (sel.tagName !== "table" && sel.tagName !== "tr" && sel.tagName !== "td" &&
-      sel.tagName !== "th" && sel.tagName !== "thead" && sel.tagName !== "tbody") {
-    return null;
-  }
-  return (
-    <Section title="Table" defaultOpen={false}>
-      <PropRow label="Collapse">
-        <CustomSelect value={["collapse","separate"].find(c => h.has(`border-${c}`)) || ""}
-          options={BORDER_COLLAPSE_OPTIONS}
-          onChange={v => {
-            const oldActual = ["border-collapse","border-separate"].map(c => h.actual(c)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`border-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Layout">
-        <CustomSelect value={["auto","fixed"].find(c => h.has(`table-${c}`)) || ""}
-          options={TABLE_LAYOUT_OPTIONS}
-          onChange={v => {
-            const oldActual = ["auto","fixed"].map(c => h.actual(`table-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`table-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-      <PropRow label="Caption">
-        <CustomSelect value={["top","bottom"].find(c => h.has(`caption-${c}`)) || ""}
-          options={CAPTION_SIDE_OPTIONS}
-          onChange={v => {
-            const oldActual = ["top","bottom"].map(c => h.actual(`caption-${c}`)).filter(Boolean) as string[];
-            h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`caption-${v}`] : undefined });
-          }}
-        />
-      </PropRow>
-    </Section>
-  );
-});
-
-const CSSVariablesSection = React.memo(function CSSVariablesSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
-  void h;
-  const variables = useCSSVariables(sel.element);
-  const [filter, setFilter] = useState("");
-  const [showSuggest, setShowSuggest] = useState(false);
-  const inputRef = React.useRef<HTMLInputElement>(null);
-
-  const filtered = filterVariables(variables, filter);
-
-  if (variables.length === 0) return null;
-
-  return (
-    <Section title="Variables" defaultOpen={false}>
-      <div style={{ position: "relative" }}>
-        <input
-          ref={inputRef}
-          style={{
-            width: "100%", height: 28, background: C.bgAlt,
-            border: "1px solid transparent", borderRadius: 6,
-            color: C.fg, fontSize: 11, fontFamily: C.mono,
-            padding: "0 8px", outline: "none",
-            transition: "border-color 0.15s",
-            boxSizing: "border-box",
-          }}
-          placeholder="Search variables..."
-          value={filter}
-          onChange={e => { setFilter(e.target.value); setShowSuggest(true); }}
-          onFocus={() => setShowSuggest(true)}
-          onBlur={() => setTimeout(() => setShowSuggest(false), 200)}
-        />
-        {showSuggest && filtered.length > 0 && inputRef.current && (
-          <VariableSuggest
-            variables={filtered}
-            filter={filter}
-            anchor={{
-              x: inputRef.current.getBoundingClientRect().left,
-              y: inputRef.current.getBoundingClientRect().bottom + 4,
-            }}
-            onSelect={(varExpr) => {
-              navigator.clipboard?.writeText(varExpr);
-              setFilter("");
-              setShowSuggest(false);
-            }}
-            onClose={() => setShowSuggest(false)}
-          />
-        )}
-      </div>
-      <div style={{ fontSize: 9, color: C.fgMuted, marginTop: 2 }}>
-        {variables.length} CSS variables available. Click to copy.
-      </div>
-    </Section>
-  );
-});
-
-const ClassesSection = React.memo(function ClassesSection({ h, sel }: { h: ClassHelpers; sel: NonNullable<ReturnType<typeof useEditorStore.getState>["selectedElement"]> }) {
-  const [newCls, setNewCls] = useState("");
-
-  return (
-    <Section title="Classes" defaultOpen={false}>
-      <div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-          {h.classes.map((c: string) => (
-            <span
-              key={c}
-              onClick={() => sel.source && h.trackedSendMutation({ type: "modify-class", source: sel.source, remove: [c] })}
-              title={`Click to remove: ${c}`}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 4,
-                background: C.bgAlt, border: `1px solid ${C.borderLight}`,
-                borderRadius: 4, padding: "2px 6px",
-                fontSize: 10, fontFamily: C.mono, color: C.fg,
-                cursor: "pointer", transition: "all 0.12s",
-              }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = C.danger; e.currentTarget.style.background = "rgba(242,72,34,0.08)"; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = C.borderLight; e.currentTarget.style.background = C.bgAlt; }}
-            >
-              {c}
-              <span style={{ color: C.fgMuted, fontSize: 10, transition: "color 0.12s" }}>×</span>
-            </span>
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 4 }}>
-          <input
-            style={{
-              flex: 1, height: 28, background: C.bgAlt,
-              border: "1px solid transparent", borderRadius: 6,
-              color: C.fg, fontSize: 11, fontFamily: C.mono,
-              padding: "0 8px", outline: "none",
-              transition: "border-color 0.15s",
-            }}
-            placeholder="Add class..."
-            value={newCls}
-            onChange={e => setNewCls(e.target.value)}
-            onFocus={e => (e.currentTarget.style.borderColor = C.accent)}
-            onBlur={e => (e.currentTarget.style.borderColor = "transparent")}
-            onKeyDown={e => {
-              if (e.key === "Enter" && newCls.trim() && sel.source) {
-                h.trackedSendMutation({ type: "modify-class", source: sel.source, add: [newCls.trim()] });
-                setNewCls("");
-              }
-            }}
-          />
-          <button
-            onClick={() => {
-              if (newCls.trim() && sel.source) {
-                h.trackedSendMutation({ type: "modify-class", source: sel.source, add: [newCls.trim()] });
-                setNewCls("");
-              }
-            }}
-            style={{
-              width: 28, height: 28, background: C.accent,
-              border: "none", borderRadius: 6, color: "#fff",
-              fontSize: 14, cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "background 0.12s",
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = "#3da8f5")}
-            onMouseLeave={e => (e.currentTarget.style.background = C.accent)}
-          >
-            +
-          </button>
-        </div>
-      </div>
     </Section>
   );
 });

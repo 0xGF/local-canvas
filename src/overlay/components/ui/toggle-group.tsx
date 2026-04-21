@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React from "react";
+import { cn } from "../../lib/utils.js";
+import { Tooltip } from "./tooltip.js";
 
 interface ToggleItem {
   value: string;
@@ -11,104 +13,49 @@ interface ToggleGroupProps {
   value: string;
   items: ToggleItem[];
   onChange: (value: string) => void;
+  /** When true, renders a label next to the icon and stretches to fill. */
   showLabels?: boolean;
+  className?: string;
 }
 
-import { THEME } from "../../theme.js";
-const C = { ...THEME, bgActive: THEME.accent, fgActive: "#fff" };
-
 export const ToggleGroup = React.memo(function ToggleGroup({
-  value,
-  items,
-  onChange,
-  showLabels = false,
+  value, items, onChange, showLabels = false, className,
 }: ToggleGroupProps) {
-  const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
-
   return (
-    <div style={{ position: "relative" }}>
-      <div
-        style={{
-          display: "flex",
-          background: C.bgAlt,
-          borderRadius: 6,
-          padding: 2,
-          gap: 1,
-        }}
-      >
-        {items.map((item) => {
-          const active = item.value === value;
-          return (
-            <button
-              key={item.value}
-              onClick={() => onChange(item.value === value ? "" : item.value)}
-              onMouseEnter={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                setTooltip({
-                  text: item.title || item.label || item.value,
-                  x: rect.left + rect.width / 2,
-                  y: rect.top,
-                });
-              }}
-              onMouseLeave={() => setTooltip(null)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 4,
-                height: 26,
-                minWidth: showLabels ? 0 : 30,
-                padding: showLabels ? "0 8px" : "0 6px",
-                borderRadius: 4,
-                border: "none",
-                background: active ? C.bgActive : "transparent",
-                color: active ? C.fgActive : C.fgDim,
-                cursor: "pointer",
-                fontSize: 10,
-                fontWeight: active ? 500 : 400,
-                transition: "all 0.12s ease",
-                flex: showLabels ? 1 : undefined,
-              }}
-              onMouseOver={(e) => {
-                if (!active) e.currentTarget.style.background = C.bgHover;
-              }}
-              onMouseOut={(e) => {
-                if (!active) e.currentTarget.style.background = "transparent";
-              }}
-            >
-              {item.icon}
-              {showLabels && (
-                <span style={{ fontSize: 10, whiteSpace: "nowrap" }}>
-                  {item.label || item.value}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-      {/* Tooltip */}
-      {tooltip && !showLabels && (
-        <div
-          style={{
-            position: "fixed",
-            left: tooltip.x,
-            top: tooltip.y - 28,
-            transform: "translateX(-50%)",
-            background: "#000",
-            color: "#fff",
-            fontSize: 10,
-            fontWeight: 500,
-            padding: "3px 8px",
-            borderRadius: 4,
-            whiteSpace: "nowrap",
-            pointerEvents: "none",
-            zIndex: 2147483647,
-            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-          }}
-        >
-          {tooltip.text}
-        </div>
+    <div
+      className={cn(
+        "flex gap-px p-0.5 rounded-md bg-canvas-muted",
+        className,
       )}
+    >
+      {items.map(item => {
+        const active = item.value === value;
+        const tipContent = item.title ?? (showLabels ? undefined : item.label ?? item.value);
+        const btn = (
+          <button
+            key={item.value}
+            type="button"
+            aria-pressed={active}
+            aria-label={item.label ?? item.value}
+            onClick={() => onChange(item.value === value ? "" : item.value)}
+            className={cn(
+              "flex items-center justify-center gap-1 h-6 rounded transition-colors",
+              "text-[10px] cursor-pointer select-none",
+              showLabels ? "flex-1 px-2" : "min-w-[30px] px-1.5",
+              active
+                ? "bg-canvas-accent text-canvas-accent-fg font-medium shadow-sm"
+                : "text-canvas-muted-fg hover:bg-canvas-muted/60 hover:text-canvas-fg",
+            )}
+          >
+            {item.icon}
+            {showLabels && (
+              <span className="whitespace-nowrap">{item.label ?? item.value}</span>
+            )}
+          </button>
+        );
+        if (!tipContent) return btn;
+        return <Tooltip key={item.value} content={tipContent}>{btn}</Tooltip>;
+      })}
     </div>
   );
 });

@@ -476,7 +476,7 @@ function FlexAdvancedPopover({ h, sel }: { h: ClassHelpers; sel: NonNullable<Ret
   // (e.g. "flex-2") are preserved too.
   const flexPresetValues = FLEX_ITEM_PRESETS.map(o => o.value).filter(Boolean);
   const currentFlex = h.findCls(flexPresetValues)
-    || h.classes.find(c => /^flex-\d+$/.test(c) || /^flex-\[/.test(c))
+    || h.classes.find(c => { const b = h.stripBpPrefix(c); return /^flex-\d+$/.test(b) || /^flex-\[/.test(b); })
     || "";
 
   const setWrap = useCallback((v: string) => {
@@ -504,7 +504,7 @@ function FlexAdvancedPopover({ h, sel }: { h: ClassHelpers; sel: NonNullable<Ret
 
   const setFlex = useCallback((v: string) => {
     const old = flexPresetValues.map(c => h.actual(c)).filter(Boolean) as string[];
-    const numericExisting = h.classes.filter(c => /^flex-\d+$/.test(c) || /^flex-\[/.test(c));
+    const numericExisting = h.classes.filter(c => { const b = h.stripBpPrefix(c); return /^flex-\d+$/.test(b) || /^flex-\[/.test(b); });
     const removeList = [...old, ...numericExisting];
     h.sendPrefixed({
       type: "modify-class", source: sel.source!,
@@ -1818,7 +1818,8 @@ const RadiusSection = React.memo(function RadiusSection({ h, sel }: { h: ClassHe
   const writeLinked = useCallback((n: number) => {
     if (!sel.source) return;
     const remove = h.classes.filter(c => {
-      return RADIUS_PREFIXES.some(p => c === p || c.startsWith(p + "-"));
+      const bare = h.stripBpPrefix(c);
+      return RADIUS_PREFIXES.some(p => bare === p || bare.startsWith(p + "-"));
     });
     const suffix = pxToRadiusSuffix(n);
     // `suffix === ""` represents the bare `rounded` class (4px) — emit it
@@ -2173,8 +2174,8 @@ const BlendingSection = React.memo(function BlendingSection({ h, sel }: { h: Cla
   // applied regardless of which path wrote it.
   const hasInlineBlend = !!(sel.element && sourceStyleHasProperty(sel.element, "mix-blend-mode"));
   const blendMode = (() => {
-    const found = h.classes.find(c => /^mix-blend-/.test(c));
-    if (found) return found.replace(/^mix-blend-/, "");
+    const found = h.classes.find(c => /^mix-blend-/.test(h.stripBpPrefix(c)));
+    if (found) return h.stripBpPrefix(found).replace(/^mix-blend-/, "");
     if (sel.element) {
       const raw = sel.element.getAttribute("style") || "";
       const m = raw.match(/(?:^|;)\s*mix-blend-mode\s*:\s*([^;]+)/i);
@@ -2196,7 +2197,7 @@ const BlendingSection = React.memo(function BlendingSection({ h, sel }: { h: Cla
       });
       return;
     }
-    const remove = h.classes.filter(c => /^mix-blend-/.test(c));
+    const remove = h.classes.filter(c => /^mix-blend-/.test(h.stripBpPrefix(c)));
     h.sendPrefixed({
       type: "modify-class", source: sel.source,
       remove: remove.length ? remove : undefined,

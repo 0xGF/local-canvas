@@ -54,8 +54,15 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
   // and scrollHeight returns bogus values). 1000 is a reasonable viewport
   // that most pages will either match or grow beyond.
   const heightRef = useRef(1000);
+  const measuredRef = useRef(false);
   const [height, setHeight] = useState(1000);
   const [loaded, setLoaded] = useState(false);
+  // Flips true the first time we read a real scrollHeight from the iframe.
+  // The visible frame stays at opacity 0 until then, so the user never
+  // sees it morph from the 1000px placeholder to the real page height —
+  // a fullscreen halftone covers the viewport and fades out only after
+  // the frame is sized correctly and fitToPage has run.
+  const [measured, setMeasured] = useState(false);
   const [loaderMounted, setLoaderMounted] = useState(true);
   const [wiping, setWiping] = useState(false);
   const selectElement = useEditorStore((s) => s.selectElement);
@@ -63,27 +70,23 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
 
   const frameUrl = `${location.origin}${location.pathname}?__canvas_no_overlay`;
 
-  // Fit to page after mount.
+  // Reveal sequence once the iframe's real height is known:
+  //   1. fitToPage — zoom/pan to fit the real frame size.
+  //   2. Next frame: fade frame in, start halftone wipe.
+  //   3. Unmount halftone after fade completes.
+  // fitToPage is intentionally NOT called on mount anymore — fitting to
+  // the 1000px placeholder before the real height lands makes the frame
+  // appear to grow past the initial viewport when it resizes.
   useEffect(() => {
+    if (!measured) { setLoaderMounted(true); setWiping(false); return; }
     requestAnimationFrame(() => useViewportStore.getState().fitToPage());
-  }, [width]);
-
-  // Reveal sequence once the iframe has loaded:
-  //   1. updateHeight fires ~100ms after onLoad → setHeight(real).
-  //   2. Wrap/iframe/canvas transition height over 320ms (1000 → real).
-  //   3. After the height transition lands (~450ms total), halftone fades
-  //      out on top. Iframe sits at opacity 1 underneath so the fade
-  //      uncovers it directly.
-  //   4. Unmount after fade completes.
-  useEffect(() => {
-    if (!loaded) { setLoaderMounted(true); setWiping(false); return; }
-    const fadeStart = setTimeout(() => setWiping(true), 450);
-    const unmount = setTimeout(() => setLoaderMounted(false), 870);
+    const fadeStart = setTimeout(() => setWiping(true), 120);
+    const unmount = setTimeout(() => setLoaderMounted(false), 560);
     return () => {
       clearTimeout(fadeStart);
       clearTimeout(unmount);
     };
-  }, [loaded]);
+  }, [measured]);
 
   useEffect(() => {
     const iframe = iframeRef.current;
@@ -114,11 +117,16 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
       // Also block selectstart events
       doc.addEventListener("selectstart", (e) => e.preventDefault(), true);
 
-      // Dynamic height
+      // Dynamic height. First valid read also flips `measured`, which
+      // triggers fitToPage + the halftone fade reveal.
       const updateHeight = () => {
         void doc.body.offsetHeight;
         const h = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight, doc.body.offsetHeight);
         if (h > 0 && h !== heightRef.current) { heightRef.current = h; setHeight(h); }
+        if (h > 0 && !measuredRef.current) {
+          measuredRef.current = true;
+          setMeasured(true);
+        }
       };
       setTimeout(updateHeight, 100);
       ro = new ResizeObserver(updateHeight);
@@ -345,6 +353,7 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
   }, [selectElement, setHoveredElement]);
 
   return (
+    <>
     <div
       id="responsive-frame-container"
       style={{
@@ -356,6 +365,10 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
         alignItems: "center",
         padding: 40,
         pointerEvents: "auto",
+        // Hidden until the real height lands + viewport fits. Prevents any
+        // visible morph from the 1000px placeholder default.
+        opacity: measured ? 1 : 0,
+        transition: "opacity 260ms ease-out",
       }}
     >
       {/* Label */}
@@ -378,22 +391,17 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
           paints on top of absolutely-positioned sibling elements even
           with higher z-index. Hoisting the canvas up one level above
           the iframe's frame-div works. */}
-      {/* Height animates to the iframe's measured scrollHeight on load so
-          the frame grows/shrinks to the real page size before the halftone
-          fades off. */}
       <div
         style={{
           width,
           height,
           position: "relative",
-          transition: "height 320ms cubic-bezier(0.2, 0.8, 0.2, 1)",
-          willChange: loaderMounted ? "height" : "auto",
         }}
       >
-        {/* Frame — holds the iframe. The iframe sits here at full opacity
-            from first render; the halftone loader is stacked on top and
-            simply dissolves to reveal it, so the reveal is smooth with no
-            cross-fade ghosting. Card shadow fades in on load. */}
+        {/* Frame — holds the iframe. A fullscreen halftone covers the
+            viewport during load (see sibling below), so the iframe fades
+            in at the correct size along with the container, with no
+            in-frame loader to coordinate. Card shadow fades in on load. */}
         <div
           className={[
             "absolute inset-0 overflow-hidden rounded-lg",
@@ -409,21 +417,9 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
             src={frameUrl}
             scrolling="no"
             className="block border-0 overflow-hidden"
-            style={{
-              width,
-              height,
-              transition: "height 320ms cubic-bezier(0.2, 0.8, 0.2, 1)",
-            }}
+            style={{ width, height }}
             title={`${width}px preview`}
           />
-          {loaderMounted && (
-            // `wiping` triggers the top-to-bottom mask reveal in styles.css
-            // once the iframe has loaded AND the height-resize has settled
-            // (height update runs ~100ms after onLoad, grows for ~550ms —
-            // see the height-transition on the wrap + iframe above — so we
-            // drive the wipe from a delayed `wiping` flag set in useEffect).
-            <HalftoneLoader wiping={wiping} />
-          )}
         </div>
 
         {/* Overlay canvas — sibling of the frame-div (not the iframe),
@@ -443,14 +439,8 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
             width,
             height,
             pointerEvents: "none",
-            // Canvas is hidden while the halftone loader covers the frame,
-            // so any restored selection/hover outlines don't show through
-            // during load. Fades in as the halftone fades out. Matches the
-            // wrap + iframe height transition so overlay drawings stay in
-            // sync during the reveal grow.
-            opacity: loaderMounted ? 0 : 1,
-            transition:
-              "opacity 250ms ease-out, height 320ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+            // Canvas visibility is driven by the container's opacity fade
+            // (gated on `measured`) — no separate transition needed here.
           }}
         >
           {HAS_DRAW_ELEMENT && (
@@ -489,5 +479,25 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
         </canvas>
       </div>
     </div>
+    {/* Fullscreen halftone cover — sits outside the transformed
+        responsive-frame-container so `position: fixed` behaves correctly
+        (CSS transforms on ancestors turn fixed into absolute). Covers the
+        viewport while the iframe's real height is being measured + the
+        viewport is fit, then fades out revealing the already-sized frame
+        underneath. No size morph visible to the user. */}
+    {loaderMounted && (
+      <div
+        aria-hidden="true"
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 10,
+          pointerEvents: wiping ? "none" : "auto",
+        }}
+      >
+        <HalftoneLoader wiping={wiping} rounded="" />
+      </div>
+    )}
+    </>
   );
 });

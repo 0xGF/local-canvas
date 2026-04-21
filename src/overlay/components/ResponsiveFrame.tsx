@@ -88,6 +88,20 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
     };
   }, [measured]);
 
+  // Safety: if the iframe never reports a positive scrollHeight (blocked
+  // load, cross-origin hiccup, empty page), reveal with the 1000px default
+  // after 3s rather than trapping the user behind the halftone forever.
+  useEffect(() => {
+    if (measured) return;
+    const t = setTimeout(() => {
+      if (!measuredRef.current) {
+        measuredRef.current = true;
+        setMeasured(true);
+      }
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [measured]);
+
   useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe) return;

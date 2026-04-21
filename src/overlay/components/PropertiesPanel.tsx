@@ -2995,7 +2995,6 @@ const BackdropFiltersSection = React.memo(function BackdropFiltersSection({ h, s
 const TRANSITION_PROPERTY_SELECT = [
   { value: "",           label: "None" },
   { value: "all",        label: "All" },
-  { value: "",           label: "Default" },
   { value: "colors",     label: "Colors" },
   { value: "opacity",    label: "Opacity" },
   { value: "shadow",     label: "Shadow" },

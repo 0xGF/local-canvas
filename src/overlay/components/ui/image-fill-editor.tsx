@@ -1,6 +1,7 @@
 import * as React from "react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/utils.js";
+import { clamp } from "../../lib/color.js";
 import { Button } from "./button.js";
 import { ScrubField } from "./scrub-field.js";
 import { SelectField } from "./select-field.js";
@@ -25,14 +26,16 @@ interface ImageFillEditorProps {
   className?: string;
 }
 
-const FIT_OPTS = [
+// Typed as const tuples so SelectField's string callback can be narrowed back
+// to the literal union without an `as ImageFit` cast.
+const FIT_OPTS: readonly { value: ImageFit; label: string }[] = [
   { value: "cover", label: "Cover" },
   { value: "contain", label: "Contain" },
   { value: "fill", label: "Fill" },
   { value: "none", label: "None" },
 ];
 
-const REPEAT_OPTS = [
+const REPEAT_OPTS: readonly { value: ImageRepeat; label: string }[] = [
   { value: "no-repeat", label: "No repeat" },
   { value: "repeat", label: "Tile" },
   { value: "repeat-x", label: "Tile X" },
@@ -40,6 +43,14 @@ const REPEAT_OPTS = [
 ];
 
 const CHECKER = "repeating-conic-gradient(#666 0 25%, #999 0 50%) 0 0 / 8px 8px";
+const CHECKER_SIZE = "8px 8px";
+
+const pct = (n: number) => String(Math.round(clamp(n, 0, 100)));
+const formatPct = (n: number) => pct(n);
+
+function narrow<T extends string>(value: string, options: readonly { value: T }[], fallback: T): T {
+  return options.some(o => o.value === value) ? (value as T) : fallback;
+}
 
 /** Translate the editor's fit value into the CSS `background-size` keyword. */
 export function imageFitToBackgroundSize(fit: ImageFit): string {
@@ -56,7 +67,11 @@ export function imageFillToCss(v: ImageFillValue): {
   backgroundRepeat: string;
 } {
   return {
-    backgroundImage: v.url ? `url(${JSON.stringify(v.url)})` : "none",
+    // Single-quote the URL: the resulting class lands inside JSX
+    // `className="..."`, and a double quote here would terminate the
+    // attribute mid-write. Strip any single quotes in the URL itself —
+    // they're never valid in a real URL anyway.
+    backgroundImage: v.url ? `url('${v.url.replace(/'/g, "")}')` : "none",
     backgroundSize: imageFitToBackgroundSize(v.fit),
     backgroundPosition: `${Math.round(v.positionX)}% ${Math.round(v.positionY)}%`,
     backgroundRepeat: v.repeat,
@@ -72,9 +87,10 @@ export function ImageFillEditor({ value, onChange, className }: ImageFillEditorP
   const [localUrl, setLocalUrl] = useState(value.url);
   const [focused, setFocused] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const urlInputRef = useRef<HTMLInputElement>(null);
 
   // External → local sync (skip while typing).
-  React.useEffect(() => {
+  useEffect(() => {
     if (!focused) setLocalUrl(value.url);
   }, [value.url, focused]);
 
@@ -95,25 +111,23 @@ export function ImageFillEditor({ value, onChange, className }: ImageFillEditorP
     ev.target.value = "";
   }, [value, onChange]);
 
-  const setFit = useCallback((f: string) => {
-    onChange({ ...value, fit: (FIT_OPTS.some(o => o.value === f) ? f : "cover") as ImageFit });
-  }, [value, onChange]);
+  const setFit = useCallback(
+    (f: string) => onChange({ ...value, fit: narrow(f, FIT_OPTS, "cover") }),
+    [value, onChange],
+  );
+  const setRepeat = useCallback(
+    (r: string) => onChange({ ...value, repeat: narrow(r, REPEAT_OPTS, "no-repeat") }),
+    [value, onChange],
+  );
 
-  const setRepeat = useCallback((r: string) => {
-    onChange({ ...value, repeat: (REPEAT_OPTS.some(o => o.value === r) ? r : "no-repeat") as ImageRepeat });
-  }, [value, onChange]);
-
-  const setX = useCallback((raw: string) => {
+  const setPosition = useCallback((axis: "positionX" | "positionY", raw: string) => {
     const n = parseFloat(raw);
     if (!Number.isFinite(n)) return;
-    onChange({ ...value, positionX: Math.max(0, Math.min(100, n)) });
+    onChange({ ...value, [axis]: clamp(n, 0, 100) });
   }, [value, onChange]);
 
-  const setY = useCallback((raw: string) => {
-    const n = parseFloat(raw);
-    if (!Number.isFinite(n)) return;
-    onChange({ ...value, positionY: Math.max(0, Math.min(100, n)) });
-  }, [value, onChange]);
+  const backgroundImage = value.url ? `url(${JSON.stringify(value.url)}), ${CHECKER}` : CHECKER;
+  const backgroundSize = value.url ? `${imageFitToBackgroundSize(value.fit)}, ${CHECKER_SIZE}` : CHECKER_SIZE;
 
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
@@ -122,8 +136,8 @@ export function ImageFillEditor({ value, onChange, className }: ImageFillEditorP
         aria-label="Image preview"
         className="h-16 rounded-md border border-canvas-border"
         style={{
-          backgroundImage: value.url ? `url(${JSON.stringify(value.url)}), ${CHECKER}` : CHECKER,
-          backgroundSize: value.url ? `${imageFitToBackgroundSize(value.fit)}, 8px 8px` : "8px 8px",
+          backgroundImage,
+          backgroundSize,
           backgroundPosition: `${Math.round(value.positionX)}% ${Math.round(value.positionY)}%`,
           backgroundRepeat: `${value.repeat}, repeat`,
         }}
@@ -141,14 +155,15 @@ export function ImageFillEditor({ value, onChange, className }: ImageFillEditorP
             <ImageIcon size={11} />
           </span>
           <input
+            ref={urlInputRef}
             value={localUrl}
             placeholder="https://…"
             onChange={e => setLocalUrl(e.target.value)}
             onFocus={() => setFocused(true)}
             onBlur={() => { setFocused(false); commitUrl(localUrl); }}
             onKeyDown={e => {
-              if (e.key === "Enter") { commitUrl(localUrl); (e.target as HTMLInputElement).blur(); }
-              if (e.key === "Escape") { setLocalUrl(value.url); (e.target as HTMLInputElement).blur(); }
+              if (e.key === "Enter") { commitUrl(localUrl); urlInputRef.current?.blur(); }
+              else if (e.key === "Escape") { setLocalUrl(value.url); urlInputRef.current?.blur(); }
             }}
             className={cn(
               "flex-1 min-w-0 h-full bg-transparent border-0 outline-none",
@@ -185,17 +200,17 @@ export function ImageFillEditor({ value, onChange, className }: ImageFillEditorP
       <div className="grid grid-cols-2 gap-1.5">
         <ScrubField
           label="X"
-          value={String(Math.round(value.positionX))}
-          onChange={setX}
+          value={pct(value.positionX)}
+          onChange={v => setPosition("positionX", v)}
           title="Horizontal position (%)"
-          format={n => String(Math.max(0, Math.min(100, Math.round(n))))}
+          format={formatPct}
         />
         <ScrubField
           label="Y"
-          value={String(Math.round(value.positionY))}
-          onChange={setY}
+          value={pct(value.positionY)}
+          onChange={v => setPosition("positionY", v)}
           title="Vertical position (%)"
-          format={n => String(Math.max(0, Math.min(100, Math.round(n))))}
+          format={formatPct}
         />
       </div>
     </div>

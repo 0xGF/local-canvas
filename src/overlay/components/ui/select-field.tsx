@@ -24,7 +24,7 @@ interface SelectFieldProps {
   /** Optional left-side icon, matching the ScrubField label slot. */
   icon?: React.ReactNode;
   value: string;
-  options: SelectItem[];
+  options: readonly SelectItem[];
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;

@@ -49,9 +49,10 @@ export const ResponsiveFrame = React.memo(function ResponsiveFrame() {
 
 const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width: number }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  // Needs SOME default height since iframe can't measure itself until rendered.
-  // Kept modest so pages with `100vh` inner sections don't lock to a taller
-  // placeholder viewport and fail to shrink.
+  // Needs a non-zero default so scrollHeight measurement works for
+  // vh-based layouts (at iframe height 0, `100vh` sections collapse to 0
+  // and scrollHeight returns bogus values). 1000 is a reasonable viewport
+  // that most pages will either match or grow beyond.
   const heightRef = useRef(1000);
   const [height, setHeight] = useState(1000);
   const [loaded, setLoaded] = useState(false);
@@ -68,17 +69,18 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
   }, [width]);
 
   // Reveal sequence once the iframe has loaded:
-  //   1. Height transition starts ~100ms after onLoad, takes ~350ms.
-  //   2. After height settles (~450ms), trigger the halftone clip-wipe
-  //      (450ms, top-to-bottom) — the iframe sits at opacity 1 underneath
-  //      so the wipe exposes it directly with no cross-fade ghost.
-  //   3. Unmount the loader after the wipe completes.
+  //   1. updateHeight fires ~100ms after onLoad → setHeight(real).
+  //   2. Wrap/iframe/canvas transition height over 320ms (1000 → real).
+  //   3. After the height transition lands (~450ms total), halftone fades
+  //      out on top. Iframe sits at opacity 1 underneath so the fade
+  //      uncovers it directly.
+  //   4. Unmount after fade completes.
   useEffect(() => {
     if (!loaded) { setLoaderMounted(true); setWiping(false); return; }
-    const wipeStart = setTimeout(() => setWiping(true), 450);
-    const unmount = setTimeout(() => setLoaderMounted(false), 950);
+    const fadeStart = setTimeout(() => setWiping(true), 450);
+    const unmount = setTimeout(() => setLoaderMounted(false), 870);
     return () => {
-      clearTimeout(wipeStart);
+      clearTimeout(fadeStart);
       clearTimeout(unmount);
     };
   }, [loaded]);
@@ -96,11 +98,15 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
       if (!doc) return;
       setLoaded(true);
 
-      // Remove height constraints + disable scrolling + prevent text selection in edit mode
+      // Remove height constraints + disable scrolling + prevent text selection in edit mode.
+      // `.h-screen` / `.min-h-screen` overrides are critical: without them, any
+      // layout using 100vh traps scrollHeight at the iframe's current viewport
+      // height, so the frame can never grow to the page's natural size.
       const style = doc.createElement("style");
       style.textContent = [
         "html, body { overflow: hidden !important; height: auto !important; min-height: 0 !important; max-height: none !important; }",
         "#root, #__next, #app, main { height: auto !important; min-height: 0 !important; max-height: none !important; overflow: visible !important; }",
+        ".h-screen, .min-h-screen, [class*=':h-screen'], [class*=':min-h-screen'] { height: auto !important; min-height: 0 !important; max-height: none !important; }",
         "*, *::before, *::after { user-select: none !important; -webkit-user-select: none !important; }",
       ].join("\n");
       doc.head.appendChild(style);
@@ -372,15 +378,16 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
           paints on top of absolutely-positioned sibling elements even
           with higher z-index. Hoisting the canvas up one level above
           the iframe's frame-div works. */}
-      {/* Height animates when the iframe reports its real scrollHeight on
-          load, so the loader / paper grow down smoothly to the content
-          instead of popping from the 900px placeholder. */}
+      {/* Height animates to the iframe's measured scrollHeight on load so
+          the frame grows/shrinks to the real page size before the halftone
+          fades off. */}
       <div
         style={{
           width,
           height,
           position: "relative",
-          transition: "height 350ms cubic-bezier(0.4, 0, 0.2, 1)",
+          transition: "height 320ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+          willChange: loaderMounted ? "height" : "auto",
         }}
       >
         {/* Frame — holds the iframe. The iframe sits here at full opacity
@@ -405,7 +412,7 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
             style={{
               width,
               height,
-              transition: "height 350ms cubic-bezier(0.4, 0, 0.2, 1)",
+              transition: "height 320ms cubic-bezier(0.2, 0.8, 0.2, 1)",
             }}
             title={`${width}px preview`}
           />
@@ -438,15 +445,12 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
             pointerEvents: "none",
             // Canvas is hidden while the halftone loader covers the frame,
             // so any restored selection/hover outlines don't show through
-            // during load. Fades in as the wipe completes.
+            // during load. Fades in as the halftone fades out. Matches the
+            // wrap + iframe height transition so overlay drawings stay in
+            // sync during the reveal grow.
             opacity: loaderMounted ? 0 : 1,
-            // Match the wrap + iframe height transition so the overlay
-            // canvas grows/shrinks in lock-step with the container when
-            // scrollHeight changes — otherwise the canvas snaps instantly
-            // while the iframe/card animate, leaving badges+handles out of
-            // alignment during the resize.
             transition:
-              "height 350ms cubic-bezier(0.4, 0, 0.2, 1), opacity 250ms ease-out",
+              "opacity 250ms ease-out, height 320ms cubic-bezier(0.2, 0.8, 0.2, 1)",
           }}
         >
           {HAS_DRAW_ELEMENT && (

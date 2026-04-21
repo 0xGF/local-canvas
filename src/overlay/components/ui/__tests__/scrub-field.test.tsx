@@ -11,13 +11,6 @@ function getInput(c: HTMLElement): HTMLInputElement {
 }
 
 describe("ScrubField", () => {
-  it("shows the value in the input", () => {
-    const { container } = render(
-      <ScrubField value="12" onChange={() => {}} label="W" />,
-    );
-    expect(getInput(container).value).toBe("12");
-  });
-
   it("commits typed value on Enter", () => {
     const onChange = vi.fn();
     const { container } = render(

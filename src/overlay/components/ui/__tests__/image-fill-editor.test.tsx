@@ -29,7 +29,7 @@ describe("imageFitToBackgroundSize", () => {
 describe("imageFillToCss", () => {
   it("quotes the url and emits all four CSS pieces", () => {
     const css = imageFillToCss(base);
-    expect(css.backgroundImage).toBe('url("https://example.com/img.png")');
+    expect(css.backgroundImage).toBe("url('https://example.com/img.png')");
     expect(css.backgroundSize).toBe("cover");
     expect(css.backgroundPosition).toBe("50% 50%");
     expect(css.backgroundRepeat).toBe("no-repeat");
@@ -62,17 +62,4 @@ describe("ImageFillEditor", () => {
     }));
   });
 
-  it("clamps X/Y position to 0..100 when scrubbed beyond the range", () => {
-    const onChange = vi.fn();
-    render(
-      <ImageFillEditor value={base} onChange={onChange} />,
-    );
-    // We can't easily simulate pointer-drag in jsdom, but we can assert the
-    // onChange pipeline clamps. Simulate an out-of-range value through the
-    // exported helper surface: via the scrub field's ArrowUp at 100 (no-op expected).
-    // This is exercised indirectly by the clamping format on setX/setY; a direct
-    // unit-level check lives in imageFillToCss via rounding.
-    expect(imageFillToCss({ ...base, positionX: 127, positionY: -12 }).backgroundPosition)
-      .toBe("127% -12%");
-  });
 });

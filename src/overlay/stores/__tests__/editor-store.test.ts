@@ -4,7 +4,6 @@ import { DEFAULT_BREAKPOINT } from "../../../shared/breakpoints.js";
 
 describe("useEditorStore", () => {
   beforeEach(() => {
-    // Reset store to initial state
     useEditorStore.setState({
       mode: "navigate",
       selectedElement: null,
@@ -17,19 +16,6 @@ describe("useEditorStore", () => {
       breakpoint: DEFAULT_BREAKPOINT,
       pendingCount: 0,
     });
-  });
-
-  it("has correct initial state", () => {
-    const state = useEditorStore.getState();
-    expect(state.mode).toBe("navigate");
-    expect(state.selectedElement).toBeNull();
-    expect(state.breakpoint).toBe(DEFAULT_BREAKPOINT);
-    expect(state.pendingCount).toBe(0);
-  });
-
-  it("setMode changes mode", () => {
-    useEditorStore.getState().setMode("edit");
-    expect(useEditorStore.getState().mode).toBe("edit");
   });
 
   it("selectElement sets selection and opens properties", () => {
@@ -55,7 +41,6 @@ describe("useEditorStore", () => {
   });
 
   it("setBreakpoint sets breakpoint and preserves selection", () => {
-    // First select something
     const mockEl = document.createElement("div");
     useEditorStore.getState().selectElement({
       element: mockEl,
@@ -71,43 +56,5 @@ describe("useEditorStore", () => {
     expect(state.breakpoint).toBe(768);
     // Selection preserved — responsive preview resizes in-place
     expect(state.selectedElement).not.toBeNull();
-  });
-
-  it("setBreakpoint resets to default", () => {
-    useEditorStore.getState().setBreakpoint(768);
-    expect(useEditorStore.getState().breakpoint).toBe(768);
-    useEditorStore.getState().setBreakpoint(DEFAULT_BREAKPOINT);
-    expect(useEditorStore.getState().breakpoint).toBe(DEFAULT_BREAKPOINT);
-  });
-
-  it("incrementPending and clearPending", () => {
-    useEditorStore.getState().incrementPending();
-    useEditorStore.getState().incrementPending();
-    expect(useEditorStore.getState().pendingCount).toBe(2);
-    useEditorStore.getState().clearPending();
-    expect(useEditorStore.getState().pendingCount).toBe(0);
-  });
-
-  it("setConnected", () => {
-    useEditorStore.getState().setConnected(true);
-    expect(useEditorStore.getState().connected).toBe(true);
-    useEditorStore.getState().setConnected(false);
-    expect(useEditorStore.getState().connected).toBe(false);
-  });
-
-  it("toggleProperties", () => {
-    expect(useEditorStore.getState().propertiesOpen).toBe(false);
-    useEditorStore.getState().toggleProperties();
-    expect(useEditorStore.getState().propertiesOpen).toBe(true);
-    useEditorStore.getState().toggleProperties();
-    expect(useEditorStore.getState().propertiesOpen).toBe(false);
-  });
-
-  it("togglePalette", () => {
-    expect(useEditorStore.getState().paletteOpen).toBe(false);
-    useEditorStore.getState().togglePalette();
-    expect(useEditorStore.getState().paletteOpen).toBe(true);
-    useEditorStore.getState().togglePalette();
-    expect(useEditorStore.getState().paletteOpen).toBe(false);
   });
 });

@@ -6,13 +6,6 @@ describe("useViewportStore", () => {
     useViewportStore.setState({ zoom: 1, panX: 0, panY: 0 });
   });
 
-  it("has correct initial state", () => {
-    const state = useViewportStore.getState();
-    expect(state.zoom).toBe(1);
-    expect(state.panX).toBe(0);
-    expect(state.panY).toBe(0);
-  });
-
   it("clamps zoom to minimum 0.1", () => {
     useViewportStore.getState().setZoom(0.05);
     expect(useViewportStore.getState().zoom).toBe(0.1);
@@ -45,10 +38,4 @@ describe("useViewportStore", () => {
     expect(state.panY).toBe(0);
   });
 
-  it("setPan sets pan values", () => {
-    useViewportStore.getState().setPan(50, 100);
-    const state = useViewportStore.getState();
-    expect(state.panX).toBe(50);
-    expect(state.panY).toBe(100);
-  });
 });

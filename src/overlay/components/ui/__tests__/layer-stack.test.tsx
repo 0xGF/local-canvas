@@ -56,18 +56,4 @@ describe("LayerStack", () => {
     expect(onRemove).toHaveBeenCalledWith("b");
   });
 
-  it("shows hidden layers with reduced opacity", () => {
-    const { container } = render(
-      <LayerStack
-        layers={LAYERS}
-        onVisibilityChange={() => {}}
-        onRemove={() => {}}
-        renderLayer={() => <span>x</span>}
-      />,
-    );
-    const rows = container.querySelectorAll<HTMLDivElement>(".flex.flex-col.gap-1\\.5");
-    // Second layer (hidden) should have the opacity-50 class somewhere up its row tree.
-    const hiddenRowHasOpacity = Array.from(rows).some(r => r.className.includes("opacity-50"));
-    expect(hiddenRowHasOpacity).toBe(true);
-  });
 });

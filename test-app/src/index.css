@@ -1,4 +1,10 @@
 @import "tailwindcss";
+/* Scope Tailwind's class scanner to this app only. The parent repo contains
+   overlay source with unevaluated template-literal class strings
+   (e.g. `rotate-[${n}deg]`) that Tailwind would otherwise pick up as
+   candidates, producing invalid CSS with `${...}` left in the output. */
+@source "./**/*.{ts,tsx,html}";
+@source not "../../src/**/*";
 
 * {
   scrollbar-width: none;

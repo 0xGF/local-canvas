@@ -65,7 +65,7 @@ export function Sidebar() {
   const { pathname } = useLocation();
 
   return (
-    <aside className="hidden md:flex flex-col w-[180px] shrink-0 overflow-y-auto border-r border-neutral-100 px-3">
+    <aside className="hidden md:flex flex-col w-[180px] shrink-0 overflow-y-auto border-neutral-100 px-3">
       {/* Logo */}
       <div className="pt-12 pb-6">
         <Link to="/overview" className="block">

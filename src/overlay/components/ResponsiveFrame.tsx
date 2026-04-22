@@ -82,6 +82,7 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
   const [wiping, setWiping] = useState(false);
   const selectElement = useEditorStore((s) => s.selectElement);
   const setHoveredElement = useEditorStore((s) => s.setHoveredElement);
+  const setFrameRevealed = useEditorStore((s) => s.setFrameRevealed);
 
   const frameUrl = `${location.origin}${location.pathname}?__canvas_no_overlay`;
 
@@ -108,6 +109,7 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
       setWiping(false);
       setSettled(false);
       settledRef.current = false;
+      setFrameRevealed(false);
       return;
     }
     requestAnimationFrame(() => useViewportStore.getState().fitToPage());
@@ -117,14 +119,17 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
       settledRef.current = true;
       setSettled(true);
     }, 560);
-    const fadeStart = setTimeout(() => setWiping(true), 560);
+    const fadeStart = setTimeout(() => {
+      setWiping(true);
+      setFrameRevealed(true);
+    }, 560);
     const unmount = setTimeout(() => setLoaderMounted(false), 1120);
     return () => {
       clearTimeout(lock);
       clearTimeout(fadeStart);
       clearTimeout(unmount);
     };
-  }, [measured]);
+  }, [measured, setFrameRevealed]);
 
   // Safety: if the iframe never reports a positive scrollHeight (blocked
   // load, cross-origin hiccup, empty page), reveal with the 1000px default
@@ -449,6 +454,15 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
         alignItems: "center",
         padding: 40,
         pointerEvents: "auto",
+        // Hide the frame (and its label) until the iframe has reported its
+        // real height AND fitToPage has applied — otherwise the container
+        // paints once at the restored-from-localStorage transform, then
+        // jumps to the fitted transform the next frame. The user sees that
+        // jump as a flicker-to-center then snap-to-top before the unfurl
+        // animation starts. The halftone inside the frame still runs so the
+        // loading state is visible; it just lives in its final position.
+        opacity: measured ? 1 : 0,
+        transition: measured ? "opacity 160ms ease-out" : undefined,
       }}
     >
       {/* Label */}
@@ -456,10 +470,10 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
         display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
         marginBottom: 12, userSelect: "none",
       }}>
-        <span style={{ fontSize: 10, color: "#874EFF", fontFamily: C.mono, fontWeight: 500 }}>
+        <span style={{ fontSize: 10, color: COL.purple, fontFamily: C.mono, fontWeight: 500 }}>
           {getBreakpointLabel(width)}
         </span>
-        <span style={{ fontSize: 11, color: "#666", fontFamily: C.mono }}>
+        <span style={{ fontSize: 11, color: C.fgDim, fontFamily: C.mono }}>
           {width}px
         </span>
       </div>

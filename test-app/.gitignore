@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Local Canvas per-project state
+.canvas-undo/
+.canvas-data/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

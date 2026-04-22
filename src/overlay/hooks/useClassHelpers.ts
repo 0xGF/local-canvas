@@ -275,7 +275,12 @@ export function useClassHelpers() {
 
     const target = bpPrefix ? `${bpPrefix}:${prefix}` : prefix;
     let old = classes.find(c => c === target || c.startsWith(target + "-"));
-    if (!old) old = classes.find(c => c === prefix || c.startsWith(prefix + "-"));
+    // Fall back to the bare (base-breakpoint) class only when we're editing at
+    // the base breakpoint. At a non-base breakpoint, removing the bare form
+    // would silently wipe the base value — leaving every smaller breakpoint
+    // without its intended class. The add path below still emits the prefixed
+    // form, so the new value lands only at the active breakpoint.
+    if (!old && !bpPrefix) old = classes.find(c => c === prefix || c.startsWith(prefix + "-"));
     const bare = isExact ? value : (value ? `${prefix}-${value}` : "");
     const next = bare ? prefixCls(bare) : "";
     const mutation = {
@@ -303,18 +308,49 @@ export function useClassHelpers() {
     return classes.includes(bare) ? bare : undefined;
   }, [classes, bpPrefix]);
 
+  // Rewrite a modify-class mutation so its add/remove lists target only the
+  // active breakpoint. Callers often hand us a list of every variant of a
+  // class on the element (e.g. `border`, `md:border-2`, `2xl:border-4`) to
+  // "clear and replace" — but clearing across breakpoints while editing one
+  // is the bug: editing at 2xl silently strips the base and md values too.
+  // Drop entries that target a different breakpoint than the active one so
+  // each breakpoint's class is edited independently.
+  const scopeToBreakpoint = useCallback(
+    (mutation: Extract<Mutation, { type: "modify-class" }>): Extract<Mutation, { type: "modify-class" }> => {
+      const prefixedAdd = mutation.add?.map((c) => prefixCls(c));
+      const resolvedRemove = mutation.remove
+        ?.map((c) => {
+          const m = c.match(RESPONSIVE_PREFIX_RE);
+          if (m) {
+            const classBp = m[0].slice(0, -1);
+            return classBp === bpPrefix ? c : null;
+          }
+          if (bpPrefix) {
+            const prefixed = `${bpPrefix}:${c}`;
+            return classes.includes(prefixed) ? prefixed : null;
+          }
+          return classes.includes(c) ? c : null;
+        })
+        .filter((c): c is string => c !== null);
+      return {
+        ...mutation,
+        add: prefixedAdd,
+        remove: resolvedRemove && resolvedRemove.length ? resolvedRemove : undefined,
+      };
+    },
+    [prefixCls, bpPrefix, classes],
+  );
+
   const sendPrefixed = useCallback((mutation: Extract<Mutation, { type: "modify-class" }>) => {
-    const prefixedAdd = mutation.add?.map((c) => prefixCls(c));
-    const resolvedRemove = mutation.remove?.map((c) => {
-      if (hasResponsivePrefix(c)) return c;
-      return actual(c) || c;
-    });
-    return trackedSendMutation({
-      ...mutation,
-      add: prefixedAdd,
-      remove: resolvedRemove,
-    });
-  }, [trackedSendMutation, prefixCls, actual]);
+    return trackedSendMutation(scopeToBreakpoint(mutation));
+  }, [trackedSendMutation, scopeToBreakpoint]);
+
+  const debouncedSendPrefixed = useCallback(
+    (key: string, mutation: Extract<Mutation, { type: "modify-class" }>, delay?: number) => {
+      debouncedMutation(key, scopeToBreakpoint(mutation), delay);
+    },
+    [debouncedMutation, scopeToBreakpoint],
+  );
 
   const toggleCls = useCallback(async (cls: string) => {
     if (!sel?.source) return;
@@ -332,14 +368,14 @@ export function useClassHelpers() {
     prefixCls, stripBpPrefix, resolveClass,
     findCls, findPrefixedCls,
     get, set, has, actual,
-    sendPrefixed, toggleCls,
+    sendPrefixed, debouncedSendPrefixed, toggleCls,
     trackedSendMutation, debouncedMutation,
   }), [
     sel, classes, bpPrefix, breakpoint,
     prefixCls, stripBpPrefix, resolveClass,
     findCls, findPrefixedCls,
     get, set, has, actual,
-    sendPrefixed, toggleCls,
+    sendPrefixed, debouncedSendPrefixed, toggleCls,
     trackedSendMutation, debouncedMutation,
   ]);
 }

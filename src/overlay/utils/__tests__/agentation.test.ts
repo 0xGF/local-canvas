@@ -163,17 +163,15 @@ describe("postAnnotation", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("dispatches canvas:annotation-posted after a successful post", async () => {
+  it("POSTs to /__canvas/annotations and dispatches the posted event", async () => {
     const { postAnnotation } = await import("../agentation.js");
 
-    const fakeSessionId = "sess-xyz";
     const fakeAnnotation = { id: "ann-1", comment: "hi", elementPath: "f:1" };
+    const postCalls: Array<{ url: string; body: unknown }> = [];
     globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
       const u = String(url);
-      if (u.endsWith("/sessions") && init?.method === "POST") {
-        return new Response(JSON.stringify({ id: fakeSessionId }), { status: 200 });
-      }
-      if (u.includes(`/sessions/${fakeSessionId}/annotations`) && init?.method === "POST") {
+      if (u === "/__canvas/annotations" && init?.method === "POST") {
+        postCalls.push({ url: u, body: JSON.parse(String(init.body)) });
         return new Response(JSON.stringify(fakeAnnotation), { status: 200 });
       }
       throw new Error("unexpected fetch: " + u);
@@ -188,6 +186,12 @@ describe("postAnnotation", () => {
         elementPath: "f:1",
       });
       expect(result).toMatchObject(fakeAnnotation);
+      expect(postCalls).toHaveLength(1);
+      expect(postCalls[0].body).toMatchObject({
+        comment: "hi",
+        elementPath: "f:1",
+        url: expect.stringContaining("http"),
+      });
       expect(listener).toHaveBeenCalledTimes(1);
       const ev = listener.mock.calls[0][0] as CustomEvent<{ annotation: { id: string } }>;
       expect(ev.detail?.annotation?.id).toBe("ann-1");

@@ -1,18 +1,23 @@
 /**
- * Lightweight client for the agentation-mcp HTTP API (default port 4747).
+ * Client for the annotations API, served same-origin by the local-canvas
+ * editor server at `/__canvas/annotations/*`. Replaces the former
+ * agentation-mcp HTTP bridge on :6967 — annotation storage now lives in a
+ * per-project sqlite file and is owned by the editor process directly.
  *
- * Shared between the "Ask AI..." flow in ContextMenu and the AnnotationPins
- * overlay so both use the same session and stay in sync.
+ * The public surface (post/list/hide/nav helpers) is preserved so the
+ * overlay components didn't all need to change at once. The "session"
+ * concept is now a no-op kept for API compat with consumers that still
+ * call `getOrCreateSession()` / `currentSessionId()`.
  */
 
 import { getEditorIframe } from "./iframe-events.js";
 
-const AGENTATION_PORT = 6967;
-const BASE = `http://localhost:${AGENTATION_PORT}`;
+const BASE = "/__canvas/annotations";
 
 export interface AnnotationThreadEntry {
   role: string;
   content: string;
+  at?: number;
 }
 
 export interface Annotation {
@@ -37,12 +42,15 @@ export interface Annotation {
   severity?: string;
   url: string;
   timestamp: number;
-  status?: "pending" | "resolved" | "dismissed";
+  /** Epoch ms of the last server-side update — flip to resolved, thread append, etc. */
+  updatedAt?: number;
+  status?: "pending" | "in_progress" | "resolved" | "dismissed";
   x?: number;
   y?: number;
   boundingBox?: { x: number; y: number; width: number; height: number };
   resolvedSummary?: string;
-  /** Conversation history with the agent — populated by the agentation server. */
+  /** Conversation history with the agent — populated server-side when an
+   *  agent replies or the user adds a follow-up comment. */
   thread?: AnnotationThreadEntry[];
 }
 
@@ -60,59 +68,40 @@ export interface PostAnnotationOpts {
   boundingBox?: { x: number; y: number; width: number; height: number };
 }
 
-let _sessionId: string | null = null;
-let _sessionUrl: string | null = null;
-let _sessionPromise: Promise<string> | null = null;
-
-/** Identity key for a page — origin + path only. Intentionally ignores
- *  hash and query params so in-page anchor clicks, tab-state query strings,
- *  and routed SPAs don't each spawn a new session for every micro-navigation.
- *  Without this, posting an annotation goes to session A while the history
- *  popover polls session B, and the user sees an empty list even though the
- *  server has their annotation. */
-function sessionKey(): string {
+/** Identity key for a page — origin + path only. Kept for history-popover
+ *  use (filter "show only current-page annotations"); in-page anchor clicks
+ *  and query-param tab state don't change it. */
+function pageKey(): string {
   return `${window.location.origin}${window.location.pathname}`;
 }
 
-/** Get the current session id, or create one for the current page.
- *  Requests in flight share the same in-flight promise so rapid-fire callers
- *  (AnnotationPins + AskAIHistory mounting at the same time, a click handler
- *  racing a poll tick) don't each open their own session against the server. */
+// ── Session-concept shim ──────────────────────────────────────────────────
+// The old agentation-mcp model had one session per URL. The new storage is
+// project-wide and tags each annotation with its page URL directly, so the
+// "session id" is synthetic — a stable token we hand out so pre-existing
+// consumers (AnnotationPins, etc.) can keep their `if (!currentSessionId())
+// await getOrCreateSession()` guards without a rewrite. It has no bearing
+// on server state.
+let _sessionId: string | null = null;
+
 export async function getOrCreateSession(): Promise<string> {
-  const key = sessionKey();
-  if (_sessionId && _sessionUrl === key) return _sessionId;
-  if (_sessionPromise) return _sessionPromise;
-  _sessionPromise = (async () => {
-    const res = await fetch(`${BASE}/sessions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: key }),
-    });
-    if (!res.ok) throw new Error(`agentation: ${res.status}`);
-    const session = await res.json();
-    _sessionId = session.id;
-    _sessionUrl = key;
-    return session.id;
-  })().finally(() => { _sessionPromise = null; });
-  return _sessionPromise;
+  if (!_sessionId) _sessionId = `page_${Math.random().toString(36).slice(2, 10)}`;
+  return _sessionId;
 }
 
-/** Returns the current session id without creating one. */
 export function currentSessionId(): string | null {
   return _sessionId;
 }
 
 export async function postAnnotation(opts: PostAnnotationOpts): Promise<Annotation> {
-  const sessionId = await getOrCreateSession();
-  const res = await fetch(`${BASE}/sessions/${sessionId}/annotations`, {
+  await getOrCreateSession();
+  const res = await fetch(BASE, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       comment: opts.comment,
       element: opts.element,
       elementPath: opts.elementPath,
-      // Only include elementPaths for actual groups so single-element
-      // annotations stay wire-compatible with the old payload shape.
       ...(opts.elementPaths && opts.elementPaths.length > 1
         ? { elementPaths: opts.elementPaths }
         : {}),
@@ -121,13 +110,14 @@ export async function postAnnotation(opts: PostAnnotationOpts): Promise<Annotati
       severity: "important",
       url: window.location.href,
       timestamp: Date.now(),
-      // NOT NULL constraints on the server
-      x: opts.x ?? 0,
-      y: opts.y ?? 0,
-      boundingBox: opts.boundingBox ?? { x: 0, y: 0, width: 0, height: 0 },
+      // Server now treats these as optional; passing them through when known
+      // keeps pins accurate.
+      ...(opts.x !== undefined ? { x: opts.x } : {}),
+      ...(opts.y !== undefined ? { y: opts.y } : {}),
+      ...(opts.boundingBox ? { boundingBox: opts.boundingBox } : {}),
     }),
   });
-  if (!res.ok) throw new Error(`agentation: ${res.status}`);
+  if (!res.ok) throw new Error(`annotations: ${res.status}`);
   const annotation = await res.json() as Annotation;
   // Let the pin layer and history popover know so they can refresh immediately
   // instead of waiting for their next poll tick (up to 3s delay otherwise).
@@ -137,19 +127,28 @@ export async function postAnnotation(opts: PostAnnotationOpts): Promise<Annotati
   return annotation;
 }
 
-/** List annotations for the current session. */
+/** List annotations for the current page (filtered by origin + pathname).
+ *  The server stores every annotation with its full URL; we filter client-side
+ *  so the history popover can expose cross-page annotations later without a
+ *  schema change. */
 export async function listAnnotations(): Promise<Annotation[]> {
-  if (!_sessionId) return [];
-  const res = await fetch(`${BASE}/sessions/${_sessionId}`);
+  const key = pageKey();
+  const res = await fetch(`${BASE}?url=${encodeURIComponent(key)}`);
   if (!res.ok) return [];
   const data = await res.json();
-  return Array.isArray(data?.annotations) ? data.annotations : [];
+  if (!Array.isArray(data)) return [];
+  // Server's `url` column is the exact URL at post time (with hash/query),
+  // but we filtered by `origin + pathname`, so any hash/query variants of
+  // the current page are already included.
+  return data.filter((a: Annotation) =>
+    `${new URL(a.url).origin}${new URL(a.url).pathname}` === key
+  );
 }
 
 // ── Local "hidden" set ──
-// The agentation HTTP API doesn't expose delete/dismiss endpoints (only the
-// MCP server does), so we keep a localStorage-backed set of annotation IDs the
-// user has chosen to hide from their queue.
+// Non-destructive hide — kept client-only so users can un-hide without a
+// server round-trip. Destructive delete uses `clearAllAnnotations()` below
+// or the per-row delete endpoint (not currently wired in the UI).
 const HIDDEN_KEY = "canvas:hidden-annotations";
 
 function readHidden(): Set<string> {
@@ -204,26 +203,84 @@ export function unhideAllAnnotations() {
 }
 
 /**
- * Destructive: ask the local editor server to delete every annotation across
- * every session on the agentation server. Resets in-memory session state so
- * the next annotation post opens a fresh session, and clears the local
- * "hidden" set (those IDs are gone server-side now — no point tracking them).
+ * Append a message to an existing annotation's thread. Used by the pin
+ * popover's follow-up input + the "Re-open" action — both are follow-ups
+ * to an existing annotation, not new annotations, so they land as thread
+ * entries instead of duplicating the row.
  *
- * Returns the count of annotations actually deleted, or null on failure.
+ * Returns the updated annotation (with the new thread entry appended) or
+ * null on failure.
  */
-export async function clearAllAgentationSessions(): Promise<{ deletedAnnotations: number; sessions: number } | null> {
+export async function appendAnnotationThread(
+  id: string,
+  content: string,
+  role: "user" | "agent" = "user",
+): Promise<Annotation | null> {
   try {
-    const res = await fetch("/__canvas/clear-agentation-sessions", { method: "POST" });
+    const res = await fetch(`${BASE}/${encodeURIComponent(id)}/thread`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role, content }),
+    });
     if (!res.ok) return null;
-    const data = await res.json();
-    if (!data?.ok) return null;
-    _sessionId = null;
-    _sessionUrl = null;
-    writeHidden(new Set());
-    return { deletedAnnotations: data.deletedAnnotations, sessions: data.sessions };
+    const updated = await res.json() as Annotation;
+    window.dispatchEvent(new CustomEvent("canvas:annotation-posted", {
+      detail: { annotation: updated },
+    }));
+    return updated;
   } catch {
     return null;
   }
+}
+
+/**
+ * Flip an annotation's status server-side. Returns the updated annotation,
+ * or null on failure. Used by the history popover's Dismiss / Re-open row
+ * actions and by any other surface that wants to change status without
+ * posting a thread reply.
+ */
+export async function updateAnnotationStatus(
+  id: string,
+  status: "pending" | "in_progress" | "resolved" | "dismissed",
+  resolvedSummary?: string,
+): Promise<Annotation | null> {
+  try {
+    const res = await fetch(`${BASE}/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, ...(resolvedSummary ? { resolvedSummary } : {}) }),
+    });
+    if (!res.ok) return null;
+    return await res.json() as Annotation;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Destructive: delete every annotation in the project's sqlite store.
+ * Clears the local hidden-IDs set too (those IDs are gone server-side, no
+ * point tracking them). Returns the count deleted, or null on failure.
+ */
+export async function clearAllAnnotations(): Promise<{ deleted: number } | null> {
+  try {
+    const res = await fetch(BASE, { method: "DELETE" });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data?.ok) return null;
+    writeHidden(new Set());
+    return { deleted: data.deleted ?? 0 };
+  } catch {
+    return null;
+  }
+}
+
+/** @deprecated Use clearAllAnnotations. Kept as a shim so callers in flight
+ *  during the agentation→annotations rename don't break. */
+export async function clearAllAgentationSessions(): Promise<{ deletedAnnotations: number; sessions: number } | null> {
+  const res = await clearAllAnnotations();
+  if (!res) return null;
+  return { deletedAnnotations: res.deleted, sessions: 0 };
 }
 
 // ── Cross-component event: open a pin's popover ──
@@ -241,11 +298,7 @@ export function dispatchOpenAnnotationPin(annotationId: string) {
  * document, in that order.
  */
 /** All element paths an annotation targets — group paths if present, else
- *  the single primary elementPath. The elementPaths field is the canonical
- *  source, but we also accept a comma-joined string in elementPath as a
- *  fallback for servers that strip unknown fields (the agentation-mcp HTTP
- *  schema doesn't know about elementPaths yet). Empty array if neither is
- *  set. */
+ *  the single primary elementPath. */
 export function annotationPaths(a: Pick<Annotation, "elementPath" | "elementPaths">): string[] {
   if (a.elementPaths && a.elementPaths.length > 0) return a.elementPaths;
   if (a.elementPath && a.elementPath.includes(",")) {
@@ -343,7 +396,7 @@ export function dispatchToggleAIHistory() {
 
 // ── Agent-undo (snapshot + restore for agent-driven edits) ──
 // These talk to the local-canvas editor server (same origin as the overlay),
-// not the agentation HTTP API.
+// not the annotations API.
 
 export interface AgentUndoEntry {
   annotationId: string;
@@ -361,22 +414,6 @@ export async function listAgentUndoEntries(): Promise<AgentUndoEntry[]> {
     return Array.isArray(data) ? data : [];
   } catch {
     return [];
-  }
-}
-
-/** Dev-only: pretend an agent just edited the file an annotation targets.
- *  The server snapshots the current content, then prepends a visible marker
- *  line so the user can watch Undo restore it. */
-export async function simulateAgentEdit(annotationId: string, filePath: string): Promise<boolean> {
-  try {
-    const res = await fetch("/__canvas/agent-simulate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ annotationId, filePath }),
-    });
-    return res.ok;
-  } catch {
-    return false;
   }
 }
 

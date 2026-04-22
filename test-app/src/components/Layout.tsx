@@ -11,7 +11,7 @@ export function Layout() {
   }, [pathname]);
 
   return (
-    <div className="mx-auto max-w-[960px] flex h-screen px-4 bg-white text-[#1c1917] font-sans antialiased">
+    <div className="mx-auto max-w-[960px] flex h-screen px-4 bg-white text-[#1c1917] font-sans antialiased pr-[5px] pl-[5px]">
       <Sidebar />
       <main ref={mainRef} className="flex-1 min-w-0 overflow-y-auto xl:border-dashed">
         <Outlet />

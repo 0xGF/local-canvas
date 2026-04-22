@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect } from "react";
 import { CanvasOverlayLayer } from "./components/CanvasOverlayLayer.js";
 import { Toolbar } from "./components/Toolbar.js";
 import { ResponsiveFrame } from "./components/ResponsiveFrame.js";
+import { DesktopOnlyGate, useIsDesktop } from "./components/DesktopOnlyGate.js";
 // Edit-mode-only panels — the user may spend most time in navigate mode, so
 // code-split them out of the initial overlay bundle. All share one Suspense
 // fallback below.
@@ -49,6 +50,7 @@ export function App() {
   const mode = useEditorStore((s) => s.mode);
   const animationsPaused = useEditorStore((s) => s.animationsPaused);
   const interacting = useEditorStore((s) => s.interacting);
+  const isDesktop = useIsDesktop();
 
   useSelection();
   useKeyboard();
@@ -84,6 +86,14 @@ export function App() {
       syncAnimationPause(false);
     };
   }, [animationsPaused]);
+
+  if (!isDesktop) {
+    return (
+      <TooltipProvider>
+        <DesktopOnlyGate />
+      </TooltipProvider>
+    );
+  }
 
   return (
     <TooltipProvider>

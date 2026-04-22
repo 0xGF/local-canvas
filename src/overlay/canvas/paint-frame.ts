@@ -270,7 +270,7 @@ export function paintFrame(
     const hCssW = parseFloat(hcs.width) || r.width;
     const hCssH = parseFloat(hcs.height) || r.height;
     const hDims = `${Math.round(hCssW)} × ${Math.round(hCssH)}`;
-    drawLabelBadge(ctx, `${tag}  ${hDims}`, r.left, r.top - 22, annotate ? COL.annotate : COL.blue);
+    drawLabelBadge(ctx, `${tag}    ${hDims}`, r.left, r.top - 22, annotate ? COL.annotate : COL.blue);
   };
 
   // ── Selected element ──
@@ -364,6 +364,9 @@ export function paintFrame(
                   drawDashedLine(ctx, gL, gT, gL, gB, COL.purple); drawDashedLine(ctx, gL + gW, gT, gL + gW, gB, COL.purple); ctx.restore();
                   // BUG FIX: gW is screen-space, divide by zoom to show CSS value
                   if (zoomScale >= 0.8) drawValueBadge(ctx, Math.round(gW / spaceScale), COL.purple, gL + gW / 2, (gT + gB) / 2);
+                  // Drag hit — expand cross-axis to a minimum 14px so thin gaps are reachable.
+                  const hitW = Math.max(14, gW);
+                  badges.push({ x: gL - (hitW - gW) / 2, y: gT, w: hitW, h: gB - gT, type: "gap", side: "x", value: cg, prefix: "gap-x" });
                 }
               }
               if (rg > 0 && b.top > a.bottom - 1 && a.right > b.left + 1 && a.left < b.right - 1) {
@@ -373,6 +376,8 @@ export function paintFrame(
                   drawDashedLine(ctx, gL, gT, gR, gT, COL.purple); drawDashedLine(ctx, gL, gT + gH, gR, gT + gH, COL.purple); ctx.restore();
                   // BUG FIX: gH is screen-space, divide by zoom to show CSS value
                   if (zoomScale >= 0.8) drawValueBadge(ctx, Math.round(gH / spaceScale), COL.purple, (gL + gR) / 2, gT + gH / 2);
+                  const hitH = Math.max(14, gH);
+                  badges.push({ x: gL, y: gT - (hitH - gH) / 2, w: gR - gL, h: hitH, type: "gap", side: "y", value: rg, prefix: "gap-y" });
                 }
               }
             }
@@ -464,12 +469,33 @@ export function paintFrame(
       // ── Spacing badges ──
       // Always register hit areas so dragging works at any zoom level.
       // Text badge only draws when zoomed in enough to be readable.
+      // Hit rect orientation mirrors the spacing strip it targets:
+      //   top/bottom → horizontal strip along the edge (wide × thick)
+      //   left/right → vertical strip along the edge (thick × tall)
+      // Previously every side used (wide × 14), so left/right was rotated 90°
+      // and only a narrow band at the vertical midline was draggable.
+      const SPACING_CORNER_INSET = 20;
       const drawSpacing = (cssVal: number, screenVal: number, color: string, x: number, y: number, type: "margin" | "padding", side: "top" | "right" | "bottom" | "left") => {
         if (cssVal <= 0) return;
         const prefix = SIDE_PREFIX[type][side];
-        // Hit area — always present for dragging
-        const hitSize = Math.max(14, screenVal);
-        const hx = x - hitSize / 2, hy = y - 7, hw = hitSize, hh = 14;
+        const isHoriz = side === "left" || side === "right";
+        const crossThickness = Math.max(14, screenVal);
+        let hx: number, hy: number, hw: number, hh: number;
+        if (isHoriz) {
+          // Vertical strip along the left/right edge
+          hw = crossThickness;
+          hx = x - crossThickness / 2;
+          const alongLen = Math.max(14, r.height - SPACING_CORNER_INSET * 2);
+          hh = alongLen;
+          hy = r.top + (r.height - alongLen) / 2;
+        } else {
+          // Horizontal strip across the top/bottom edge
+          hh = crossThickness;
+          hy = y - crossThickness / 2;
+          const alongLen = Math.max(14, r.width - SPACING_CORNER_INSET * 2);
+          hw = alongLen;
+          hx = r.left + (r.width - alongLen) / 2;
+        }
         badges.push({ x: hx, y: hy, w: hw, h: hh, type, side, value: cssVal, prefix });
         // Hover affordance: when the cursor is over the hit rect, scale the
         // value badge up slightly so the user knows it's drag-ready. mousePos

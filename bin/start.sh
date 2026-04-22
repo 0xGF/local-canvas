@@ -5,7 +5,7 @@ DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$DIR"
 
 # Kill stale processes
-for port in 3000 6966 6967; do
+for port in 3000 6966; do
   pid=$(lsof -ti:$port 2>/dev/null || true)
   if [ -n "$pid" ]; then
     kill -9 $pid 2>/dev/null || true
@@ -17,10 +17,6 @@ sleep 1
 # Build
 echo "Building..."
 npm run build
-
-# Start agentation-mcp HTTP server (agent bridge on :6967)
-echo "Starting agentation server on :6967..."
-npx agentation-mcp server --port 6967 &
 
 # Start test app
 echo "Starting test app on :3000..."

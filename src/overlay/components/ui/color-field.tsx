@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import { cn } from "../../lib/utils.js";
 import { parseColor, hsvaToRgba, rgbaToHex, rgbaCss } from "../../lib/color.js";
@@ -33,6 +33,10 @@ export function ColorField({ value, onChange, placeholder, className, title }: C
   const [open, setOpen] = useState(false);
   const [local, setLocal] = useState(() => formatDisplay(value));
   const [focused, setFocused] = useState(false);
+  // `var(--x)` won't resolve against this shadow DOM's root, so we resolve
+  // against the iframe's document (where the var is actually defined) and
+  // render that concrete colour in the swatch instead.
+  const swatchColor = useMemo(() => resolveForDisplay(value), [value]);
   const inputRef = useRef<HTMLInputElement>(null);
   const swatchRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -159,7 +163,7 @@ export function ColorField({ value, onChange, placeholder, className, title }: C
       >
         <span
           className="w-4 h-4 rounded-[3px] border border-canvas-border"
-          style={{ background: `${value || "transparent"}, ${CHECKER}` }}
+          style={{ background: `${swatchColor || "transparent"}, ${CHECKER}` }}
         />
       </button>
       {open && portalContainer && ReactDOM.createPortal(
@@ -214,4 +218,28 @@ function formatDisplay(value: string): string {
   const hex = rgbaToHex(rgba).replace(/^#/, "");
   const pct = Math.round(parsed.a * 100);
   return `${hex} / ${pct}%`;
+}
+
+/**
+ * Return a CSS colour string that will render correctly in the overlay's
+ * shadow DOM. For `var(--x)` references, the var is defined on the iframe's
+ * `:root` — not on anything the overlay's shadow root can see — so we resolve
+ * it through a hidden probe in the iframe document and hand back the
+ * computed colour. Other values pass through unchanged.
+ */
+function resolveForDisplay(value: string): string {
+  if (!value) return value;
+  if (!/var\(/.test(value)) return value;
+  const doc = getIframeDocument();
+  if (!doc) return value;
+  const probe = doc.createElement("div");
+  probe.style.color = value;
+  if (!probe.style.color) return value;
+  probe.style.position = "fixed";
+  probe.style.pointerEvents = "none";
+  probe.style.opacity = "0";
+  doc.body.appendChild(probe);
+  const resolved = doc.defaultView?.getComputedStyle(probe).color ?? "";
+  doc.body.removeChild(probe);
+  return resolved || value;
 }

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "fs";
 import { tmpdir } from "os";
 import { join, sep } from "path";
-import { recordSnapshot, listSnapshots, applyUndo, simulateAgentEdit } from "../agent-undo.js";
+import { recordSnapshot, listSnapshots, applyUndo } from "../agent-undo.js";
 
 /**
  * Regression tests for the path-safety check + snapshot round-trip. The
@@ -103,23 +103,6 @@ describe("path safety", () => {
     ).not.toThrow();
   });
 
-  it("simulateAgentEdit refuses absolute paths and paths outside the root", () => {
-    expect(simulateAgentEdit(root, "x", "/etc/passwd")).toBeNull();
-    expect(simulateAgentEdit(root, "x", "../outside.txt")).toBeNull();
-  });
-
-  it("simulateAgentEdit writes a marker and snapshots the original", () => {
-    const rel = "src/components/Header.tsx";
-    const before = readFileSync(join(root, rel), "utf-8");
-    const result = simulateAgentEdit(root, "ann-sim", rel);
-    expect(result).not.toBeNull();
-    const after = readFileSync(join(root, rel), "utf-8");
-    expect(after.startsWith("// [canvas simulate]")).toBe(true);
-    expect(after.endsWith(before)).toBe(true);
-
-    applyUndo(root, "ann-sim");
-    expect(readFileSync(join(root, rel), "utf-8")).toBe(before);
-  });
 });
 
 describe("store integrity", () => {

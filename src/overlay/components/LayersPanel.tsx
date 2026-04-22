@@ -14,9 +14,10 @@ import {
 const C = THEME;
 const EXPAND_KEY = "layers-expanded";
 
-// Accent for component rows — matches the purple already used for breakpoint
-// badges elsewhere in the overlay (keeps the visual vocabulary consistent).
-const COMPONENT_COLOR = "#a855f7";
+// Accent for component rows — pulls from the shared `canvasLayer` token so
+// component highlights, breakpoint badges, and source indicators all share
+// one purple across the overlay.
+const COMPONENT_COLOR = THEME.canvasLayer;
 
 // Initial row reveal timing. Capped max-delay so a massive tree still finishes
 // staggering in well under a second; rows past the cap all land at max-delay.

@@ -24,13 +24,14 @@ The core value proposition is **speed and fidelity**: you edit the real app in i
 
 ---
 
-## The three load-bearing libraries (do not replace these)
+## The two load-bearing libraries (do not replace these)
 
 From `README.md` — these are deliberately chosen and the whole product depends on them:
 
 1. **[HTML-in-Canvas (`drawElementImage`)](https://developer.chrome.com/blog/html-in-canvas)** — Chrome's experimental Canvas API. Used to paint element previews, badges, labels, and spacing indicators onto the canvas. Falls back to manual canvas drawing when unavailable. **Do not propose replacing the canvas layer with DOM elements.** The canvas IS the USP.
 2. **[@chenglou/pretext](https://github.com/chenglou/pretext)** — DOM-free text measurement. Used wherever text is drawn on canvas so we never trigger reflows. Keep using it.
-3. **[agentation-mcp](https://github.com/benjitaylor/agentation)** — MCP bridge for the "Ask AI" feature. Routes overlay AI requests to whatever MCP-compatible agent the user has connected. This is a **bridge**, not the product. Do not expand it into something that competes with the canvas editor.
+
+Annotation storage for "Ask AI" history lives in-process: sqlite (WAL mode) at `{projectRoot}/.canvas-data/annotations.db`, served by the editor server at `/__canvas/annotations/*`, exposed to AI agents through MCP tools in `src/mcp/server.ts`. Everything goes through the one editor process — don't add a second HTTP server for annotations.
 
 ---
 
@@ -52,10 +53,9 @@ Source mapping: the Babel/Vite plugin injects `data-source-file`, `data-source-l
 ## Ports (current)
 
 - **3000** — user's dev server (test app runs here)
-- **6966** — Local Canvas editor proxy (user opens this in their browser)
-- **6967** — agentation HTTP server for the Ask AI bridge
+- **6966** — Local Canvas editor (single process). Serves the overlay bundle at `/__canvas/*.js`, proxies `/` through to the dev server, hosts the WebSocket for mutations at `/__canvas/ws`, and exposes the annotations + agent-undo HTTP APIs at `/__canvas/annotations/*` and `/__canvas/agent-undo`. Open this port in the browser.
 
-Historical ports `3001` / `4747` appear in old docs; the live defaults are above.
+The MCP server (`local-canvas mcp`) is a separate stdio process spawned by the agent client — it talks to `:6966` over HTTP + WebSocket and has no port of its own.
 
 ---
 
@@ -97,7 +97,13 @@ The iframe-direct handlers in `ResponsiveFrame.tsx` intentionally work in iframe
 
 ### UI philosophy
 - **Native-style over chrome.** Prefer pins, element-anchored controls, and transient overlays. Don't add floating panels for signals that can live on the element itself.
-- The canvas editor is the product. Agentation is a bridge feature — don't let it sprout more panels, history views, or UI that competes for attention with the canvas.
+- The canvas editor is the product. The Ask AI flow is a bridge feature — don't let it sprout more panels, history views, or UI that competes for attention with the canvas.
+
+### Annotations / Ask AI flow
+- Storage is an in-process sqlite file at `{projectRoot}/.canvas-data/annotations.db`, served at `/__canvas/annotations/*`. No second port, no separate server. Don't reintroduce one.
+- Status lifecycle: `pending` (yellow pin) → `in_progress` (blue pulsing pin, set by `annotations_acknowledge`) → `resolved` (green) or `dismissed` (grey). All four statuses ship visuals — pick the right one when touching pin rendering.
+- MCP tools live in `src/mcp/server.ts` behind the `local-canvas mcp` CLI subcommand. Agents hook up with `claude mcp add local-canvas -- npx local-canvas mcp` — do not hard-code `dist/mcp/server.js` paths in docs or examples.
+- Pins sit at `z-index: 2147483644`, deliberately **below** the canvas overlay layer (`2147483646`), so hover/selection highlights paint on top. The canvas has `pointer-events: none` so clicks still land on pins. Don't raise the pin z-index above the canvas layer.
 
 ### Don't
 
@@ -106,6 +112,7 @@ The iframe-direct handlers in `ResponsiveFrame.tsx` intentionally work in iframe
 - Don't add backend LLM calls for the Ask AI feature — it routes through the user's own connected MCP agent on purpose (no API keys, full repo context).
 - Don't add heavyweight UI dependencies. The stack is Tailwind + Radix primitives + Zustand. Stay minimal.
 - Don't convert the overlay React app to SSR, Next.js, or a framework. It's a Vite-built shadow-DOM bundle.
+- Don't spawn a second HTTP process for annotations or add a second port. Annotations storage is in-process, same-origin on `:6966`.
 
 ---
 
@@ -125,10 +132,18 @@ The iframe-direct handlers in `ResponsiveFrame.tsx` intentionally work in iframe
 | `src/core/writer/index.ts` | `MutationWriter` — ts-morph AST edits with undo |
 | `src/core/source-map/resolver.ts` | DOM → `{file, line, col}` resolution |
 | `src/core/tailwind/parser.ts` | Tailwind class parsing |
-| `src/server/index.ts` | WebSocket + HTTP endpoints (including `/__canvas/agent-snapshot`) |
+| `src/server/index.ts` | WebSocket + HTTP endpoints (including `/__canvas/agent-snapshot` and `/__canvas/annotations/*`) |
+| `src/server/annotations-store.ts` | sqlite-backed annotations store (per-project `.canvas-data/annotations.db`) |
+| `src/mcp/server.ts` | MCP stdio server exposing canvas_* + annotations_* tools to AI agents |
+| `src/cli/index.ts` | `local-canvas dev` / `init` / `mcp` CLI entrypoint |
+| `src/overlay/utils/agentation.ts` | Overlay-side annotations client — wraps same-origin `/__canvas/annotations/*` and `/__canvas/agent-undo`. Filename is legacy; content is current. |
+| `src/server/agent-undo.ts` | Per-project snapshot ring at `.canvas-undo/snapshots.json` (FIFO, 10 entries), restores files on Undo |
+| `src/overlay/components/AnnotationPins.tsx` | Numbered pins, clustering, popover thread UI, drag-to-reposition |
+| `src/overlay/components/AskAIHistory.tsx` | History popover in the toolbar (clear-all, hide-all, status dots) |
 | `src/proxy/index.ts` | HTTP proxy that injects the overlay |
 | `src/plugin/` | Vite + Babel plugins that add `data-source-*` attrs |
-| `bin/start.sh` | Starts proxy + agentation together |
+| `bin/start.sh` | Starts test app + editor proxy (for local dev of local-canvas itself) |
+| `bin/purge-resolved.sh` | Prunes old resolved/dismissed annotations from the per-project sqlite |
 
 ---
 

@@ -14,18 +14,46 @@ import {
 import { ScrubField } from "./scrub-field.js";
 import { Button } from "./button.js";
 import { Copy, X as CloseIcon, Eyedropper } from "../icons.js";
+import { getIframeDocument } from "../../utils/iframe-events.js";
 
 interface ColorPickerPopoverProps {
-  /** Current color as a CSS string (#hex / rgb()). */
+  /** Current color as a CSS string (#hex / rgb() / var(--x)). */
   value: string;
   onChange: (next: string) => void;
   onClose?: () => void;
   className?: string;
 }
 
-type Tab = "picker" | "palette";
+type Tab = "picker" | "palette" | "theme";
 
 const CHECKER = "repeating-conic-gradient(#666 0 25%, #999 0 50%) 0 0 / 6px 6px";
+
+/**
+ * Parse any CSS color the browser understands — including `var(--x)`,
+ * `color-mix(...)`, and other forms `parseColor` can't handle on its own.
+ * For values the canvas-based parseColor rejects (notably CSS variables,
+ * which need DOM context to resolve), we stand up a hidden probe inside the
+ * iframe document so the var inherits from `:root`, read the computed
+ * color, and parse that instead. Without this, opening the picker on an
+ * element painted with `bg-[var(--brand)]` shows black while the pill swatch
+ * shows the resolved brand colour — a confusing mismatch.
+ */
+function resolveToHsva(value: string): HSVA | null {
+  if (!value) return null;
+  const direct = parseColor(value);
+  if (direct) return direct;
+  const doc = getIframeDocument() ?? document;
+  const probe = doc.createElement("div");
+  probe.style.color = value;
+  if (!probe.style.color) return null;
+  probe.style.position = "fixed";
+  probe.style.pointerEvents = "none";
+  probe.style.opacity = "0";
+  doc.body.appendChild(probe);
+  const resolved = doc.defaultView?.getComputedStyle(probe).color ?? "";
+  doc.body.removeChild(probe);
+  return resolved ? parseColor(resolved) : null;
+}
 
 /**
  * The dialog that opens when a ColorField swatch is clicked:
@@ -38,7 +66,7 @@ const CHECKER = "repeating-conic-gradient(#666 0 25%, #999 0 50%) 0 0 / 6px 6px"
  * positioning.
  */
 export function ColorPickerPopover({ value, onChange, onClose, className }: ColorPickerPopoverProps) {
-  const [hsva, setHsva] = useState<HSVA>(() => parseColor(value) ?? { h: 0, s: 0, v: 0, a: 1 });
+  const [hsva, setHsva] = useState<HSVA>(() => resolveToHsva(value) ?? { h: 0, s: 0, v: 0, a: 1 });
   const [tab, setTab] = useState<Tab>("picker");
 
   const rgba = useMemo(() => hsvaToRgba(hsva), [hsva]);
@@ -60,7 +88,7 @@ export function ColorPickerPopover({ value, onChange, onClose, className }: Colo
 
   useEffect(() => {
     if (value === lastEmittedRef.current) return;
-    const parsed = parseColor(value);
+    const parsed = resolveToHsva(value);
     if (!parsed) return;
     lastEmittedRef.current = value;
     setHsva(parsed);
@@ -117,6 +145,18 @@ export function ColorPickerPopover({ value, onChange, onClose, className }: Colo
             if (parsed) setHsva({ ...parsed, a: hsva.a });
           }}
         />
+      ) : tab === "theme" ? (
+        <ThemePalette
+          selected={value}
+          onPick={expr => {
+            // Emit the var expression directly — may be `var(--x)` or a
+            // wrapped form like `hsl(var(--x))` for shadcn-style triplet
+            // tokens. Align lastEmittedRef so the derived-hex emit effect
+            // doesn't race ahead and overwrite it on the next hsva tick.
+            lastEmittedRef.current = expr;
+            onChange(expr);
+          }}
+        />
       ) : (
         <PickerPanel
           hsva={hsva}
@@ -137,7 +177,7 @@ export function ColorPickerPopover({ value, onChange, onClose, className }: Colo
 
 // -- Tabs --------------------------------------------------------------------
 
-const TABS: readonly Tab[] = ["picker", "palette"];
+const TABS: readonly Tab[] = ["picker", "palette", "theme"];
 
 function Tabs({ value, onChange }: { value: Tab; onChange: (t: Tab) => void }) {
   return (
@@ -397,6 +437,170 @@ const TAILWIND_FAMILIES: readonly { name: string; hex: readonly string[] }[] = [
   { name: "pink",    hex: ["#fdf2f8", "#fce7f3", "#fbcfe8", "#f9a8d4", "#f472b6", "#ec4899", "#db2777", "#be185d", "#9d174d", "#831843", "#500724"] },
   { name: "rose",    hex: ["#fff1f2", "#ffe4e4", "#fecdd3", "#fda4af", "#fb7185", "#f43f5e", "#e11d48", "#be123c", "#9f1239", "#881337", "#4c0519"] },
 ];
+
+// -- Theme palette (iframe CSS custom properties) ---------------------------
+// Walks the target app's stylesheets, collects every `--*` custom property
+// whose current computed value on :root is a color, and surfaces them as
+// click-to-apply swatches. No tailwind.config parsing — just what's live in
+// the DOM, which covers both CSS-variable themes and Tailwind v4's `@theme`
+// output.
+
+interface ThemeVar {
+  name: string;  // e.g. "--brand"
+  /** Full CSS expression to emit into the class (e.g. `var(--brand)` or
+   *  `hsl(var(--primary))` for shadcn-style HSL-triplet tokens). */
+  emit: string;
+  /** Resolved computed colour for display in the swatch. */
+  value: string;
+}
+
+// Wrappers to try when probing a var for color-hood. shadcn-style themes
+// store HSL/RGB component triplets (e.g. `--primary: 222 47% 11%`) that only
+// become valid colors inside `hsl(...)` / `rgb(...)` — we need to emit the
+// same wrapper in the final class so the rendered CSS matches.
+const VAR_WRAPPERS: readonly ((name: string) => string)[] = [
+  n => `var(${n})`,
+  n => `hsl(var(${n}))`,
+  n => `rgb(var(${n}))`,
+  n => `oklch(var(${n}))`,
+  n => `hsl(var(${n}) / 1)`, // some themes use slash alpha
+];
+
+function collectThemeColorVars(): ThemeVar[] {
+  const doc = getIframeDocument();
+  if (!doc) return [];
+  const view = doc.defaultView;
+  if (!view) return [];
+  const rootStyle = view.getComputedStyle(doc.documentElement);
+  const names = new Set<string>();
+
+  // Collect candidate names from both routes so we cover every browser /
+  // toolchain:
+  //   1. getComputedStyle iteration on :root — Chrome exposes declared
+  //      custom properties here; other browsers may not.
+  //   2. Stylesheet walk — catches `@layer`, `@media`, and any rule nesting
+  //      regardless of whether computed-style iteration enumerates them.
+  for (let i = 0; i < rootStyle.length; i++) {
+    const name = rootStyle[i];
+    if (name.startsWith("--")) names.add(name);
+  }
+  const walk = (rules: CSSRuleList | null) => {
+    if (!rules) return;
+    for (let i = 0; i < rules.length; i++) {
+      const rule = rules[i];
+      if (rule instanceof CSSStyleRule) {
+        for (let j = 0; j < rule.style.length; j++) {
+          const name = rule.style[j];
+          if (name.startsWith("--")) names.add(name);
+        }
+      } else if ("cssRules" in rule) {
+        try { walk((rule as CSSGroupingRule).cssRules); } catch { /* cross-origin */ }
+      }
+    }
+  };
+  for (const sheet of Array.from(doc.styleSheets)) {
+    try { walk(sheet.cssRules); } catch { /* cross-origin */ }
+  }
+
+  if (names.size === 0) return [];
+
+  // Resolve each var INSIDE the iframe document so chained references
+  // (e.g. `--brand: var(--primary)`) and layer/cascade ordering work.
+  //
+  // Trick: mount two probes under parents with DIFFERENT `color` values.
+  // When we set `color: var(--name)` on both probes:
+  //   - If the var resolves to a real color, both probes compute the same
+  //     resolved colour regardless of their parent.
+  //   - If the var is undefined or non-color (e.g. `--radius-sm: 4px`),
+  //     `color` is invalid-at-computed-value-time and falls back to
+  //     inherit, so the two probes take on their *different* parent
+  //     colours.
+  // Comparing the two computed values is a clean color/non-color filter
+  // without re-implementing the CSS color grammar — it handles hex, rgb,
+  // hsl, oklch, color-mix, named colours, and var() chains alike.
+  const mkProbe = (parentColor: string) => {
+    const parent = doc.createElement("div");
+    parent.style.cssText = `position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none;color:${parentColor};`;
+    const probe = doc.createElement("div");
+    parent.appendChild(probe);
+    doc.body.appendChild(parent);
+    return { parent, probe };
+  };
+  const a = mkProbe("rgb(1, 2, 3)");
+  const b = mkProbe("rgb(254, 253, 252)");
+
+  const out: ThemeVar[] = [];
+  try {
+    for (const name of names) {
+      for (const wrap of VAR_WRAPPERS) {
+        const expr = wrap(name);
+        a.probe.style.color = expr;
+        b.probe.style.color = expr;
+        const aColor = view.getComputedStyle(a.probe).color;
+        const bColor = view.getComputedStyle(b.probe).color;
+        if (aColor && aColor === bColor) {
+          out.push({ name, emit: expr, value: aColor });
+          break;
+        }
+      }
+    }
+  } finally {
+    doc.body.removeChild(a.parent);
+    doc.body.removeChild(b.parent);
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name));
+  return out;
+}
+
+function ThemePalette({ selected, onPick }: { selected: string; onPick: (expr: string) => void }) {
+  // Re-scan whenever the popover mounts (or the iframe doc changes under it).
+  // The mount cost is tiny vs. the surprise of stale vars after an HMR.
+  const vars = useMemo(() => collectThemeColorVars(), []);
+  // Highlight whichever entry's emit expression matches the current value —
+  // covers both `var(--x)` and wrapped forms like `hsl(var(--x))`.
+  const selectedExpr = useMemo(() => selected.replace(/\s+/g, ""), [selected]);
+  if (vars.length === 0) {
+    return (
+      <div className="max-h-[360px] px-2 py-8 text-center text-[11px] text-canvas-muted-fg">
+        No color custom properties found in the target app.
+        <div className="mt-1 opacity-70">
+          Define CSS variables like <code className="font-mono">--brand: #3b82f6</code> on <code className="font-mono">:root</code>.
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="max-h-[360px] overflow-y-auto -mx-1 px-1">
+      {vars.map(v => {
+        const isSelected = v.emit.replace(/\s+/g, "") === selectedExpr;
+        return (
+          <button
+            key={v.name}
+            type="button"
+            onClick={() => onPick(v.emit)}
+            title={`${v.name} · ${v.value}`}
+            className={cn(
+              "w-full flex items-center gap-2 h-7 px-1.5 rounded-[3px] text-left",
+              "hover:bg-canvas-muted transition-colors",
+              isSelected && "bg-canvas-muted ring-1 ring-canvas-accent",
+            )}
+          >
+            <span
+              className="w-4 h-4 rounded-[3px] border border-canvas-border/50 shrink-0"
+              style={{ background: v.value }}
+            />
+            <span className="flex-1 min-w-0 truncate text-[11px] font-mono text-canvas-fg">
+              {v.name}
+            </span>
+            <span className="shrink-0 text-[10px] font-mono text-canvas-muted-fg truncate max-w-[120px]">
+              {v.value}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 /** Grid of Tailwind preset swatches. One row per family, one cell per shade. */
 function TailwindPalette({ selected, onPick }: { selected: string; onPick: (hex: string) => void }) {

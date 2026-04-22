@@ -25,4 +25,13 @@ program
   .description("Add the canvas editor babel plugin to your project")
   .action(initCommand);
 
+program
+  .command("mcp")
+  .description("Start the MCP stdio server (for `claude mcp add local-canvas -- npx local-canvas mcp`)")
+  .option("-p, --port <port>", "Canvas editor port to bridge to", "6966")
+  .action(async (opts: { port: string }) => {
+    const { startMCPServer } = await import("../mcp/server.js");
+    await startMCPServer(Number(opts.port));
+  });
+
 program.parse();

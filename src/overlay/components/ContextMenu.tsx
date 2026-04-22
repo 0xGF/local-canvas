@@ -106,7 +106,12 @@ export const ContextMenu = React.memo(function ContextMenu() {
   const selectElement = useEditorStore((s) => s.selectElement);
   const multiSelection = useEditorStore((s) => s.multiSelection);
   const { sendMutation, send } = useWebSocket();
-  const [aiPromptOpen, setAiPromptOpen] = useState(false);
+  // Start true when the menu was opened with initialMode: "ai-prompt" so
+  // the AnnotatePill renders on the very first frame. Otherwise the menu
+  // chrome would flash for one tick before the effect below flips it to
+  // true, and the single annotate-click reads as "nothing happened" —
+  // especially in dev/strict mode where effects double-run.
+  const [aiPromptOpen, setAiPromptOpen] = useState(() => menu?.initialMode === "ai-prompt");
   const [aiPrompt, setAiPrompt] = useState("");
   const aiInputRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);

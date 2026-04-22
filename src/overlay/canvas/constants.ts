@@ -3,24 +3,33 @@ export const HAS_DRAW_ELEMENT =
   typeof CanvasRenderingContext2D !== "undefined" &&
   "drawElementImage" in CanvasRenderingContext2D.prototype;
 
+import { THEME, hexToRgba } from "../theme.js";
+
 // ── Colors ──
+// The canvas palette is NOT a duplicate palette. It's a thin alias so paint
+// code still reads `COL.blue` etc., but the base hues come straight from
+// the shared theme tokens — selection blue → `accent`, padding → `success`,
+// annotate → `warning`. Only `margin` (orange) and `purple` (layers) live
+// locally because they have no status equivalent. `hexToRgba` composes the
+// `Dim` / `Bg` alpha variants so tuning a hue in theme.ts cascades here
+// without touching the canvas code.
 export const COL = {
-  blue: "#06B6FF",
-  blueDim: "rgba(6, 182, 255, 0.4)",
-  blueFaint: "rgba(6, 182, 255, 0.04)",
-  margin: "#FE7338",
-  marginBg: "rgba(254, 115, 56, 0.12)",
-  marginDash: "rgba(254, 115, 56, 0.5)",
-  padding: "#24CA71",
-  paddingBg: "rgba(36, 202, 113, 0.12)",
-  paddingDash: "rgba(36, 202, 113, 0.5)",
-  purple: "#874EFF",
-  purpleBg: "rgba(135, 78, 255, 0.1)",
-  // Annotate-mode hover accent — matches the yellow `+` cursor so the user
-  // can see which element will receive their next annotate click.
-  annotate: "#ffb800",
-  annotateDim: "rgba(255, 184, 0, 0.8)",
-  annotateBg: "rgba(255, 184, 0, 0.1)",
+  blue: THEME.accent,
+  blueDim: hexToRgba(THEME.accent, 0.4),
+  blueFaint: hexToRgba(THEME.accent, 0.04),
+  margin: THEME.canvasMargin,
+  marginBg: hexToRgba(THEME.canvasMargin, 0.12),
+  marginDash: hexToRgba(THEME.canvasMargin, 0.5),
+  padding: THEME.success,
+  paddingBg: hexToRgba(THEME.success, 0.12),
+  paddingDash: hexToRgba(THEME.success, 0.5),
+  purple: THEME.canvasLayer,
+  purpleBg: hexToRgba(THEME.canvasLayer, 0.1),
+  // Annotate-mode hover accent — shares `warning` with the pin disc so the
+  // + cursor colour and the soon-to-be-placed pin colour always match.
+  annotate: THEME.warning,
+  annotateDim: hexToRgba(THEME.warning, 0.8),
+  annotateBg: hexToRgba(THEME.warning, 0.1),
 } as const;
 
 export const FONT = "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace";
@@ -37,8 +46,9 @@ export interface SpacingBox { top: number; right: number; bottom: number; left: 
 
 export interface BadgeHit {
   x: number; y: number; w: number; h: number;
-  type: "margin" | "padding";
-  side: "top" | "right" | "bottom" | "left";
+  type: "margin" | "padding" | "gap";
+  // "x" / "y" are only used when type === "gap" (column / row axis).
+  side: "top" | "right" | "bottom" | "left" | "x" | "y";
   value: number;
   prefix: string;
 }
@@ -49,6 +59,7 @@ export interface TagBadgeHit { x: number; y: number; w: number; h: number; }
 export const PREFIX_TO_CSS: Record<string, string> = {
   mt: "marginTop", mr: "marginRight", mb: "marginBottom", ml: "marginLeft",
   pt: "paddingTop", pr: "paddingRight", pb: "paddingBottom", pl: "paddingLeft",
+  "gap-x": "columnGap", "gap-y": "rowGap",
 };
 
 export const SIDE_PREFIX: Record<string, Record<string, string>> = {

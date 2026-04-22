@@ -87,6 +87,12 @@ interface EditorState {
   connected: boolean;
   setConnected: (connected: boolean) => void;
 
+  // True once the preview frame's halftone cover has started fading. Used to
+  // suppress element-anchored chrome (annotation pins, etc.) during the
+  // initial load so pins don't flash at pre-measure coordinates.
+  frameRevealed: boolean;
+  setFrameRevealed: (revealed: boolean) => void;
+
   // Animation pause — freezes CSS animations and transitions in the target page
   animationsPaused: boolean;
   setAnimationsPaused: (paused: boolean) => void;
@@ -207,6 +213,9 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   connected: false,
   setConnected: (connected) => set({ connected }),
+
+  frameRevealed: false,
+  setFrameRevealed: (revealed) => set({ frameRevealed: revealed }),
 
   animationsPaused: !!_persisted.animationsPaused,
   setAnimationsPaused: (paused) => set({ animationsPaused: paused }),

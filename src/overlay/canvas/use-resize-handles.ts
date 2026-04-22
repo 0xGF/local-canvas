@@ -3,7 +3,7 @@ import { useEditorStore } from "../stores/editor-store.js";
 import { useViewportStore } from "../hooks/useViewport.js";
 import { useWebSocket } from "../hooks/useWebSocket.js";
 import { getBreakpointPrefix } from "../../shared/breakpoints.js";
-import { TW_PX, TW_NAMES } from "./constants.js";
+import { TW_PX, TW_NAMES, COL } from "./constants.js";
 import { attachToDocumentAndIframe, bind } from "../utils/iframe-events.js";
 import { markDragEnd } from "../utils/drag-state.js";
 import { sourceStyleHasProperty } from "../utils/inline-style-source.js";
@@ -63,7 +63,7 @@ export function paintHandles(ctx: CanvasRenderingContext2D, handles: ResizeHandl
   ctx.save();
   for (const handle of handles) {
     ctx.fillStyle = "#fff";
-    ctx.strokeStyle = "#06B6FF";
+    ctx.strokeStyle = COL.blue;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.arc(handle.x + handle.w / 2, handle.y + handle.h / 2, (handle.w / 2) * 0.9, 0, Math.PI * 2);

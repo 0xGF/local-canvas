@@ -3,6 +3,7 @@ import { useEditorStore } from "../stores/editor-store.js";
 import { useViewportStore } from "../hooks/useViewport.js";
 import { useChangesStore } from "../stores/changes-store.js";
 import { HAS_DRAW_ELEMENT, COL, FONT, BADGE_CSS, LABEL_CSS } from "../canvas/constants.js";
+import { hexToRgba, THEME } from "../theme.js";
 import type { BadgeHit, TagBadgeHit } from "../canvas/constants.js";
 import { paintFrame, shouldRepaint } from "../canvas/paint-frame.js";
 import type { PaintContext } from "../canvas/paint-frame.js";
@@ -251,9 +252,9 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
           const fw = fr.width * ifs2;
           const fh = fr.height * ifs2;
           ctx!.save();
-          ctx!.fillStyle = "rgba(6, 182, 255, 0.15)";
+          ctx!.fillStyle = hexToRgba(COL.blue, 0.15);
           ctx!.fillRect(fx, fy, fw, fh);
-          ctx!.strokeStyle = "#06B6FF";
+          ctx!.strokeStyle = COL.blue;
           ctx!.lineWidth = 3;
           ctx!.strokeRect(fx, fy, fw, fh);
           ctx!.restore();
@@ -265,7 +266,7 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
       if (multiSel.length > 1) {
         ctx!.save();
         ctx!.setLineDash([6, 4]);
-        ctx!.strokeStyle = "#14ae5c";
+        ctx!.strokeStyle = THEME.success;
         ctx!.lineWidth = 2;
         const ifs2 = iframeOffset.scale ?? 1;
         const ox = iframeOffset.x, oy = iframeOffset.y;
@@ -278,7 +279,7 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
           const ew = r.width * ifs2;
           const eh = r.height * ifs2;
           // Visible green fill + dashed border
-          ctx!.fillStyle = "rgba(20, 174, 92, 0.12)";
+          ctx!.fillStyle = hexToRgba(THEME.success, 0.12);
           ctx!.fillRect(ex, ey, ew, eh);
           ctx!.strokeRect(ex, ey, ew, eh);
         }
@@ -296,7 +297,7 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
           ctx!.font = badgeFont;
           const bw = measureText(badge, badgeFont) + 12;
           ctx!.setLineDash([]);
-          ctx!.fillStyle = "#14ae5c";
+          ctx!.fillStyle = THEME.success;
           ctx!.beginPath();
           ctx!.roundRect(lx, ly - 18, bw, 16, 4);
           ctx!.fill();
@@ -331,7 +332,7 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
         ctx!.save();
         ctx!.fillStyle = "rgba(12, 140, 233, 0.08)";
         ctx!.fillRect(mRect.x, mRect.y, mRect.w, mRect.h);
-        ctx!.strokeStyle = "#0c8ce9";
+        ctx!.strokeStyle = THEME.accent;
         ctx!.lineWidth = 1;
         ctx!.setLineDash([4, 3]);
         ctx!.strokeRect(mRect.x, mRect.y, mRect.w, mRect.h);
@@ -424,7 +425,7 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
 
       {/* Resize tooltip */}
       {resizeTooltip && (
-        <div style={{ position: "fixed", left: resizeTooltip.x + 12, top: resizeTooltip.y - 10, zIndex: 2147483647, pointerEvents: "none", background: "#06B6FF", color: "#fff", fontSize: 10, fontWeight: 600, fontFamily: FONT, padding: "2px 6px", borderRadius: 4, boxShadow: "0 2px 8px rgba(0,0,0,0.3)" }}>
+        <div style={{ position: "fixed", left: resizeTooltip.x + 12, top: resizeTooltip.y - 10, zIndex: 2147483647, pointerEvents: "none", background: COL.blue, color: "#fff", fontSize: 10, fontWeight: 600, fontFamily: FONT, padding: "2px 6px", borderRadius: 4, boxShadow: "0 2px 8px rgba(0,0,0,0.3)" }}>
           {resizeTooltip.text}
         </div>
       )}

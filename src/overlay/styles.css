@@ -697,6 +697,12 @@
 .animate-tooltip-in { animation: tooltipIn 90ms ease-out; }
 .animate-tooltip-out { animation: tooltipOut 90ms ease-in; }
 
+/* Used by the in-progress status dot in the Ask AI history popover. */
+@keyframes canvasDotWorking {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.25); }
+}
+
 /* ═══ Tooltip ═══ */
 .tooltip {
   position: absolute;

@@ -2,7 +2,16 @@ import { createServer as createHttpServer } from "http";
 import { WebSocketServer } from "ws";
 import { createProxy } from "../proxy/index.js";
 import { createWSHandler } from "./ws-handler.js";
-import { recordSnapshot, listSnapshots, applyUndo, simulateAgentEdit } from "./agent-undo.js";
+import { recordSnapshot, listSnapshots, applyUndo } from "./agent-undo.js";
+import {
+  createAnnotation,
+  listAnnotations,
+  getAnnotation,
+  updateAnnotation,
+  appendThread,
+  deleteAnnotation,
+  deleteAllAnnotations,
+} from "./annotations-store.js";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { readFileSync, existsSync, statSync } from "fs";
@@ -127,42 +136,21 @@ export async function createServer(options: ServerOptions) {
       res.end(JSON.stringify(listSnapshots(projectRoot)));
       return;
     }
-    if (req.url === "/__canvas/agent-simulate" && req.method === "POST") {
+    // ── Annotations API (replaces the old agentation-mcp :6967 bridge) ──
+    //
+    // Storage lives at `{projectRoot}/.canvas-data/annotations.db`. The
+    // overlay is the primary writer via these same-origin endpoints; the MCP
+    // server (src/mcp/server.ts) talks to the same endpoints over HTTP so
+    // both readers/writers go through a single in-process store.
+    // Match on pathname only — the list endpoint uses `?url=...` and the
+    // whole-URL match fails when a query string is present.
+    const pathname = (req.url || "").split("?", 1)[0];
+    const annotationsMatch = pathname.match(/^\/__canvas\/annotations(?:\/(.*))?$/);
+    if (annotationsMatch) {
       if (!isLocalSameOrigin(req, serverPort)) { res.writeHead(403).end(); return; }
-      readJsonBody(req).then((raw) => {
-        const body = (raw ?? {}) as Record<string, unknown>;
-        const id = String(body.annotationId ?? "");
-        const rel = String(body.filePath ?? "");
-        if (!id || !rel) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: false, error: "annotationId and filePath required" }));
-          return;
-        }
-        try {
-          const result = simulateAgentEdit(projectRoot, id, rel);
-          if (!result) {
-            res.writeHead(404, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ ok: false, error: "file not found or unsafe path" }));
-            return;
-          }
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: true, ...result }));
-        } catch (err) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: false, error: String(err) }));
-        }
-      }).catch(() => {
-        res.writeHead(400).end();
-      });
-      return;
-    }
-    if (req.url === "/__canvas/clear-agentation-sessions" && req.method === "POST") {
-      if (!isLocalSameOrigin(req, serverPort)) { res.writeHead(403).end(); return; }
-      clearAllAgentationAnnotations().then((result) => {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, ...result }));
-      }).catch((err) => {
-        res.writeHead(502, { "Content-Type": "application/json" });
+      const tail = annotationsMatch[1] ?? "";
+      handleAnnotationsRoute(tail, req, res, projectRoot).catch((err) => {
+        res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: String(err) }));
       });
       return;
@@ -285,28 +273,112 @@ function readJsonBody(req: import("http").IncomingMessage): Promise<unknown> {
   });
 }
 
-/** Delete every annotation across every session on the local agentation server
- *  (port 6967). The agentation HTTP API has no bulk-delete or session-delete
- *  endpoint, so we walk sessions → annotations → DELETE /annotations/:id. The
- *  empty session shells stay behind (harmless — next POST to /sessions for a
- *  given URL just reuses or recreates one), but the history popover renders
- *  empty once annotations are gone, which is the user-visible goal. */
-async function clearAllAgentationAnnotations(): Promise<{ deletedAnnotations: number; sessions: number }> {
-  const base = "http://localhost:6967";
-  const sessionsRes = await fetch(`${base}/sessions`);
-  if (!sessionsRes.ok) throw new Error(`agentation sessions list: ${sessionsRes.status}`);
-  const sessions = await sessionsRes.json() as Array<{ id: string }>;
-  let deleted = 0;
-  for (const s of sessions) {
-    const detailRes = await fetch(`${base}/sessions/${s.id}`);
-    if (!detailRes.ok) continue;
-    const detail = await detailRes.json() as { annotations?: Array<{ id: string }> };
-    const annotations = detail.annotations || [];
-    for (const a of annotations) {
-      const delRes = await fetch(`${base}/annotations/${a.id}`, { method: "DELETE" });
-      if (delRes.ok) deleted++;
+/**
+ * Routes `/__canvas/annotations[/rest]` requests to the sqlite store.
+ * Route table:
+ *   GET    /__canvas/annotations               list (optional ?url=... filter)
+ *   POST   /__canvas/annotations               create (body: comment, elementPath, url, …)
+ *   DELETE /__canvas/annotations               wipe all (the "Clear all" button)
+ *   GET    /__canvas/annotations/pending       list status=pending across all URLs
+ *   GET    /__canvas/annotations/:id           single annotation
+ *   PATCH  /__canvas/annotations/:id           update status/summary/comment
+ *   DELETE /__canvas/annotations/:id           delete one
+ *   POST   /__canvas/annotations/:id/thread    append an agent/user thread entry
+ */
+async function handleAnnotationsRoute(
+  tail: string,
+  req: import("http").IncomingMessage,
+  res: import("http").ServerResponse,
+  projectRoot: string,
+): Promise<void> {
+  const method = req.method || "GET";
+  const json = (status: number, body: unknown) => {
+    res.writeHead(status, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(body));
+  };
+  const urlObj = new URL(req.url || "/", "http://localhost");
+
+  // Collection endpoints
+  if (tail === "" || tail === "/") {
+    if (method === "GET") {
+      const url = urlObj.searchParams.get("url") || undefined;
+      const status = (urlObj.searchParams.get("status") as "pending" | "in_progress" | "resolved" | "dismissed" | null) || undefined;
+      return json(200, listAnnotations(projectRoot, { url, status: status || undefined }));
     }
+    if (method === "POST") {
+      const body = (await readJsonBody(req) ?? {}) as Record<string, unknown>;
+      if (!body.comment || !body.elementPath || !body.url) {
+        return json(400, { ok: false, error: "comment, elementPath, url required" });
+      }
+      const annotation = createAnnotation(projectRoot, {
+        url: String(body.url),
+        comment: String(body.comment),
+        element: typeof body.element === "string" ? body.element : "",
+        elementPath: String(body.elementPath),
+        elementPaths: Array.isArray(body.elementPaths) ? body.elementPaths as string[] : undefined,
+        cssClasses: typeof body.cssClasses === "string" ? body.cssClasses : undefined,
+        intent: typeof body.intent === "string" ? body.intent : undefined,
+        severity: typeof body.severity === "string" ? body.severity : undefined,
+        x: typeof body.x === "number" ? body.x : undefined,
+        y: typeof body.y === "number" ? body.y : undefined,
+        boundingBox: body.boundingBox as { x: number; y: number; width: number; height: number } | undefined,
+        timestamp: typeof body.timestamp === "number" ? body.timestamp : undefined,
+      });
+      return json(200, annotation);
+    }
+    if (method === "DELETE") {
+      const deleted = deleteAllAnnotations(projectRoot);
+      return json(200, { ok: true, deleted });
+    }
+    return json(405, { ok: false, error: "method not allowed" });
   }
-  return { deletedAnnotations: deleted, sessions: sessions.length };
+
+  if (tail === "pending") {
+    if (method !== "GET") return json(405, { ok: false, error: "method not allowed" });
+    return json(200, listAnnotations(projectRoot, { status: "pending" }));
+  }
+
+  // Per-annotation endpoints: /:id or /:id/thread
+  const idMatch = tail.match(/^([^/]+)(?:\/(.+))?$/);
+  if (!idMatch) return json(404, { ok: false, error: "not found" });
+  const id = idMatch[1];
+  const sub = idMatch[2];
+
+  if (!sub) {
+    if (method === "GET") {
+      const a = getAnnotation(projectRoot, id);
+      if (!a) return json(404, { ok: false, error: "not found" });
+      return json(200, a);
+    }
+    if (method === "PATCH") {
+      const body = (await readJsonBody(req) ?? {}) as Record<string, unknown>;
+      const updated = updateAnnotation(projectRoot, id, {
+        status: body.status as "pending" | "in_progress" | "resolved" | "dismissed" | undefined,
+        resolvedSummary: typeof body.resolvedSummary === "string" ? body.resolvedSummary : undefined,
+        comment: typeof body.comment === "string" ? body.comment : undefined,
+      });
+      if (!updated) return json(404, { ok: false, error: "not found" });
+      return json(200, updated);
+    }
+    if (method === "DELETE") {
+      const ok = deleteAnnotation(projectRoot, id);
+      return json(ok ? 200 : 404, { ok });
+    }
+    return json(405, { ok: false, error: "method not allowed" });
+  }
+
+  if (sub === "thread" && method === "POST") {
+    const body = (await readJsonBody(req) ?? {}) as Record<string, unknown>;
+    if (!body.role || !body.content) return json(400, { ok: false, error: "role, content required" });
+    const updated = appendThread(projectRoot, id, {
+      role: String(body.role),
+      content: String(body.content),
+      at: typeof body.at === "number" ? body.at : undefined,
+    });
+    if (!updated) return json(404, { ok: false, error: "not found" });
+    return json(200, updated);
+  }
+
+  return json(404, { ok: false, error: "not found" });
 }
 

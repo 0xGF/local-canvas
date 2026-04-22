@@ -19,6 +19,7 @@ import { sourceStyleHasProperty, camelToKebabCss } from "../utils/inline-style-s
 const SPACING_PREFIX_TO_STYLE: Record<string, string> = {
   mt: "marginTop", mr: "marginRight", mb: "marginBottom", ml: "marginLeft",
   pt: "paddingTop", pr: "paddingRight", pb: "paddingBottom", pl: "paddingLeft",
+  "gap-x": "columnGap", "gap-y": "rowGap",
 };
 
 /**
@@ -200,7 +201,7 @@ export function useSpacingDrag(
       if (badge) {
         e.preventDefault();
         e.stopPropagation();
-        const isHoriz = badge.side === "left" || badge.side === "right";
+        const isHoriz = badge.side === "left" || badge.side === "right" || badge.side === "x";
         // Snapshot whether this property was in the source's inline style,
         // BEFORE the drag's preview updates el.style. Checking live el.style
         // later would mistake the preview for original source state.
@@ -250,13 +251,14 @@ export function useSpacingDrag(
         // Drag direction: dragging toward the element center increases spacing.
         // Right padding: drag left = increase. Left padding: drag right = increase.
         // Top margin: drag down = increase. Bottom margin: drag up = increase.
+        // Gap-x: drag right = increase. Gap-y: drag down = increase.
         const side = sd.badge.side;
-        const isHorizontal = side === "left" || side === "right";
+        const isHorizontal = side === "left" || side === "right" || side === "x";
         let rawDelta: number;
         if (isHorizontal) {
           rawDelta = side === "right" ? (sd.startX - e.clientX) : (e.clientX - sd.startX);
         } else {
-          // Top: drag down = increase. Bottom: drag down = increase.
+          // Top/bottom/y: drag down = increase.
           rawDelta = e.clientY - sd.startY;
         }
         if (Math.abs(rawDelta) > 3) sd.moved = true;
@@ -273,7 +275,10 @@ export function useSpacingDrag(
         // Throttle tooltip React state updates to one per animation frame
         cancelAnimationFrame(tooltipRafRef.current);
         const cx = e.clientX, cy = e.clientY;
-        const color = sd.badge.type === "padding" ? COL.padding : COL.margin;
+        const color =
+          sd.badge.type === "padding" ? COL.padding :
+          sd.badge.type === "margin" ? COL.margin :
+          COL.purple; // gap
         tooltipRafRef.current = requestAnimationFrame(() => {
           setDragTooltip({ x: cx, y: cy, value: newPx, color });
         });
@@ -364,7 +369,7 @@ export function useSpacingDrag(
       const bh = hitTestBadge(e.clientX, e.clientY);
       let cursor = "";
       if (bh) {
-        const isHoriz = bh.side === "left" || bh.side === "right";
+        const isHoriz = bh.side === "left" || bh.side === "right" || bh.side === "x";
         cursor = isHoriz ? "ew-resize" : "ns-resize";
       } else if (hitTestTag(e.clientX, e.clientY)) {
         cursor = "grab";

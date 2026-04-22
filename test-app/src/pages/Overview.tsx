@@ -1,3 +1,4 @@
+// [canvas simulate] agent edit @ 2026-04-22T03:31:03.617Z
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { CodeBlock } from "../components/CodeBlock";
 
@@ -20,12 +21,12 @@ export default function Overview() {
       <hr className="border-neutral-200 2xl:mb-8 xl:mb-5" />
 
       <div className="space-y-4 xl:outline-[#1C1917] xl:block xl:justify-start xl:items-start xl:flex-col">
-        <h2 className="text-lg font-semibold tracking-tight">Architecture</h2>
+        <h2 className="text-lg font-semibold tracking-tight">Canvas Architecture</h2>
         <p className="text-[14px] text-neutral-600 leading-relaxed">
           The editor is three pieces working together:
         </p>
-        <ul className="list-disc pl-5 text-[14px] text-neutral-600 space-y-2 leading-relaxed">
-          <li>
+        <ul className="list-disc pl-5 text-[14px] text-neutral-600 space-y-2 leading-relaxed 2xl:bg-white">
+          <li className="">
             <strong className="text-neutral-800">HTTP Proxy</strong> — forwards
             requests to your dev server, injects the overlay script into HTML responses.
           </li>
@@ -45,7 +46,7 @@ export default function Overview() {
       <hr className="border-neutral-200 xl:mb-5" />
 
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold tracking-tight">How it works</h2>
+        <h2 className="text-lg font-semibold tracking-tight">How the canvas works</h2>
         <ol className="list-decimal pl-5 text-[14px] text-neutral-600 space-y-3 leading-relaxed">
           <li>
             <strong className="text-neutral-800">Add the Babel plugin</strong>{" "}

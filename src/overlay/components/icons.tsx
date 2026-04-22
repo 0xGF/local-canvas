@@ -44,6 +44,7 @@ import {
   MoveIcon,
   WavingHand01Icon,
   PencilIcon,
+  Pen02Icon,
   Layers01Icon,
   TextIcon,
   PaintBrush01Icon,
@@ -223,6 +224,7 @@ export const Pointer = make(Cursor02Icon, "Pointer");
 export const Move = make(MoveIcon, "Move");
 export const Hand = make(WavingHand01Icon, "Hand");
 export const Pencil = make(PencilIcon, "Pencil");
+export const Pen = make(Pen02Icon, "Pen");
 export const Layers = make(Layers01Icon, "Layers");
 export const Type = make(TextIcon, "Type");
 export const Paintbucket = make(PaintBrush01Icon, "Paintbucket");

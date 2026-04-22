@@ -131,7 +131,7 @@ export const PropertiesPanel = React.memo(function PropertiesPanel() {
           )}
           {helpers.bpPrefix && (
             <span style={{
-              background: "rgba(168,85,247,0.15)", color: "#a855f7", fontSize: 9,
+              background: C.canvasLayerSoft, color: C.canvasLayer, fontSize: 9,
               padding: "1px 6px", borderRadius: 3, fontFamily: C.mono,
               fontWeight: 600, lineHeight: "1.6", flexShrink: 0,
             }}>
@@ -148,8 +148,8 @@ export const PropertiesPanel = React.memo(function PropertiesPanel() {
         <div style={{
           padding: "6px 10px",
           fontSize: 10,
-          color: "#f87171",
-          background: "rgba(248, 113, 113, 0.08)",
+          color: C.danger,
+          background: C.dangerSoft,
           borderBottom: `1px solid ${C.border}`,
           lineHeight: 1.4,
           fontFamily: C.mono,
@@ -1117,7 +1117,7 @@ const FillSection = React.memo(function FillSection({ h, sel }: { h: ClassHelper
     setSolidPreview(color);
     const cleaned = color.replace(/\s+/g, "");
     if (!cleaned) {
-      h.debouncedMutation("color:bg", {
+      h.debouncedSendPrefixed("color:bg", {
         type: "modify-class",
         source: sel.source,
         remove: removeCurrentBg(),
@@ -1125,12 +1125,12 @@ const FillSection = React.memo(function FillSection({ h, sel }: { h: ClassHelper
       return;
     }
     const named = hexToNamedBgClass(cleaned);
-    const add = [named ? `bg-${named}` : `bg-[${cleaned}]`];
-    h.debouncedMutation("color:bg", {
+    const add = [named ? `bg-${named}` : `bg-[${arbitraryColorValue(cleaned)}]`];
+    h.debouncedSendPrefixed("color:bg", {
       type: "modify-class",
       source: sel.source,
       remove: removeCurrentBg(),
-      add: add.map(c => h.prefixCls(c)),
+      add,
     }, 120);
   }, [h, sel, removeCurrentBg]);
 
@@ -1168,9 +1168,11 @@ const FillSection = React.memo(function FillSection({ h, sel }: { h: ClassHelper
 
   const handleAddFill = useCallback(() => {
     if (currentBg) return;
-    // Anti-flash: paint the fill inline now so the user sees it before HMR.
-    if (sel.element) setStyleProp(sel.element, "backgroundColor", "#FFFFFF");
-    writeSolidHex("#FFFFFF");
+    // Default to a visible neutral — white-on-white (or on a white page) is
+    // invisible and makes the Add Fill click feel like a no-op.
+    const defaultColor = "#E5E7EB";
+    if (sel.element) setStyleProp(sel.element, "backgroundColor", defaultColor);
+    writeSolidHex(defaultColor);
     if (sel.element) clearInlineAfterClassUpdate(sel.element, "backgroundColor");
   }, [currentBg, writeSolidHex, sel.element]);
 
@@ -1199,8 +1201,11 @@ const FillSection = React.memo(function FillSection({ h, sel }: { h: ClassHelper
   const handleVisibilityToggle = useCallback(() => setVisible(v => !v), []);
 
   const bracket = currentBg?.match(BG_BRACKET_RE)?.[1];
+  // Strip the `color:` type hint we prefix onto var() arbitrary values so the
+  // ColorField shows the bare value the browser actually renders.
+  const bracketDisplay = bracket?.replace(/^color:/, "");
   const solidValue = type === "solid"
-    ? ((bracket && !/^(linear|radial|conic)-gradient|^url\(/i.test(bracket) ? bracket : "")
+    ? ((bracketDisplay && !/^(linear|radial|conic)-gradient|^url\(/i.test(bracketDisplay) ? bracketDisplay : "")
       || (cs?.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)" ? cs.backgroundColor : ""))
     : "";
 
@@ -1392,7 +1397,30 @@ const BorderSection = React.memo(function BorderSection({ h, sel }: { h: ClassHe
     });
   };
 
-  const addBorder = () => writeSideAndWidth(currentSide, currentBorderPx > 0 ? currentBorderPx : 1);
+  const addBorder = () => {
+    writeSideAndWidth(currentSide, currentBorderPx > 0 ? currentBorderPx : 1);
+    // Tailwind v4 dropped preflight's default border color, so bare `border`
+    // alone can render as currentColor and look invisible. Seed a visible
+    // neutral when no border-color class is already set — the user can
+    // recolor from the picker, and this makes the first click land visibly
+    // regardless of Tailwind version.
+    if (!sel.source) return;
+    const hasBorderColor = h.classes.some(c => {
+      const bare = h.stripBpPrefix(c);
+      if (!/^border-/.test(bare)) return false;
+      if (BORDER_WIDTH_CLASS_RE.test(bare)) return false;
+      if (BORDER_STYLE_CLASSES.includes(bare)) return false;
+      if (/^border-(t|r|b|l|x|y|s|e)(-|$)/.test(bare)) return false;
+      return true;
+    });
+    if (!hasBorderColor) {
+      h.sendPrefixed({
+        type: "modify-class",
+        source: sel.source,
+        add: ["border-gray-300"],
+      });
+    }
+  };
 
   const removeBorder = () => {
     if (!sel.source) return;
@@ -1400,7 +1428,7 @@ const BorderSection = React.memo(function BorderSection({ h, sel }: { h: ClassHe
     const styles = BORDER_STYLE_CLASSES.map(c => h.actual(c)).filter(Boolean) as string[];
     const colors = h.classes.filter(c => {
       const m = h.stripBpPrefix(c).match(/^border-\[(.+)\]$/);
-      return !!m && /^(#|rgb|rgba|hsl|hsla|lch|color\(|var\()/i.test(m[1]);
+      return !!m && /^(#|rgb|rgba|hsl|hsla|lch|color\(|var\(|color:)/i.test(m[1]);
     });
     const remove = [...widths, ...styles, ...colors];
     // Anti-flash: drop the border visually before the class update lands.
@@ -1523,7 +1551,15 @@ const BorderSection = React.memo(function BorderSection({ h, sel }: { h: ClassHe
 //
 // Width/length classes (e.g. `outline-2`, `outline-[2px]`) are preserved —
 // we only touch bracket values whose contents look like a color.
-const COLOR_CONTENT = /^(#|rgb|rgba|hsl|hsla|lch|color\(|var\()/i;
+const COLOR_CONTENT = /^(#|rgb|rgba|hsl|hsla|lch|color\(|var\(|color:)/i;
+
+// Wrap a CSS color for use as an arbitrary-value class. Tailwind can't always
+// infer the type of `var(--x)` (is it a color? a length?), so we prefix with
+// `color:` when the value is a bare var() reference. Hex/rgb/hsl strings are
+// self-typing and pass through untouched.
+function arbitraryColorValue(cleaned: string): string {
+  return /^var\(/.test(cleaned) ? `color:${cleaned}` : cleaned;
+}
 
 function ClassColorField({
   h, sel, prefix, computed, title,
@@ -1544,7 +1580,11 @@ function ClassColorField({
     return m ? COLOR_CONTENT.test(m[1]) : false;
   });
   const currentBracketed = colorClass ? h.stripBpPrefix(colorClass).match(bracketRe)?.[1] : undefined;
-  const current = currentBracketed ?? (computed && computed !== "rgba(0, 0, 0, 0)" ? computed : "");
+  // `color:var(--x)` is how we write var references into arbitrary values for
+  // Tailwind type-inference. Strip the `color:` prefix for display so the
+  // ColorField pill/swatch shows the actual value CSS will render.
+  const currentDisplay = currentBracketed?.replace(/^color:/, "");
+  const current = currentDisplay ?? (computed && computed !== "rgba(0, 0, 0, 0)" ? computed : "");
 
   // Local preview so the pill + swatch update instantly while the mutation is
   // still in flight. Without this, the ColorField reads `current` from props,
@@ -1567,16 +1607,16 @@ function ClassColorField({
       return m ? COLOR_CONTENT.test(m[1]) : false;
     });
     const cleaned = next.replace(/\s+/g, "");
-    const add = cleaned ? [`${prefix}-[${cleaned}]`] : undefined;
+    const add = cleaned ? [`${prefix}-[${arbitraryColorValue(cleaned)}]`] : undefined;
     // Debounce under a per-prefix key — during a SV-area drag the picker
     // emits a new colour every pointermove (~60/s). Each mutation would hit
     // the server + HMR the file. 120ms coalesces drags into a single write
     // without making the live swatch feel laggy.
-    h.debouncedMutation(`color:${prefix}`, {
+    h.debouncedSendPrefixed(`color:${prefix}`, {
       type: "modify-class",
       source: sel.source,
       remove: remove.length ? remove : undefined,
-      add: add?.map(c => h.prefixCls(c)),
+      add,
     }, 120);
   }, [h, sel, prefix, bracketRe]);
 
@@ -1688,7 +1728,7 @@ const OutlineSection = React.memo(function OutlineSection({ h, sel }: { h: Class
     const offsets = h.classes.filter(c => /^outline-offset(?:-|$)/.test(h.stripBpPrefix(c)));
     const colors = h.classes.filter(c => {
       const m = h.stripBpPrefix(c).match(/^outline-\[(.+)\]$/);
-      return !!m && /^(#|rgb|rgba|hsl|hsla|lch|color\(|var\()/i.test(m[1]);
+      return !!m && /^(#|rgb|rgba|hsl|hsla|lch|color\(|var\(|color:)/i.test(m[1]);
     });
     const remove = [...widths, ...styles, ...offsets, ...colors];
     // Anti-flash: drop the outline visually before the class update lands.
@@ -2539,7 +2579,7 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
     if (!colorClass) return "";
     const bare = h.stripBpPrefix(colorClass);
     const bracket = bare.match(/^text-\[(.+)\]$/);
-    if (bracket) return bracket[1];
+    if (bracket) return bracket[1].replace(/^color:/, "");
     // Named Tailwind colour (`text-red-500` etc.) — resolve via the computed
     // style so the picker shows the actual swatch.
     return cs?.color ?? "";
@@ -2558,11 +2598,11 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
     setColorPreview(next);
     const cleaned = next.replace(/\s+/g, "");
     const remove = colorClass ? [colorClass] : [];
-    h.debouncedMutation("color:text", {
+    h.debouncedSendPrefixed("color:text", {
       type: "modify-class",
       source: sel.source,
       remove: remove.length ? remove : undefined,
-      add: cleaned ? [h.prefixCls(`text-[${cleaned}]`)] : undefined,
+      add: cleaned ? [`text-[${arbitraryColorValue(cleaned)}]`] : undefined,
     }, 120);
   }, [h, sel.source, colorClass]);
 

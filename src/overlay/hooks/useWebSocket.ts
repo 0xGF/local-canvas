@@ -8,6 +8,7 @@ import type {
   Mutation,
 } from "../../server/types.js";
 import { getIframeDocument } from "../utils/iframe-events.js";
+import { withViewTransition, viewTransitionsSupported } from "../utils/view-transitions.js";
 
 /**
  * Wait for HMR to update the DOM, then call `onUpdate`.
@@ -194,7 +195,9 @@ export function useWebSocket() {
         status: "pending",
       });
 
-      return new Promise((resolve) => {
+      const targetEl = useEditorStore.getState().selectedElement?.element ?? null;
+
+      return withViewTransition(targetEl, () => new Promise<WSServerMessage | void>((resolve) => {
         const id = crypto.randomUUID();
 
         const handler: MessageHandler = (message) => {
@@ -211,39 +214,57 @@ export function useWebSocket() {
               });
               // Poll for HMR DOM update — watch for class changes on the
               // selected element rather than guessing with fixed timeouts.
-              waitForDomUpdate(refreshSelection);
+              // Only resolve once the DOM has settled so the view transition
+              // captures the post-mutation state for its "after" snapshot.
+              waitForDomUpdate(() => {
+                refreshSelection();
+                resolve(message);
+              });
             } else {
               useChangesStore.getState().updateChange(changeId, {
                 status: "failed",
               });
+              resolve(message);
             }
-            resolve(message);
           }
         };
 
         handlersRef.current.add(handler);
         send({ type: "mutation", id, mutation });
-      });
+      }));
     },
     [send, pushUndo]
   );
 
   const undo = useCallback(() => {
-    send({ type: "undo" });
     const { changes, removeChange } = useChangesStore.getState();
-    if (changes.length > 0) removeChange(changes[changes.length - 1].id);
-    waitForDomUpdate(() => {
-      refreshSelection();
-      useEditorStore.getState().triggerElementFlash();
-    });
+    const targetEl = useEditorStore.getState().selectedElement?.element ?? null;
+    // Flash serves as fallback feedback when VT can't run (no target element,
+    // unsupported browser, disconnected node). When VT covers the transition,
+    // flash would double up.
+    const vtWillRun = !!targetEl && targetEl.isConnected && viewTransitionsSupported();
+    withViewTransition(targetEl, () => new Promise<void>((resolve) => {
+      send({ type: "undo" });
+      if (changes.length > 0) removeChange(changes[changes.length - 1].id);
+      waitForDomUpdate(() => {
+        refreshSelection();
+        if (!vtWillRun) useEditorStore.getState().triggerElementFlash();
+        resolve();
+      });
+    }));
   }, [send, refreshSelection]);
 
   const redo = useCallback(() => {
-    send({ type: "redo" });
-    waitForDomUpdate(() => {
-      refreshSelection();
-      useEditorStore.getState().triggerElementFlash();
-    });
+    const targetEl = useEditorStore.getState().selectedElement?.element ?? null;
+    const vtWillRun = !!targetEl && targetEl.isConnected && viewTransitionsSupported();
+    withViewTransition(targetEl, () => new Promise<void>((resolve) => {
+      send({ type: "redo" });
+      waitForDomUpdate(() => {
+        refreshSelection();
+        if (!vtWillRun) useEditorStore.getState().triggerElementFlash();
+        resolve();
+      });
+    }));
   }, [send, refreshSelection]);
 
   const onMessage = useCallback((handler: MessageHandler) => {

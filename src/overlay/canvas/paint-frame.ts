@@ -274,6 +274,7 @@ export function paintFrame(
   };
 
   // ── Selected element ──
+  let hoverPainted = false;
   if (selectedElement) {
     const el = selectedElement.element;
     if (el.isConnected) {
@@ -453,6 +454,13 @@ export function paintFrame(
         }
       }
 
+      // ── Hover draws here, BETWEEN selection-background and
+      //    selection-interactive so a hover on a sibling/parent covers the
+      //    selection's decorative hatches but NOT the interactive handles /
+      //    resize grip / value badges that the user needs to click.
+      drawHoverOnTop();
+      hoverPainted = true;
+
       // ── Spacing badges ──
       // Always register hit areas so dragging works at any zoom level.
       // Text badge only draws when zoomed in enough to be readable.
@@ -612,10 +620,11 @@ export function paintFrame(
     }
   }
 
-  // Draw hover LAST so it composites on top of the selected element's
-  // outline / padding-margin hatching. Otherwise hovering a sibling or
-  // child of the selection disappears behind the selection's overlays.
-  drawHoverOnTop();
+  // Hover is drawn between the selection's decorative backgrounds and its
+  // interactive handles (see the drawHoverOnTop() call inside the selection
+  // block above). Fall back to drawing here if that path didn't run — e.g.
+  // nothing selected, or selected element became disconnected.
+  if (!hoverPainted) drawHoverOnTop();
 
   // Update dirty-check cache
   prevSelectedEl = selectedElement?.element ?? null;

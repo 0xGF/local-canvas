@@ -51,12 +51,12 @@ export function LoopingClip({
   return (
     <figure className="my-2 w-full 2xl:h-[356px] sm:h-[327px]">
       <div
-        className="relative w-full overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 sm:h-full"
+        className="relative w-full overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 sm:h-full xl:pb-0.5 xl:h-auto"
         style={{ aspectRatio }}
       >
         <video
           ref={ref}
-          className="absolute inset-0 h-full w-full object-cover"
+          className="absolute inset-0 object-cover xl:w-auto xl:h-full"
           muted
           loop
           playsInline

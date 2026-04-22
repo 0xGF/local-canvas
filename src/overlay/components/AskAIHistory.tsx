@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import ReactDOM from "react-dom";
 import { Sparkles, X, Trash2, Reset } from "./icons.js";
 import { THEME } from "../theme.js";
-import { PopFade } from "../utils/motion-presets.js";
+import { PopSlideUp, useToolbarBarRect } from "../utils/motion-presets.js";
+import { usePortalContainer } from "../lib/portal-container.js";
 import {
   listAnnotations,
   scrollToAndOpenAnnotation,
@@ -181,7 +183,18 @@ interface Props {
  * model: dismiss (status=dismissed) or clear (delete all).
  */
 export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: Props) {
-  const [open, setOpen] = useState(false);
+  // Shared toolbar-popup slot — opening this closes any other bottom-bar
+  // popup. See SettingsPopover for the same pattern.
+  const toolbarPopup = useEditorStore((s) => s.toolbarPopup);
+  const setToolbarPopup = useEditorStore((s) => s.setToolbarPopup);
+  const open = toolbarPopup === "history";
+  const setOpen = useCallback(
+    (v: boolean | ((prev: boolean) => boolean)) => {
+      const next = typeof v === "function" ? v(open) : v;
+      setToolbarPopup(next ? "history" : null);
+    },
+    [open, setToolbarPopup],
+  );
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [loading, setLoading] = useState(false);
   const [undoEntries, setUndoEntries] = useState<AgentUndoEntry[]>([]);
@@ -269,34 +282,45 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
   const pendingCount = annotations.filter(a => a.status === "pending" || !a.status).length;
   const undoIds = new Set(undoEntries.map(e => e.annotationId));
 
+  // Mirror the toolbar's horizontal span so the popover reads as an
+  // extension of the bar — same pattern as the Save popover.
+  const barRect = useToolbarBarRect(open);
+  const portalContainer = usePortalContainer();
+
   return (
     <div style={{ position: "relative" }}>
       {renderButton(() => setOpen(o => !o), pendingCount)}
 
-      {open && (
-        <div
-          style={{ position: "fixed", inset: 0, zIndex: 2147483646 }}
-          onClick={() => setOpen(false)}
-        />
-      )}
-      <PopFade
-        open={open}
-        duration={220}
-        style={{
-          position: "absolute", bottom: "100%", left: 0, right: 0,
-          marginBottom: 8,
-          background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10,
-          zIndex: 2147483647,
-          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-          maxHeight: 440,
-          display: "flex", flexDirection: "column",
-          fontFamily: C.font,
-          overflow: "hidden",
-          // Grow from the trigger icon (right side of the toolbar) rather
-          // than the centre — makes the open feel tied to the click.
-          transformOrigin: "right bottom",
-        }}
-      >
+      {barRect && portalContainer && ReactDOM.createPortal(
+        <>
+        {open && (
+          <div
+            style={{ position: "fixed", inset: 0, zIndex: 2147483646 }}
+            onClick={() => setOpen(false)}
+          />
+        )}
+        <PopSlideUp
+          open={open}
+          // Unified with Settings/Breakpoint/Save so every toolbar popup
+          // shares the same enter feel.
+          duration={280}
+          distance={16}
+          data-canvas-overlay="true"
+          onClick={e => e.stopPropagation()}
+          style={{
+            position: "fixed",
+            left: barRect.left,
+            width: barRect.width,
+            bottom: window.innerHeight - barRect.top + 8,
+            background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10,
+            zIndex: 2147483647,
+            boxShadow: "0 10px 32px rgba(0,0,0,0.5)",
+            maxHeight: 440,
+            display: "flex", flexDirection: "column",
+            fontFamily: C.font,
+            overflow: "hidden",
+          }}
+        >
         {/* Header */}
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -411,7 +435,10 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
             ))
           )}
         </div>
-      </PopFade>
+      </PopSlideUp>
+      </>,
+      portalContainer,
+      )}
     </div>
   );
 });

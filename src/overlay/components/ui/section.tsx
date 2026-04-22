@@ -66,7 +66,7 @@ export function Section({ title, children, defaultOpen = true, warning, headerAc
     <div className="border-b border-canvas-border/60 last:border-b-0">
       <div
         className={cn(
-          "flex items-center justify-between w-full min-h-8 px-3 py-2",
+          "flex items-center justify-between w-full h-8 px-3",
           "hover:bg-canvas-muted/60 transition-colors select-none",
         )}
       >

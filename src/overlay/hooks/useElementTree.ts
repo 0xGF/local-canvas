@@ -54,6 +54,41 @@ function getOwnSource(el: HTMLElement): { file: string; line: number } | null {
 }
 
 /**
+ * Walk up the fiber tree looking for the nearest component (function/class)
+ * fiber whose `_debugSource` is in a DIFFERENT file than `ownSource`. That
+ * fiber's source is the call site — where the user's parent file wrote
+ * `<Component />`. Returns null on no-fiber / no-match.
+ *
+ * Used to route Layers-panel selection of a component row to its JSX call
+ * (e.g. `Overview.tsx:23`) instead of the component's internal element
+ * (`LoopingClip.tsx:52`). Editing the call site affects only that instance;
+ * editing the internal element propagates to every usage.
+ */
+interface Fiber {
+  type?: unknown;
+  return?: Fiber;
+  _debugSource?: { fileName: string; lineNumber: number };
+}
+function getCallSiteSource(el: HTMLElement, ownFile: string): { file: string; line: number } | null {
+  const fiberKey = Object.keys(el).find((k) => k.startsWith("__reactFiber$"));
+  if (!fiberKey) return null;
+  let fiber: Fiber | undefined = (el as unknown as Record<string, Fiber>)[fiberKey];
+  while (fiber) {
+    // Component fiber: function (FC) or class (prototype.isReactComponent).
+    // Host fibers (div, span, etc.) have string `type`.
+    const isComponent = typeof fiber.type === "function";
+    if (isComponent) {
+      const src = fiber._debugSource;
+      if (src?.fileName && typeof src.lineNumber === "number" && src.fileName !== ownFile) {
+        return { file: src.fileName, line: src.lineNumber };
+      }
+    }
+    fiber = fiber.return;
+  }
+  return null;
+}
+
+/**
  * Walk the document and produce a flattened tree of source-mapped elements.
  * Elements without source data collapse their children up to the nearest
  * source-mapped ancestor, so the tree shows only editable nodes.
@@ -93,8 +128,16 @@ function buildTree(root: Document | HTMLElement): TreeNode[] {
 
       if (src) {
         const isComponentRoot = src.file !== parentFile;
+        // For component-boundary rows, prefer the CALL SITE source (where
+        // `<Component />` was written in the parent file) over the
+        // component's internal source. This lets Layers-panel "delete" on
+        // a `<LoopingClip/>` row remove just that call instead of deleting
+        // the <video> template shared by every instance.
+        const callSite = isComponentRoot ? getCallSiteSource(htmlChild, src.file) : null;
+        const nodeFile = callSite?.file ?? src.file;
+        const nodeLine = callSite?.line ?? src.line;
         const node = makeNode(
-          htmlChild, src.file, src.line, parentPath,
+          htmlChild, nodeFile, nodeLine, parentPath,
           parent?.children.length ?? rootChildren.length,
           isComponentRoot,
         );

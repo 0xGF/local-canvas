@@ -102,7 +102,35 @@ export const PropertiesPanel = React.memo(function PropertiesPanel() {
   const helpers = useClassHelpers();
   const readonlyEntries = useReadonlyStyleStore((s) => s.entries);
 
-  if (!open || !sel) return null;
+  if (!open) return null;
+  // Show an empty state when no element is selected — the panel used to
+  // unmount entirely without a selection, but keeping it visible on the
+  // right is a clearer "this is where you'll edit things" cue and avoids
+  // layout jumps every time the user selects/deselects.
+  if (!sel) {
+    return (
+      <div style={panelStyle} data-canvas-overlay="true">
+        <div style={headerStyle}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: C.fgDim, fontFamily: C.mono }}>
+            No selection
+          </span>
+          <IconBtn icon={<X size={14} />} onClick={toggle} title="Close" />
+        </div>
+        <div style={{
+          flex: 1, display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          padding: "24px 16px", gap: 8, textAlign: "center",
+        }}>
+          <span style={{ fontSize: 11, color: C.fgDim, lineHeight: 1.5 }}>
+            Click an element on the canvas to edit its properties.
+          </span>
+          <span style={{ fontSize: 10, color: C.fgMuted, lineHeight: 1.5 }}>
+            Shift-click for multi-select · Escape walks up the tree.
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   // Collect unmutable properties from prior modify-style failures (source
   // uses a computed value — template, ternary, or identifier).
@@ -529,7 +557,7 @@ function FlexAdvancedPopover({ h, sel }: { h: ClassHelpers; sel: NonNullable<Ret
           size="icon"
           title="Advanced flex options"
           aria-label="Advanced flex options"
-          className="size-6 text-canvas-muted-fg hover:text-canvas-fg"
+          className="size-5 text-canvas-muted-fg hover:text-canvas-fg"
         >
           <SlidersHorizontal size={12} />
         </Button>
@@ -1230,7 +1258,7 @@ const FillSection = React.memo(function FillSection({ h, sel }: { h: ClassHelper
         <Button
           variant="ghost"
           size="icon"
-          className="h-5 w-5 text-canvas-muted-fg hover:text-canvas-fg"
+          className="size-5 text-canvas-muted-fg hover:text-canvas-fg"
           title="Add fill"
           onClick={handleAddFill}
           disabled={!!warning}
@@ -1471,7 +1499,7 @@ const BorderSection = React.memo(function BorderSection({ h, sel }: { h: ClassHe
       title={hasBorder ? "Reset border" : "Add border"}
       aria-label={hasBorder ? "Reset border" : "Add border"}
       onClick={addBorder}
-      className="size-6 text-canvas-muted-fg hover:text-canvas-fg"
+      className="size-5 text-canvas-muted-fg hover:text-canvas-fg"
     >
       <Plus size={12} />
     </Button>
@@ -1772,7 +1800,7 @@ const OutlineSection = React.memo(function OutlineSection({ h, sel }: { h: Class
       title={hasOutline ? "Reset outline" : "Add outline"}
       aria-label={hasOutline ? "Reset outline" : "Add outline"}
       onClick={addOutline}
-      className="size-6 text-canvas-muted-fg hover:text-canvas-fg"
+      className="size-5 text-canvas-muted-fg hover:text-canvas-fg"
     >
       <Plus size={12} />
     </Button>
@@ -2699,12 +2727,12 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
           title="Letter spacing (em)"
         />
       </div>
-      <ToggleGroup
-        value={alignVal}
-        items={TEXT_ALIGN_ITEMS}
-        onChange={setAlign}
-      />
-      <div className="grid grid-cols-[auto_1fr] gap-1.5 items-center">
+      <div className="flex gap-1.5">
+        <ToggleGroup
+          value={alignVal}
+          items={TEXT_ALIGN_ITEMS}
+          onChange={setAlign}
+        />
         <div className="flex gap-px p-0.5 rounded-md bg-canvas-muted">
           {FONT_STYLE_ITEMS.map(item => {
             const active = activeStyles.includes(item.value);
@@ -2716,7 +2744,7 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
                 title={item.title}
                 onClick={() => toggleStyle(item.value)}
                 className={cn(
-                  "min-w-[26px] h-6 px-1.5 rounded text-[11px] select-none cursor-pointer transition-colors",
+                  "min-w-[24px] h-6 px-1.5 rounded text-[11px] select-none cursor-pointer transition-colors",
                   item.value === "italic" && "italic",
                   item.value === "underline" && "underline",
                   item.value === "line-through" && "line-through",
@@ -2730,14 +2758,14 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
             );
           })}
         </div>
-        <SelectField
-          value={transformVal === "normal-case" ? "" : transformVal}
-          options={TEXT_TRANSFORM_SELECT}
-          onChange={setTransform}
-          placeholder="Normal"
-          title="Text transform"
-        />
       </div>
+      <SelectField
+        value={transformVal === "normal-case" ? "" : transformVal}
+        options={TEXT_TRANSFORM_SELECT}
+        onChange={setTransform}
+        placeholder="Normal"
+        title="Text transform"
+      />
       <ColorField
         value={colorPreview ?? colorCss}
         onChange={writeColor}

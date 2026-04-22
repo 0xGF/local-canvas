@@ -6,6 +6,14 @@ import { getIframeDocument } from "../utils/iframe-events.js";
 
 export type EditorMode = "navigate" | "edit";
 export type PanelSide = "left" | "right" | "none";
+/** Bottom-toolbar popups that behave as an exclusive group — opening one
+ *  closes any other that's currently open. `null` = none open. */
+export type ToolbarPopupId =
+  | null
+  | "settings"
+  | "breakpoint"
+  | "history"
+  | "changes";
 
 export interface SelectedElement {
   element: HTMLElement;
@@ -43,6 +51,12 @@ interface EditorState {
   // Command bar
   commandBarOpen: boolean;
   setCommandBarOpen: (open: boolean) => void;
+
+  // At most one bottom-toolbar popup is open at a time. Each popup component
+  // reads its open state as `toolbarPopup === "id"`; opening one implicitly
+  // closes the others because setting a new id replaces the current.
+  toolbarPopup: ToolbarPopupId;
+  setToolbarPopup: (id: ToolbarPopupId) => void;
 
   // Context menu
   contextMenu: {
@@ -182,6 +196,9 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   commandBarOpen: false,
   setCommandBarOpen: (open) => set({ commandBarOpen: open }),
+
+  toolbarPopup: null,
+  setToolbarPopup: (id) => set({ toolbarPopup: id }),
 
   contextMenu: null,
   setContextMenu: (menu) => set({ contextMenu: menu }),

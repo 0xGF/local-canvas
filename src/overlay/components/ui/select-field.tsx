@@ -115,7 +115,7 @@ export function SelectField({
             // `pointer-events-auto` is load-bearing: the shadow-DOM mount
             // point sets `pointer-events: none` so it doesn't swallow iframe
             // events, and portaled popovers inherit that unless they opt in.
-            "pointer-events-auto z-[2147483647] min-w-[var(--radix-popover-trigger-width)]",
+            "pointer-events-auto z-[2147483647] w-max max-w-64",
             "rounded-md border border-canvas-border bg-canvas-bg shadow-md",
             "py-1 text-xs max-h-72 overflow-y-auto",
           )}

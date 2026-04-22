@@ -13,6 +13,7 @@ import {
   MessageSquarePlus,
   MessagesSquare,
   Layers,
+  Trash2,
 } from "./icons.js";
 // Loaded on demand so the AI history + annotations client stay out of the
 // critical-path bundle.
@@ -22,7 +23,7 @@ const AskAIHistory = lazy(() =>
 import { SettingsPopover } from "./SettingsPopover.js";
 
 import { THEME } from "../theme.js";
-import { PopFade, useSlideUp } from "../utils/motion-presets.js";
+import { PopFade, PopSlideUp, useSlideUp, useToolbarBarRect } from "../utils/motion-presets.js";
 import { EASE, DURATION } from "../utils/easings.js";
 
 const C = THEME;
@@ -349,7 +350,7 @@ function SegmentBtn({
         position: "relative",
         zIndex: 1,
         display: "flex", alignItems: "center", justifyContent: "center",
-        width: 36, height: 28, borderRadius: 5,
+        width: 28, height: 28, borderRadius: 5,
         border: "none", background: "transparent",
         color: active ? "#fff" : C.fgDim,
         cursor: "pointer",
@@ -389,7 +390,7 @@ function PillBtn({
       onMouseUp={() => setPressed(false)}
       style={{
         display: "flex", alignItems: "center", justifyContent: "center",
-        width: 36, height: 28, borderRadius: 5,
+        width: 28, height: 28, borderRadius: 5,
         border: "none",
         background: active ? C.accent : hovered ? "rgba(255,255,255,0.06)" : "transparent",
         color: active ? "#fff" : hovered ? C.fg : C.fgDim,
@@ -411,7 +412,18 @@ function PillBtn({
 const BreakpointSwitcher = React.memo(function BreakpointSwitcher() {
   const breakpoint = useEditorStore((s) => s.breakpoint);
   const setBreakpoint = useEditorStore((s) => s.setBreakpoint);
-  const [open, setOpen] = useState(false);
+  // Shared toolbar-popup slot — opening this closes any other bottom-bar
+  // popup. See SettingsPopover for the same pattern.
+  const toolbarPopup = useEditorStore((s) => s.toolbarPopup);
+  const setToolbarPopup = useEditorStore((s) => s.setToolbarPopup);
+  const open = toolbarPopup === "breakpoint";
+  const setOpen = useCallback(
+    (v: boolean | ((prev: boolean) => boolean)) => {
+      const next = typeof v === "function" ? v(open) : v;
+      setToolbarPopup(next ? "breakpoint" : null);
+    },
+    [open, setToolbarPopup],
+  );
   const [hovered, setHovered] = useState(false);
 
   const current = BREAKPOINT_PRESETS.find(bp => bp.width === breakpoint) ||
@@ -442,7 +454,7 @@ const BreakpointSwitcher = React.memo(function BreakpointSwitcher() {
             background: open ? C.bgHover : hovered ? "rgba(255,255,255,0.06)" : "transparent",
             border: "none", borderRadius: 5,
             color: open || hovered ? C.fg : C.fgDim, cursor: "pointer",
-            padding: "0 10px", minWidth: 36, height: 28, flexShrink: 0,
+            padding: 0, width: 44, height: 28, flexShrink: 0,
             fontFamily: C.mono, fontSize: 11, fontWeight: 600, letterSpacing: "0.04em",
             transition: `background-color ${DURATION.micro}ms ${EASE.snappy}, color ${DURATION.micro}ms ${EASE.snappy}`,
           }}
@@ -458,8 +470,10 @@ const BreakpointSwitcher = React.memo(function BreakpointSwitcher() {
           onClick={() => setOpen(false)}
         />
       )}
-      <PopFade
+      <PopSlideUp
         open={open}
+        duration={280}
+        distance={16}
         style={{
           position: "absolute", bottom: "100%", left: "50%",
           marginBottom: 8,
@@ -503,7 +517,7 @@ const BreakpointSwitcher = React.memo(function BreakpointSwitcher() {
             </button>
           );
         })}
-      </PopFade>
+      </PopSlideUp>
     </div>
   );
 });
@@ -523,12 +537,18 @@ const ChangesSaveButton = React.memo(function ChangesSaveButton({
 }: {
   onSave: () => void; onReset: () => void; pendingCount: number; disabled: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const [animIn, setAnimIn] = useState(false);
-  // Mirror the bottom toolbar's position/width so the popover reads as an
-  // extension of the bar. Measured at open-time (toolbar is fit-content so
-  // its width changes with mode + state).
-  const [barRect, setBarRect] = useState<{ left: number; width: number; top: number } | null>(null);
+  // Shared toolbar-popup slot — opening this closes any other bottom-bar
+  // popup. See SettingsPopover for the same pattern.
+  const toolbarPopup = useEditorStore((s) => s.toolbarPopup);
+  const setToolbarPopup = useEditorStore((s) => s.setToolbarPopup);
+  const open = toolbarPopup === "changes";
+  const setOpen = useCallback(
+    (v: boolean | ((prev: boolean) => boolean)) => {
+      const next = typeof v === "function" ? v(open) : v;
+      setToolbarPopup(next ? "changes" : null);
+    },
+    [open, setToolbarPopup],
+  );
   const changes = useChangesStore((s) => s.changes);
   const clearChanges = useChangesStore((s) => s.clearChanges);
   const breakpoint = useEditorStore((s) => s.breakpoint);
@@ -539,27 +559,14 @@ const ChangesSaveButton = React.memo(function ChangesSaveButton({
   const bpLabel = bpMeta?.label ?? `${breakpoint}px`;
   const isBase = !bpPrefix;
 
-  // When `open` flips true, snapshot the toolbar rect, mount the popover,
-  // then next-frame flip the slide-up on. Mount/slide split lets the
-  // initial translateY(60px) actually render before transitioning to 0.
-  useEffect(() => {
-    if (!open) { setAnimIn(false); return; }
-    const host = document.getElementById("local-canvas-host");
-    const shadow = host?.shadowRoot;
-    const bar = shadow?.querySelector<HTMLElement>("[data-canvas-toolbar='true']");
-    if (bar) {
-      const r = bar.getBoundingClientRect();
-      setBarRect({ left: r.left, width: r.width, top: r.top });
-    }
-    const raf = requestAnimationFrame(() => setAnimIn(true));
-    return () => cancelAnimationFrame(raf);
-  }, [open]);
+  // Mirror the bottom toolbar's horizontal span so the popover reads as an
+  // extension of the bar. Measured synchronously in useLayoutEffect so the
+  // first paint already has the right left/width — avoids the horizontal
+  // jitter you'd get if the popover flashed at "50% / 420px" then snapped
+  // to bar coords one frame later.
+  const barRect = useToolbarBarRect(open);
 
-  const close = useCallback(() => {
-    setAnimIn(false);
-    // Let the exit transition play before removing from DOM.
-    setTimeout(() => setOpen(false), 180);
-  }, []);
+  const close = useCallback(() => setOpen(false), []);
 
   const handleSaveScoped = useCallback(() => {
     // Save as-is — mutations were already emitted with the current
@@ -586,19 +593,20 @@ const ChangesSaveButton = React.memo(function ChangesSaveButton({
     close();
   }, [onReset, clearChanges, close]);
 
-  // Cmd/Ctrl+S opens the popover (or fires a direct save when clean).
+  // Cmd/Ctrl+S always routes through the confirmation popover — never
+  // saves directly. Only short-circuits to a toast when there's literally
+  // nothing pending.
   useEffect(() => {
     function onToggle() {
-      if (changes.length === 0) {
-        if (pendingCount > 0) { onSave(); showToast("Saved"); }
-        else showToast("Nothing to save");
+      if (changes.length === 0 && pendingCount === 0) {
+        showToast("Nothing to save");
         return;
       }
       setOpen(o => !o);
     }
     window.addEventListener("canvas:toggle-save-panel", onToggle);
     return () => window.removeEventListener("canvas:toggle-save-panel", onToggle);
-  }, [changes.length, pendingCount, onSave, showToast]);
+  }, [changes.length, pendingCount, showToast]);
 
   // While the popover is open: Enter = primary (scoped), Shift+Enter = all
   // screens, Esc = close.
@@ -616,24 +624,40 @@ const ChangesSaveButton = React.memo(function ChangesSaveButton({
     return () => document.removeEventListener("keydown", onKey, true);
   }, [open, isBase, handleSaveScoped, handleSaveAll, close]);
 
+  const hasAnyPending = changes.length > 0 || pendingCount > 0;
+
   return (
     <div style={{ position: "relative" }}>
       <ToolBtn
         icon={<Save size={15} />}
-        onClick={() => changes.length > 0 ? (open ? close() : setOpen(true)) : onSave()}
+        onClick={() => {
+          // Always route through the confirmation popover — never save
+          // directly. Short-circuit only when there's literally nothing
+          // pending (matches the Cmd+S behaviour below).
+          if (!hasAnyPending) return;
+          if (open) close(); else setOpen(true);
+        }}
         title="Save"
         shortcut={`${MOD}S`}
         badge={changes.length}
         disabled={disabled}
       />
 
-      {open && changes.length > 0 && portalContainer && ReactDOM.createPortal(
+      {barRect && portalContainer && ReactDOM.createPortal(
         <>
-        <div
-          style={{ position: "fixed", inset: 0, zIndex: 2147483646 }}
-          onClick={close}
-        />
-        <div
+        {open && (
+          <div
+            style={{ position: "fixed", inset: 0, zIndex: 2147483646 }}
+            onClick={close}
+          />
+        )}
+        <PopSlideUp
+          open={open}
+          // Match Settings/Breakpoint exactly so all four toolbar popups
+          // share one motion — otherwise Save felt like a different system
+          // (bigger lift, slower).
+          duration={280}
+          distance={16}
           data-canvas-overlay="true"
           onClick={e => e.stopPropagation()}
           style={{
@@ -642,16 +666,9 @@ const ChangesSaveButton = React.memo(function ChangesSaveButton({
             // extension of the bar. Portaled to escape the toolbar's
             // `transform: translateY(...)` which would otherwise anchor
             // `position: fixed` against the toolbar instead of the viewport.
-            left: barRect ? barRect.left : "50%",
-            width: barRect ? barRect.width : 420,
-            transform: barRect
-              ? `translateY(${animIn ? 0 : 60}px)`
-              : `translateX(-50%) translateY(${animIn ? 0 : 60}px)`,
-            bottom: barRect ? window.innerHeight - barRect.top + 8 : 80,
-            opacity: animIn ? 1 : 0,
-            transition:
-              "transform 320ms cubic-bezier(0.16, 1, 0.3, 1)," +
-              "opacity 200ms ease",
+            left: barRect.left,
+            width: barRect.width,
+            bottom: window.innerHeight - barRect.top + 8,
             background: C.bg,
             border: `1px solid ${C.border}`,
             borderRadius: 10,
@@ -661,8 +678,6 @@ const ChangesSaveButton = React.memo(function ChangesSaveButton({
             maxHeight: 440,
             display: "flex", flexDirection: "column",
             fontFamily: C.font,
-            pointerEvents: "auto",
-            willChange: "transform, opacity",
           }}
         >
         {/* Header */}
@@ -702,9 +717,18 @@ const ChangesSaveButton = React.memo(function ChangesSaveButton({
 
         {/* Changes list */}
         <div style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}>
-          {changes.map((change) => (
-            <ChangeRow key={change.id} change={change} />
-          ))}
+          {changes.length === 0 ? (
+            <div style={{
+              padding: "18px 14px",
+              fontSize: 11, color: C.fgMuted, textAlign: "center", lineHeight: 1.5,
+            }}>
+              {pendingCount} unsaved change{pendingCount === 1 ? "" : "s"}
+            </div>
+          ) : (
+            changes.map((change) => (
+              <ChangeRow key={change.id} change={change} />
+            ))
+          )}
         </div>
 
         {/* Footer — scope-aware save. Primary = "this breakpoint + up";
@@ -805,7 +829,7 @@ const ChangesSaveButton = React.memo(function ChangesSaveButton({
             Discard changes
           </button>
         </div>
-      </div>
+      </PopSlideUp>
       </>,
       portalContainer,
       )}
@@ -875,6 +899,100 @@ function ChangeRow({ change }: { change: ChangeEntry }) {
   );
 }
 
+// ── Discard Changes ────────────────────────────────────────────────────────
+// A dedicated trash button next to Save so discarding doesn't require
+// opening the Settings popover. First click arms a tiny confirm popover
+// anchored to the button; confirm fires `onDiscard` (which tears down
+// every pending mutation via the same flow as Settings → Reset all).
+const DiscardChangesButton = React.memo(function DiscardChangesButton({
+  onDiscard, pendingCount, disabled,
+}: {
+  onDiscard: () => void;
+  pendingCount: number;
+  disabled: boolean;
+}) {
+  const [confirming, setConfirming] = useState(false);
+
+  // Auto-close the confirm popover if the pending count drops to zero
+  // (e.g. user undoes everything manually) — otherwise a stale prompt
+  // lingers promising to discard zero changes.
+  useEffect(() => {
+    if (confirming && pendingCount === 0) setConfirming(false);
+  }, [confirming, pendingCount]);
+
+  return (
+    <div style={{ position: "relative" }}>
+      <ToolBtn
+        icon={<Trash2 size={14} />}
+        onClick={() => {
+          if (disabled) return;
+          setConfirming(c => !c);
+        }}
+        title="Discard changes"
+        shortcut={`${MOD}\u232B`}
+        disabled={disabled}
+      />
+
+      {confirming && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 2147483646 }}
+          onClick={() => setConfirming(false)}
+        />
+      )}
+      <PopSlideUp
+        open={confirming}
+        duration={200}
+        distance={12}
+        data-canvas-overlay="true"
+        onClick={e => e.stopPropagation()}
+        style={{
+          position: "absolute", bottom: "100%", left: "50%",
+          transform: "translateX(-50%)",
+          marginBottom: 8,
+          minWidth: 220,
+          background: C.bg,
+          border: `1px solid ${C.border}`, borderRadius: 10,
+          padding: 10,
+          zIndex: 2147483647,
+          boxShadow:
+            "0 1px 0 rgba(255,255,255,0.04) inset," +
+            "0 10px 32px rgba(0,0,0,0.45)," +
+            "0 2px 8px rgba(0,0,0,0.3)",
+          fontFamily: C.font,
+        }}
+      >
+        <div style={{ fontSize: 11, color: C.fg, lineHeight: 1.4, marginBottom: 8 }}>
+          Discard {pendingCount} pending change{pendingCount === 1 ? "" : "s"}?
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
+          <button
+            onClick={() => setConfirming(false)}
+            style={{
+              height: 24, padding: "0 10px", borderRadius: 4,
+              border: `1px solid ${C.border}`, background: "transparent",
+              color: C.fgDim, fontFamily: C.font, fontSize: 11,
+              cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => { setConfirming(false); onDiscard(); }}
+            style={{
+              height: 24, padding: "0 10px", border: "none", borderRadius: 4,
+              background: C.danger, color: "#fff",
+              fontFamily: C.font, fontSize: 11, fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Discard
+          </button>
+        </div>
+      </PopSlideUp>
+    </div>
+  );
+});
+
 // ── Toolbar ─────────────────────────────────────────────────────────────────
 
 export const Toolbar = React.memo(function Toolbar() {
@@ -901,7 +1019,14 @@ export const Toolbar = React.memo(function Toolbar() {
   const showToast = useEditorStore((s) => s.showToast);
   const triggerFlash = useEditorStore((s) => s.triggerElementFlash);
   const undo = useCallback(() => {
-    if (useEditorStore.getState().pendingCount <= 0) return;
+    // Gate on the history store (which tracks the server's undoStack depth),
+    // not on `pendingCount`. After a save, `clearPending()` zeroes the badge
+    // counter but the undoStack on the writer still holds the pre-save
+    // snapshots — so the button stays enabled and Undo MUST still go through,
+    // otherwise "save then undo" silently does nothing. `decrementPending`
+    // works fine when pendingCount is already 0 (version drops below
+    // savedVersion, abs() bumps the count back up).
+    if (!useHistoryStore.getState().canUndo) return;
     rawUndo(); didUndo(); decrementPending(); showToast("↩ Undo"); triggerFlash();
   }, [rawUndo, didUndo, decrementPending, showToast, triggerFlash]);
   const redo = useCallback(() => { rawRedo(); didRedo(); incrementPending(); showToast("↪ Redo"); triggerFlash(); }, [rawRedo, didRedo, incrementPending, showToast, triggerFlash]);
@@ -1003,6 +1128,7 @@ export const Toolbar = React.memo(function Toolbar() {
       {/* ── History actions ── */}
       <ToolBtn icon={<Undo size={15} />} onClick={undo} title="Undo" shortcut={`${MOD}Z`} disabled={!canUndo} />
       <ToolBtn icon={<Redo size={15} />} onClick={redo} title="Redo" shortcut={`${MOD}Y`} disabled={!canRedo} />
+      <DiscardChangesButton onDiscard={handleReset} pendingCount={pendingCount} disabled={pendingCount === 0} />
       <ChangesSaveButton onSave={handleSave} onReset={handleReset} pendingCount={pendingCount} disabled={pendingCount === 0} />
 
       <Sep />

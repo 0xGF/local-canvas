@@ -573,8 +573,16 @@ const AnnotatePill = React.memo(function AnnotatePill({
       }
     };
     const onDocClick = (e: MouseEvent) => {
-      const path = e.composedPath();
-      if (boxRef.current && !path.includes(boxRef.current)) onClose();
+      // `contains()` traverses shadow DOM descendants reliably; the previous
+      // `composedPath().includes(boxRef.current)` check was missing the pill
+      // for certain nested targets (the CSS chevron button and the textarea
+      // descendant nodes) and closing the pill on every interaction. That's
+      // the "clicking to expand or to type closes the annotation" bug.
+      const box = boxRef.current;
+      if (!box) return;
+      const target = e.target as Node | null;
+      if (target && box.contains(target)) return;
+      onClose();
     };
     const timer = setTimeout(() => {
       document.addEventListener("click", onDocClick, true);

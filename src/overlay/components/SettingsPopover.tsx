@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import { useEditorStore } from "../stores/editor-store.js";
 import {
   Settings as SettingsIcon,
@@ -11,7 +11,7 @@ import {
   Reset,
 } from "./icons.js";
 import { THEME } from "../theme.js";
-import { PopFade } from "../utils/motion-presets.js";
+import { PopSlideUp } from "../utils/motion-presets.js";
 import { EASE, DURATION } from "../utils/easings.js";
 
 const C = THEME;
@@ -28,7 +28,19 @@ export const SettingsPopover = React.memo(function SettingsPopover({
   onResetAll: () => void;
   canResetAll: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  // Open state lives in the shared toolbar-popup slot so opening this popup
+  // automatically closes any other bottom-bar popup (breakpoint, history,
+  // changes save). Each popup reads `open = toolbarPopup === "myId"`.
+  const toolbarPopup = useEditorStore((s) => s.toolbarPopup);
+  const setToolbarPopup = useEditorStore((s) => s.setToolbarPopup);
+  const open = toolbarPopup === "settings";
+  const setOpen = useCallback(
+    (v: boolean | ((prev: boolean) => boolean)) => {
+      const next = typeof v === "function" ? v(open) : v;
+      setToolbarPopup(next ? "settings" : null);
+    },
+    [open, setToolbarPopup],
+  );
   const [btnHover, setBtnHover] = useState(false);
 
   return (
@@ -57,8 +69,10 @@ export const SettingsPopover = React.memo(function SettingsPopover({
           onClick={() => setOpen(false)}
         />
       )}
-      <PopFade
+      <PopSlideUp
         open={open}
+        duration={280}
+        distance={16}
         style={{
           position: "absolute", bottom: "100%", right: 0,
           marginBottom: 8,
@@ -79,7 +93,7 @@ export const SettingsPopover = React.memo(function SettingsPopover({
         <BehaviorSection />
         <ChangesSection onResetAll={onResetAll} canResetAll={canResetAll} onClose={() => setOpen(false)} />
         <AppearanceSection />
-      </PopFade>
+      </PopSlideUp>
     </div>
   );
 });

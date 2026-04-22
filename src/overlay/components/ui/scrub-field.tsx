@@ -55,19 +55,30 @@ export const ScrubField = React.memo(function ScrubField({
   const [dragging, setDragging] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const committedRef = useRef<string | null>(null);
+  // Tracks the `value` prop at the moment of commit. Comparing by the OLD
+  // value (not the raw commit string) is load-bearing: parents often
+  // normalize on write — "100" → "100px", "50" → "1/2" — so matching on
+  // the raw commit string would never release the guard, leaving the input
+  // stuck on the user's literal keystrokes instead of syncing to the
+  // normalized form.
+  const committedAgainstRef = useRef<string | null>(null);
 
   // Sync external → local unless user is mid-edit
   useEffect(() => {
     if (focused || dragging) return;
-    if (committedRef.current !== null && committedRef.current !== value) return;
-    committedRef.current = null;
+    // During the commit round-trip (between onChange and the parent's echo),
+    // `value` still reflects the pre-commit form. Hold local in that window
+    // so a stale sync doesn't clobber the user's input. Once `value` moves
+    // off the remembered pre-commit value — whether the parent kept the raw
+    // input or normalized it — release the guard and sync.
+    if (committedAgainstRef.current !== null && committedAgainstRef.current === value) return;
+    committedAgainstRef.current = null;
     setLocal(value);
   }, [value, focused, dragging]);
 
   const commit = useCallback((raw: string) => {
     if (raw !== value) {
-      committedRef.current = raw;
+      committedAgainstRef.current = value;
       onChange(raw);
     }
   }, [value, onChange]);
@@ -91,7 +102,8 @@ export const ScrubField = React.memo(function ScrubField({
       rafId = null;
       if (pending === null || pending === lastEmitted) return;
       lastEmitted = pending;
-      committedRef.current = pending;
+      // `dragging` guards the sync effect during scrub, so no committedAgainst
+      // book-keeping is needed here — post-scrub the effect re-syncs normally.
       setLocal(pending);
       onChange(pending);
     };
@@ -164,10 +176,12 @@ export const ScrubField = React.memo(function ScrubField({
     const dir = e.deltaY < 0 ? 1 : -1;
     const step = e.shiftKey ? 10 : 1;
     const out = format(num + dir * step);
-    committedRef.current = out;
+    // Same reasoning as `commit`: record the pre-change `value` so the
+    // sync effect can detect the parent's echo and release.
+    committedAgainstRef.current = value;
     setLocal(out);
     onChange(out);
-  }, [local, onChange, parse, format]);
+  }, [local, value, onChange, parse, format]);
 
   // Radix Popover owns outside-click dismissal for the preset menu.
   const portalContainer = usePortalContainer();
@@ -263,7 +277,7 @@ export const ScrubField = React.memo(function ScrubField({
                 // See SelectField: portaled popover must opt back into
                 // pointer events since the shadow-DOM mount point disables
                 // them.
-                "pointer-events-auto z-[2147483647] min-w-[var(--radix-popover-trigger-width)]",
+                "pointer-events-auto z-[2147483647] w-max max-w-64",
                 "rounded-md border border-canvas-border bg-canvas-bg shadow-md",
                 "py-1 text-xs",
               )}

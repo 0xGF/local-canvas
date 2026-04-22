@@ -1,45 +1,206 @@
+import { useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Separator } from "./ui/separator";
 import { LocalCanvasLogo } from "./LocalCanvasLogo";
 
-const gettingStarted = [
-  { href: "/overview", label: "Overview" },
-  { href: "/install", label: "Install" },
-  { href: "/cli", label: "CLI" },
-];
+type NavItem = {
+  href: string;
+  label: string;
+  children?: { hash: string; label: string }[];
+};
 
-const editing = [
-  { href: "/features", label: "Features" },
-  { href: "/properties", label: "Properties" },
-  { href: "/shortcuts", label: "Shortcuts" },
-];
-
-const advanced = [
-  { href: "/api", label: "API & Mutations" },
-  { href: "/mcp", label: "MCP Server" },
-];
-
-function NavSection({
-  title,
-  items,
-  pathname,
-}: {
+type NavGroup = {
   title?: string;
-  items: { href: string; label: string }[];
-  pathname: string;
+  items: NavItem[];
+};
+
+const slug = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+const sub = (...labels: string[]) =>
+  labels.map((label) => ({ hash: slug(label), label }));
+
+const groups: NavGroup[] = [
+  {
+    items: [
+      {
+        href: "/overview",
+        label: "Overview",
+        children: sub(
+          "The Canvas",
+          "Architecture",
+          "How a click becomes a source edit",
+          "Supported className patterns",
+        ),
+      },
+      {
+        href: "/install",
+        label: "Install",
+        children: sub(
+          "Requirements",
+          "1. Add source mapping (recommended)",
+          "2. Start the editor",
+          "3. (optional) Hook up your AI agent",
+          "4. Start editing",
+          ".gitignore",
+          "Next steps",
+        ),
+      },
+      { href: "/cli", label: "CLI" },
+    ],
+  },
+  {
+    title: "Editing",
+    items: [
+      {
+        href: "/features",
+        label: "Features",
+        children: sub(
+          "Two modes",
+          "Selection",
+          "Spacing handles",
+          "Resize grips",
+          "Drag-to-scrub numeric inputs",
+          "Inline text editing",
+          "Ask AI (annotations)",
+          "Multi-element annotations",
+          "Layers panel",
+          "Breakpoint previews",
+          "Animation pause",
+          "Undo with HMR awareness",
+        ),
+      },
+      {
+        href: "/properties",
+        label: "Properties",
+        children: sub(
+          "How values are persisted",
+          "Layout",
+          "Flex & Grid",
+          "Spacing",
+          "Size",
+          "Typography",
+          "Fill & Border",
+          "Effects",
+          "Filters & transitions",
+          "Interactivity",
+          "Raw class editor",
+          "Read-only elements",
+        ),
+      },
+      {
+        href: "/shortcuts",
+        label: "Shortcuts",
+        children: sub(
+          "Modes",
+          "Editing",
+          "Panels & tools",
+          "Annotations",
+          "Viewport",
+          "Inputs",
+        ),
+      },
+    ],
+  },
+  {
+    title: "Advanced",
+    items: [
+      {
+        href: "/api",
+        label: "API & Mutations",
+        children: sub(
+          "WebSocket (mutations)",
+          "Mutation types",
+          "Mutation shape",
+          "Read-only cases",
+          "HTTP endpoints on :6966",
+          "Undo / redo",
+        ),
+      },
+      {
+        href: "/mcp",
+        label: "MCP Server",
+        children: sub(
+          "Setup",
+          "How it connects",
+          "Canvas tools",
+          "Annotation tools",
+          "Recommended lifecycle",
+          "Where annotations live",
+        ),
+      },
+    ],
+  },
+];
+
+function GithubIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="currentColor" className={className} aria-hidden>
+      <path
+        fillRule="evenodd"
+        d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.33c-2.22.48-2.69-1.07-2.69-1.07-.36-.92-.89-1.17-.89-1.17-.72-.5.06-.49.06-.49.8.06 1.22.82 1.22.82.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.77-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.22 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"
+      />
+    </svg>
+  );
+}
+
+function SubNavItem({
+  to,
+  hash,
+  label,
+  isActive,
+}: {
+  to: string;
+  hash: string;
+  label: string;
+  isActive: boolean;
 }) {
   return (
-    <div className="mb-8">
-      {title && (
+    <li>
+      <Link
+        to={`${to}#${hash}`}
+        className={`relative block py-1 pl-4 pr-2 text-[12px] leading-tight transition-colors ${
+          isActive
+            ? "text-[#1c1917] font-semibold"
+            : "text-[#a8a29e] hover:text-[#78716c]"
+        }`}
+      >
+        {isActive && (
+          <span className="absolute left-0 top-0 bottom-0 w-[1.5px] bg-[#1c1917]" />
+        )}
+        {label}
+      </Link>
+    </li>
+  );
+}
+
+function NavSection({
+  group,
+  pathname,
+  hash,
+  activeRef,
+}: {
+  group: NavGroup;
+  pathname: string;
+  hash: string;
+  activeRef: React.RefObject<HTMLLIElement | null>;
+}) {
+  return (
+    <div className="mb-5">
+      {group.title && (
         <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider pl-3 mb-1.5">
-          {title}
+          {group.title}
         </p>
       )}
       <ul>
-        {items.map((item) => {
+        {group.items.map((item) => {
           const isActive = pathname === item.href;
+          const hasChildren = !!item.children?.length;
+          const activeHash = isActive ? hash.replace(/^#/, "") : "";
           return (
-            <li key={item.href}>
+            <li key={item.href} ref={isActive ? activeRef : undefined}>
               <Link
                 to={item.href}
                 className={`relative block py-1 pl-3 text-[12px] transition-colors ${
@@ -48,11 +209,23 @@ function NavSection({
                     : "text-[#a8a29e] hover:text-[#78716c]"
                 }`}
               >
-                {isActive && (
-                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-[16px] bg-[#1c1917] rounded-full" />
-                )}
                 {item.label}
               </Link>
+              {isActive && hasChildren && (
+                <ul className="relative ml-3 mt-1 mb-2 border-l border-[#e7e5e4]">
+                  {item.children!.map((child, i) => (
+                    <SubNavItem
+                      key={child.hash}
+                      to={item.href}
+                      hash={child.hash}
+                      label={child.label}
+                      isActive={
+                        activeHash === child.hash || (!activeHash && i === 0)
+                      }
+                    />
+                  ))}
+                </ul>
+              )}
             </li>
           );
         })}
@@ -62,53 +235,62 @@ function NavSection({
 }
 
 export function Sidebar() {
-  const { pathname } = useLocation();
+  const { pathname, hash } = useLocation();
+  const navRef = useRef<HTMLElement>(null);
+  const activeItemRef = useRef<HTMLLIElement>(null);
+
+  useEffect(() => {
+    const nav = navRef.current;
+    const item = activeItemRef.current;
+    if (!nav || !item) return;
+    const itemBottom = item.offsetTop + item.offsetHeight;
+    const visibleBottom = nav.scrollTop + nav.clientHeight;
+    const padding = 16;
+    if (itemBottom + padding > visibleBottom) {
+      nav.scrollTo({
+        top: itemBottom + padding - nav.clientHeight,
+        behavior: "smooth",
+      });
+    } else if (item.offsetTop < nav.scrollTop) {
+      nav.scrollTo({
+        top: Math.max(0, item.offsetTop - padding),
+        behavior: "smooth",
+      });
+    }
+  }, [pathname]);
 
   return (
-    <aside className="hidden md:flex flex-col w-[180px] shrink-0 overflow-y-auto border-neutral-100 px-3">
-      {/* Logo */}
+    <aside className="hidden md:flex flex-col w-[200px] shrink-0 border-neutral-100 px-3">
       <div className="pt-12 pb-6">
         <Link to="/overview" className="block">
           <LocalCanvasLogo className="h-6 w-auto" />
         </Link>
-        <span className="text-[11px] text-[#a8a29e] mt-1 block">v0.1.0</span>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto">
-        <NavSection items={gettingStarted} pathname={pathname} />
-        <NavSection title="Editing" items={editing} pathname={pathname} />
-        <NavSection title="Advanced" items={advanced} pathname={pathname} />
-
-        <Separator className="my-3" />
-
-        <ul>
-          <li>
-            <a
-              href="https://github.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block py-1 pl-3 text-[12px] text-[#a8a29e] hover:text-[#78716c] transition-colors"
-            >
-              GitHub ↗
-            </a>
-          </li>
-          <li>
-            <a
-              href="https://npmjs.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block py-1 pl-3 text-[12px] text-[#a8a29e] hover:text-[#78716c] transition-colors"
-            >
-              npm ↗
-            </a>
-          </li>
-        </ul>
+      <nav ref={navRef} className="flex-1 overflow-y-auto -mx-3 px-3">
+        {groups.map((group, i) => (
+          <NavSection
+            key={group.title ?? i}
+            group={group}
+            pathname={pathname}
+            hash={hash}
+            activeRef={activeItemRef}
+          />
+        ))}
       </nav>
 
-      {/* Footer */}
-      <div className="py-4">
-        <span className="text-[11px] text-[#a8a29e]">designed by 0xGF</span>
+      <div className="flex items-center gap-2 py-4 text-[11px] text-[#a8a29e]">
+        <span>v0.1.0</span>
+        <span aria-hidden>·</span>
+        <a
+          href="https://github.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="GitHub"
+          className="hover:text-[#78716c] transition-colors"
+        >
+          <GithubIcon className="h-[13px] w-[13px]" />
+        </a>
       </div>
     </aside>
   );

@@ -22,7 +22,7 @@ export function CodeBlock({
           <span>{filename}</span>
         </div>
       )}
-      <div className="relative p-4 xl:text-[#6E1313] xl:text-[#892323] xl:text-[#C47070]">
+      <div className="relative p-4 xl:text-[#6E1313] xl:text-[#892323] xl:text-[#C47070] sm:pb-4">
         <button
           onClick={copy}
           className="absolute top-3 right-3 px-2 py-1 rounded text-[11px] text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-colors"

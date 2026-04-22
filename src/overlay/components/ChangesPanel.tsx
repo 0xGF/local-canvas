@@ -93,9 +93,11 @@ function ChangeItem({ change }: { change: ChangeEntry }) {
   const timeAgo = formatTimeAgo(change.timestamp);
 
   return (
-    <div className="px-3 py-2 hover:bg-canvas-muted/30 transition-colors">
+    <div className="px-3 py-2">
       <div
-        className="flex items-start gap-2 cursor-pointer"
+        className={`flex items-start gap-2 -mx-1 px-1 rounded transition-colors ${
+          change.diff ? "cursor-pointer hover:bg-canvas-muted/20" : ""
+        }`}
         onClick={() => change.diff && setExpanded(!expanded)}
       >
         <div className="mt-0.5 shrink-0">{StatusIcon}</div>

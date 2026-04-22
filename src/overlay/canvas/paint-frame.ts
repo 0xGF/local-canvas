@@ -113,16 +113,23 @@ export function paintFrame(
   // `viewport.zoom` separately for visibility thresholds, so keep it.
   iframeOffset = { x: 0, y: 0, scale: 1 };
   const vz = viewport.zoom || 1;
+  // Backing-store scale = dpr × viewport-zoom. Without the zoom factor, the
+  // CSS-scale(z) transform on the container upsamples the canvas bitmap at
+  // z > 1, which is visibly blurry. Multiplying by zoom sizes the bitmap to
+  // the on-screen device-pixel footprint so draws stay crisp when zoomed in.
+  // Capped at 2× zoom because backing-store grows O(scale²) in memory and
+  // beyond 2× the returns diminish relative to the allocation cost.
+  const visualScale = dpr * Math.min(Math.max(vz, 1), 2);
   const canvasW = parseInt(canvas.style.width) || canvas.clientWidth || 1;
   const canvasH = parseInt(canvas.style.height) || canvas.clientHeight || 1;
-  const tw = Math.round(canvasW * dpr);
-  const th = Math.round(canvasH * dpr);
+  const tw = Math.round(canvasW * visualScale);
+  const th = Math.round(canvasH * visualScale);
   if (canvas.width !== tw || canvas.height !== th) {
     canvas.width = tw;
     canvas.height = th;
   }
 
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.setTransform(visualScale, 0, 0, visualScale, 0, 0);
   ctx.clearRect(0, 0, canvasW, canvasH);
 
   const { selectedElement, hoveredElement } = editor;

@@ -1,7 +1,9 @@
-import React, { useState } from "react";
+import React, { useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronRight } from "../icons.js";
 import { ExpandY } from "../../utils/motion-presets.js";
 import { cn } from "../../lib/utils.js";
+import { usePortalContainer } from "../../lib/portal-container.js";
 
 interface SectionProps {
   title: string;
@@ -45,6 +47,20 @@ export function Section({ title, children, defaultOpen = true, warning, headerAc
   const open = state.open;
   const setOpen = (next: boolean) => setState(prev => ({ ...prev, open: next }));
   const [warningHovered, setWarningHovered] = useState(false);
+  const warningRef = useRef<HTMLSpanElement>(null);
+  const portalContainer = usePortalContainer();
+  // Position the warning tooltip in viewport coords, updated on hover so it
+  // stays pinned to the icon even if the panel scrolls right before the
+  // tooltip shows. The in-place `absolute` anchor the tooltip used to use
+  // got clipped by the panel's `overflow-x-hidden` scroll container — the
+  // text's first few characters were cut off on the left. Portaling into
+  // the shadow-root container + fixed positioning sidesteps that entirely.
+  const [tooltipPos, setTooltipPos] = useState<{ top: number; right: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!warningHovered || !warningRef.current) { setTooltipPos(null); return; }
+    const r = warningRef.current.getBoundingClientRect();
+    setTooltipPos({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) });
+  }, [warningHovered]);
 
   return (
     <div className="border-b border-canvas-border/60 last:border-b-0">
@@ -64,6 +80,7 @@ export function Section({ title, children, defaultOpen = true, warning, headerAc
         <div className="flex items-center gap-1.5 shrink-0">
           {warning && (
             <span
+              ref={warningRef}
               onClick={e => e.stopPropagation()}
               onMouseEnter={() => setWarningHovered(true)}
               onMouseLeave={() => setWarningHovered(false)}
@@ -71,17 +88,19 @@ export function Section({ title, children, defaultOpen = true, warning, headerAc
               aria-label={warning}
             >
               ⚠
-              {warningHovered && (
+              {warningHovered && tooltipPos && portalContainer && createPortal(
                 <span
                   className={cn(
-                    "absolute top-full right-0 mt-1 z-[100] w-56",
+                    "fixed z-[2147483647] w-56",
                     "bg-canvas-bg border border-yellow-400 rounded px-2 py-1.5",
                     "text-[10px] leading-snug font-normal text-canvas-fg",
                     "shadow-md pointer-events-none",
                   )}
+                  style={{ top: tooltipPos.top, right: tooltipPos.right }}
                 >
                   {warning}
-                </span>
+                </span>,
+                portalContainer,
               )}
             </span>
           )}

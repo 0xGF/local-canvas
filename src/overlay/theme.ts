@@ -57,6 +57,9 @@ export const THEME = {
   // The rest of the canvas palette — selection blue, padding green, annotate
   // yellow — reuses `accent` / `success` / `warning` directly (no duplicate
   // tokens). Margin + layer have no status equivalent so they live here:
+  // `canvasMargin` intentionally shares its hex with `attention` — spacing
+  // badges read as "warm orange" for the same reason the status does. Kept
+  // as a separate token so the semantic read is clearer at call sites.
   canvasMargin: "#FE7338",        // margin badges + zones (orange)
   canvasLayer: "#a855f7",         // layers / breakpoint / component indicator (purple)
   canvasLayerSoft: "rgba(168,85,247,0.15)",

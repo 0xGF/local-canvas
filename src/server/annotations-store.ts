@@ -33,7 +33,7 @@ export interface AnnotationRecord {
   cssClasses?: string;
   intent: string;
   severity: string;
-  status: "pending" | "in_progress" | "resolved" | "dismissed";
+  status: "pending" | "in_progress" | "needs_input" | "resolved" | "dismissed";
   x?: number;
   y?: number;
   boundingBox?: { x: number; y: number; width: number; height: number };

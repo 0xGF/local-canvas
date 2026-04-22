@@ -144,10 +144,19 @@ Local Canvas has four pieces, all running in one process on port `:6966`:
 
 ## Built on
 
-Local Canvas is glued together from two third-party libraries that do the heavy lifting:
+Local Canvas is glued together from two third-party libraries that do the heavy lifting. Both were deliberately chosen, and the product's feel depends on them.
 
-- **[HTML-in-Canvas (`drawElementImage`)](https://developer.chrome.com/blog/html-in-canvas)** — Chrome's experimental Canvas API for rendering HTML elements directly into a 2D canvas context. Used for all overlay badges, spacing indicators, and labels. Falls back to manual canvas drawing when unavailable.
-- **[@chenglou/pretext](https://github.com/chenglou/pretext)** — DOM-free text measurement. Measures text width without touching the DOM (no reflows). Used everywhere text is drawn on the canvas overlay.
+### HTML-in-Canvas (`drawElementImage`)
+
+[Chrome's experimental Canvas API](https://developer.chrome.com/blog/html-in-canvas) for rasterizing live DOM elements into a 2D canvas context. In Local Canvas it renders the **hover and selection outline templates** — small styled `<div>` blocks painted onto the canvas at the selected element's bounding rect. This lets the outline share the exact CSS rendering pipeline as the page (pseudo-elements, border radius, real styling) while still being drawn in a single canvas pass with everything else.
+
+Everything else on the canvas — spacing badges, margin/padding zones, resize handles, dimension readouts, drag value pills, zero-value notches, tag-name badges — is drawn with plain 2D canvas operations. `drawElementImage` is feature-detected (`"drawElementImage" in CanvasRenderingContext2D.prototype`); when it's unavailable the outlines fall back to a dashed rectangle and everything else keeps working.
+
+### [@chenglou/pretext](https://github.com/chenglou/pretext)
+
+DOM-free text measurement. Every badge, pill, and label drawn on the canvas needs to know how wide its text will be so it can size its own background. Measuring that in the DOM would force a reflow on every paint; measuring it via canvas `measureText` doesn't give height or line-wrap. Pretext returns natural width, wrapped height, and line count in a single synchronous call with no layout cost. Calls are wrapped in two LRU caches (500-entry for badge widths, 200-entry for multi-line comment layouts) so even the synchronous cost only happens on cache miss.
+
+Without pretext, the overlay would either need hidden off-screen measure divs (reflow on every selection change) or hardcoded width estimates that break as soon as the font changes.
 
 ## Ask AI (annotations)
 

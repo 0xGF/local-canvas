@@ -6,6 +6,7 @@ import { HAS_DRAW_ELEMENT, COL, FONT, BADGE_CSS, LABEL_CSS } from "../canvas/con
 import type { BadgeHit, TagBadgeHit } from "../canvas/constants.js";
 import { paintFrame, shouldRepaint } from "../canvas/paint-frame.js";
 import type { PaintContext } from "../canvas/paint-frame.js";
+import { measureText } from "../canvas/draw-helpers.js";
 import { useSpacingDrag } from "../canvas/use-spacing-drag.js";
 import { useTextEdit } from "../hooks/useTextEdit.js";
 import { computeHandles, paintHandles, useResizeHandles } from "../canvas/use-resize-handles.js";
@@ -289,8 +290,11 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
           const lx = lr.left * ifs2 + ox;
           const ly = lr.top * ifs2 + oy;
           const badge = `${multiSel.length} selected`;
-          ctx!.font = "600 10px -apple-system, BlinkMacSystemFont, Inter, sans-serif";
-          const bw = ctx!.measureText(badge).width + 12;
+          // Use a named font (not `-apple-system`/`system-ui`) — pretext's
+          // measurement is unreliable with CSS system-font keywords on macOS.
+          const badgeFont = "600 10px Inter, sans-serif";
+          ctx!.font = badgeFont;
+          const bw = measureText(badge, badgeFont) + 12;
           ctx!.setLineDash([]);
           ctx!.fillStyle = "#14ae5c";
           ctx!.beginPath();

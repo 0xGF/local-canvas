@@ -177,7 +177,7 @@ export function useWebSocket() {
   }, []);
 
   const sendMutation = useCallback(
-    (mutation: Mutation): Promise<WSServerMessage | void> => {
+    (mutation: Mutation, opts?: { viewTransition?: boolean }): Promise<WSServerMessage | void> => {
       // Skip no-op class mutations (adding and removing the same class, or both empty)
       if (mutation.type === "modify-class") {
         const adds = mutation.add?.filter(Boolean) || [];
@@ -195,7 +195,14 @@ export function useWebSocket() {
         status: "pending",
       });
 
-      const targetEl = useEditorStore.getState().selectedElement?.element ?? null;
+      // Opt in to VT only when the caller explicitly asks. Most mutations come
+      // from scrubs / drags / typing that already have live preview — a 250ms
+      // cross-fade there would stretch an already-snappy interaction, and
+      // holding the promise open past HMR leaves the next drag-start reading
+      // the pre-commit value. Callers that want VT (undo/redo, discrete
+      // class/color picks) pass `viewTransition: true`.
+      const useVT = opts?.viewTransition === true;
+      const targetEl = useVT ? useEditorStore.getState().selectedElement?.element ?? null : null;
 
       return withViewTransition(targetEl, () => new Promise<WSServerMessage | void>((resolve) => {
         const id = crypto.randomUUID();

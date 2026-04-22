@@ -1,4 +1,6 @@
 import React, { Suspense, lazy, useState, useCallback, useEffect, useRef } from "react";
+import ReactDOM from "react-dom";
+import { usePortalContainer } from "../lib/portal-container.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useHistoryStore } from "../stores/history-store.js";
 import { useChangesStore, type ChangeEntry } from "../stores/changes-store.js";
@@ -228,6 +230,7 @@ const ToolBtn = React.memo(function ToolBtn({
   children?: React.ReactNode;
 }) {
   const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
 
   return (
     <Tip label={title} shortcut={shortcut} disabled={disabled}>
@@ -236,7 +239,9 @@ const ToolBtn = React.memo(function ToolBtn({
         disabled={disabled}
         aria-label={title}
         onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
+        onMouseLeave={() => { setHovered(false); setPressed(false); }}
+        onMouseDown={() => { if (!disabled) setPressed(true); }}
+        onMouseUp={() => setPressed(false)}
         style={{
           position: "relative",
           display: "flex", alignItems: "center", justifyContent: "center",
@@ -245,11 +250,12 @@ const ToolBtn = React.memo(function ToolBtn({
           background: active ? C.accent : hovered && !disabled ? C.bgHover : "transparent",
           color: active ? "#fff" : disabled ? C.fgMuted : hovered ? C.fg : C.fgDim,
           cursor: disabled ? "default" : "pointer",
-          transition: `background-color ${DURATION.micro}ms ${EASE.snappy}, color ${DURATION.micro}ms ${EASE.snappy}, opacity ${DURATION.micro}ms ${EASE.snappy}`,
+          transition: `background-color ${DURATION.micro}ms ${EASE.snappy}, color ${DURATION.micro}ms ${EASE.snappy}, opacity ${DURATION.micro}ms ${EASE.snappy}, transform 120ms ${EASE.bounce}`,
           opacity: disabled ? 0.4 : 1,
+          transform: pressed ? "scale(0.88)" : "scale(1)",
           padding: 0,
           flexShrink: 0,
-          willChange: "background-color",
+          willChange: "background-color, transform",
         }}
       >
         {icon}
@@ -328,6 +334,7 @@ function SegmentBtn({
 }: {
   active: boolean; onClick: () => void; title: string; shortcut?: string; children: React.ReactNode;
 }) {
+  const [pressed, setPressed] = useState(false);
   return (
     <Tip label={title} shortcut={shortcut}>
     <button
@@ -335,6 +342,9 @@ function SegmentBtn({
       aria-selected={active}
       onClick={onClick}
       aria-label={title}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      onMouseLeave={() => setPressed(false)}
       style={{
         position: "relative",
         zIndex: 1,
@@ -344,7 +354,9 @@ function SegmentBtn({
         color: active ? "#fff" : C.fgDim,
         cursor: "pointer",
         padding: 0,
-        transition: `color 120ms ${EASE.snappy}`,
+        transform: pressed ? "scale(0.9)" : "scale(1)",
+        transition: `color 120ms ${EASE.snappy}, transform 120ms ${EASE.bounce}`,
+        willChange: "transform",
       }}
     >
       {children}
@@ -364,6 +376,7 @@ function PillBtn({
   active: boolean; onClick: () => void; title: string; shortcut?: string; icon: React.ReactNode;
 }) {
   const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
   return (
     <Tip label={title} shortcut={shortcut}>
     <button
@@ -371,7 +384,9 @@ function PillBtn({
       aria-label={title}
       aria-pressed={active}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseLeave={() => { setHovered(false); setPressed(false); }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
       style={{
         display: "flex", alignItems: "center", justifyContent: "center",
         width: 36, height: 28, borderRadius: 5,
@@ -380,7 +395,9 @@ function PillBtn({
         color: active ? "#fff" : hovered ? C.fg : C.fgDim,
         cursor: "pointer",
         padding: 0,
-        transition: `background-color 120ms ${EASE.snappy}, color 120ms ${EASE.snappy}`,
+        transform: pressed ? "scale(0.9)" : "scale(1)",
+        transition: `background-color 120ms ${EASE.snappy}, color 120ms ${EASE.snappy}, transform 120ms ${EASE.bounce}`,
+        willChange: "transform",
       }}
     >
       {icon}
@@ -507,51 +524,147 @@ const ChangesSaveButton = React.memo(function ChangesSaveButton({
   onSave: () => void; onReset: () => void; pendingCount: number; disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [animIn, setAnimIn] = useState(false);
+  // Mirror the bottom toolbar's position/width so the popover reads as an
+  // extension of the bar. Measured at open-time (toolbar is fit-content so
+  // its width changes with mode + state).
+  const [barRect, setBarRect] = useState<{ left: number; width: number; top: number } | null>(null);
   const changes = useChangesStore((s) => s.changes);
   const clearChanges = useChangesStore((s) => s.clearChanges);
+  const breakpoint = useEditorStore((s) => s.breakpoint);
+  const showToast = useEditorStore((s) => s.showToast);
+  const bpMeta = BREAKPOINT_PRESETS.find(b => b.width === breakpoint);
+  const portalContainer = usePortalContainer();
+  const bpPrefix = bpMeta?.prefix ?? "";
+  const bpLabel = bpMeta?.label ?? `${breakpoint}px`;
+  const isBase = !bpPrefix;
 
-  const handleSave = useCallback(() => {
+  // When `open` flips true, snapshot the toolbar rect, mount the popover,
+  // then next-frame flip the slide-up on. Mount/slide split lets the
+  // initial translateY(60px) actually render before transitioning to 0.
+  useEffect(() => {
+    if (!open) { setAnimIn(false); return; }
+    const host = document.getElementById("local-canvas-host");
+    const shadow = host?.shadowRoot;
+    const bar = shadow?.querySelector<HTMLElement>("[data-canvas-toolbar='true']");
+    if (bar) {
+      const r = bar.getBoundingClientRect();
+      setBarRect({ left: r.left, width: r.width, top: r.top });
+    }
+    const raf = requestAnimationFrame(() => setAnimIn(true));
+    return () => cancelAnimationFrame(raf);
+  }, [open]);
+
+  const close = useCallback(() => {
+    setAnimIn(false);
+    // Let the exit transition play before removing from DOM.
+    setTimeout(() => setOpen(false), 180);
+  }, []);
+
+  const handleSaveScoped = useCallback(() => {
+    // Save as-is — mutations were already emitted with the current
+    // breakpoint prefix as the user edited. This commits what's in source.
     onSave();
     clearChanges();
-    setOpen(false);
-  }, [onSave, clearChanges]);
+    close();
+    showToast(isBase ? "Saved" : `Saved for ${bpLabel} and up`);
+  }, [onSave, clearChanges, close, isBase, bpLabel, showToast]);
+
+  const handleSaveAll = useCallback(() => {
+    // TODO: sweep pending mutations and strip the bp prefix from each
+    // class so the change becomes a base-breakpoint rule. For now save
+    // as-is and flag the gap in the toast so the UX pattern is in place.
+    onSave();
+    clearChanges();
+    close();
+    showToast(`Saved (all-screens rewrite for ${bpPrefix}: not yet wired — saved as ${bpLabel}+ for now)`);
+  }, [onSave, clearChanges, close, bpPrefix, bpLabel, showToast]);
 
   const handleReset = useCallback(() => {
     onReset();
     clearChanges();
-    setOpen(false);
-  }, [onReset, clearChanges]);
+    close();
+  }, [onReset, clearChanges, close]);
+
+  // Cmd/Ctrl+S opens the popover (or fires a direct save when clean).
+  useEffect(() => {
+    function onToggle() {
+      if (changes.length === 0) {
+        if (pendingCount > 0) { onSave(); showToast("Saved"); }
+        else showToast("Nothing to save");
+        return;
+      }
+      setOpen(o => !o);
+    }
+    window.addEventListener("canvas:toggle-save-panel", onToggle);
+    return () => window.removeEventListener("canvas:toggle-save-panel", onToggle);
+  }, [changes.length, pendingCount, onSave, showToast]);
+
+  // While the popover is open: Enter = primary (scoped), Shift+Enter = all
+  // screens, Esc = close.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); }
+      else if (e.key === "Enter") {
+        e.preventDefault(); e.stopPropagation();
+        if (e.shiftKey && !isBase) handleSaveAll();
+        else handleSaveScoped();
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [open, isBase, handleSaveScoped, handleSaveAll, close]);
 
   return (
     <div style={{ position: "relative" }}>
       <ToolBtn
         icon={<Save size={15} />}
-        onClick={() => changes.length > 0 ? setOpen(!open) : onSave()}
+        onClick={() => changes.length > 0 ? (open ? close() : setOpen(true)) : onSave()}
         title="Save"
         shortcut={`${MOD}S`}
         badge={changes.length}
         disabled={disabled}
       />
 
-      {open && changes.length > 0 && (
+      {open && changes.length > 0 && portalContainer && ReactDOM.createPortal(
+        <>
         <div
           style={{ position: "fixed", inset: 0, zIndex: 2147483646 }}
-          onClick={() => setOpen(false)}
+          onClick={close}
         />
-      )}
-      <PopFade
-        open={open && changes.length > 0}
-        style={{
-          position: "absolute", bottom: "100%", right: 0,
-          marginBottom: 8,
-          background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10,
-          padding: 0, zIndex: 2147483647,
-          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-          width: 320, maxHeight: 400,
-          display: "flex", flexDirection: "column",
-          fontFamily: C.font,
-        }}
-      >
+        <div
+          data-canvas-overlay="true"
+          onClick={e => e.stopPropagation()}
+          style={{
+            position: "fixed",
+            // Match the toolbar horizontally so the popover reads as an
+            // extension of the bar. Portaled to escape the toolbar's
+            // `transform: translateY(...)` which would otherwise anchor
+            // `position: fixed` against the toolbar instead of the viewport.
+            left: barRect ? barRect.left : "50%",
+            width: barRect ? barRect.width : 420,
+            transform: barRect
+              ? `translateY(${animIn ? 0 : 60}px)`
+              : `translateX(-50%) translateY(${animIn ? 0 : 60}px)`,
+            bottom: barRect ? window.innerHeight - barRect.top + 8 : 80,
+            opacity: animIn ? 1 : 0,
+            transition:
+              "transform 320ms cubic-bezier(0.16, 1, 0.3, 1)," +
+              "opacity 200ms ease",
+            background: C.bg,
+            border: `1px solid ${C.border}`,
+            borderRadius: 10,
+            padding: 0,
+            zIndex: 2147483647,
+            boxShadow: "0 10px 32px rgba(0,0,0,0.5)",
+            maxHeight: 440,
+            display: "flex", flexDirection: "column",
+            fontFamily: C.font,
+            pointerEvents: "auto",
+            willChange: "transform, opacity",
+          }}
+        >
         {/* Header */}
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -565,8 +678,23 @@ const ChangesSaveButton = React.memo(function ChangesSaveButton({
             }}>{changes.length}</span>
           </span>
           <button
-            onClick={() => setOpen(false)}
-            style={{ background: "none", border: "none", color: C.fgMuted, cursor: "pointer", padding: 2 }}
+            onClick={close}
+            style={{
+              background: "transparent", border: "none",
+              color: C.fgMuted, cursor: "pointer",
+              padding: 4, borderRadius: 4,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "background 120ms ease, color 120ms ease",
+              outline: "none",
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = C.bgHover;
+              e.currentTarget.style.color = C.fg;
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = C.fgMuted;
+            }}
           >
             <X size={12} />
           </button>
@@ -579,34 +707,108 @@ const ChangesSaveButton = React.memo(function ChangesSaveButton({
           ))}
         </div>
 
-        {/* Footer */}
+        {/* Footer — scope-aware save. Primary = "this breakpoint + up";
+            secondary (only when editing a prefixed breakpoint) = "all
+            screens". Discard nukes pending changes. */}
         <div style={{
-          display: "flex", gap: 6, padding: "8px 12px",
+          display: "flex", flexDirection: "column", gap: 6, padding: "8px 12px",
           borderTop: `1px solid ${C.border}`,
         }}>
           <button
-            onClick={handleSave}
+            onClick={handleSaveScoped}
             style={{
-              flex: 1, height: 28, borderRadius: 6, border: "none",
-              background: C.accent, color: "#fff", fontSize: 11, fontWeight: 600,
+              display: "flex", alignItems: "center", gap: 8,
+              height: 32, padding: "0 10px", borderRadius: 6, border: "none",
+              background: C.accent, color: "#fff",
+              fontSize: 11, fontWeight: 600, textAlign: "left",
               cursor: "pointer", fontFamily: C.font,
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.18), 0 1px 2px rgba(0,0,0,0.25)",
+              transition: "background 120ms ease, transform 120ms ease, box-shadow 120ms ease",
+              outline: "none",
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = C.accentHover;
+              e.currentTarget.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.22), 0 2px 6px rgba(0,0,0,0.35)";
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = C.accent;
+              e.currentTarget.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.18), 0 1px 2px rgba(0,0,0,0.25)";
             }}
           >
-            Save All
+            <span style={{ flex: 1 }}>
+              {isBase ? "Save for all screens" : `Save for ${bpLabel} and up`}
+            </span>
+            <span style={{
+              fontSize: 9, opacity: 0.85, fontFamily: C.mono,
+              background: "rgba(255,255,255,0.18)", padding: "2px 6px", borderRadius: 3,
+            }}>⏎</span>
           </button>
+
+          {!isBase && (
+            <button
+              onClick={handleSaveAll}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                height: 30, padding: "0 10px", borderRadius: 6,
+                border: `1px solid ${C.borderLight}`, background: C.bgAlt,
+                color: C.fg, fontSize: 11, fontWeight: 500, textAlign: "left",
+                cursor: "pointer", fontFamily: C.font,
+                transition: "background 120ms ease, border-color 120ms ease, color 120ms ease",
+                outline: "none",
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = C.bgHover;
+                e.currentTarget.style.borderColor = C.border;
+                e.currentTarget.style.color = C.fg;
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = C.bgAlt;
+                e.currentTarget.style.borderColor = C.borderLight;
+                e.currentTarget.style.color = C.fg;
+              }}
+            >
+              <span style={{ flex: 1 }}>Save for all screen sizes</span>
+              <span style={{
+                fontSize: 9, opacity: 0.75, fontFamily: C.mono,
+                background: C.bg, padding: "2px 6px", borderRadius: 3,
+              }}>⇧⏎</span>
+            </button>
+          )}
+
+          {!isBase && (
+            <span style={{ fontSize: 9, color: C.fgMuted, lineHeight: 1.4 }}>
+              {bpPrefix}: applies at {bpLabel} ({breakpoint}px) and wider. Smaller
+              screens inherit the next lower breakpoint.
+            </span>
+          )}
+
           <button
             onClick={handleReset}
             style={{
-              height: 28, padding: "0 10px", borderRadius: 6,
-              border: `1px solid ${C.border}`, background: "transparent",
-              color: C.fgDim, fontSize: 11, fontWeight: 500,
+              height: 26, padding: "0 10px", borderRadius: 6,
+              border: "none", background: "transparent",
+              color: C.fgDim, fontSize: 10, fontWeight: 500,
               cursor: "pointer", fontFamily: C.font,
+              alignSelf: "flex-start",
+              transition: "background 120ms ease, color 120ms ease",
+              outline: "none",
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = C.dangerSoft;
+              e.currentTarget.style.color = C.danger;
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = C.fgDim;
             }}
           >
-            Discard
+            Discard changes
           </button>
         </div>
-      </PopFade>
+      </div>
+      </>,
+      portalContainer,
+      )}
     </div>
   );
 });
@@ -619,36 +821,52 @@ function ChangeRow({ change }: { change: ChangeEntry }) {
     ? <X size={10} style={{ color: C.danger }} />
     : <span style={{ width: 10, height: 10, borderRadius: "50%", border: `2px solid ${C.accent}`, borderTopColor: "transparent", display: "inline-block", animation: "spin 0.8s linear infinite" }} />;
 
+  const [hovered, setHovered] = useState(false);
   return (
     <div
       onClick={() => change.diff && setExpanded(!expanded)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
-        padding: "6px 12px", cursor: change.diff ? "pointer" : "default",
-        transition: "background 0.1s",
+        padding: "8px 12px",
+        cursor: change.diff ? "pointer" : "default",
+        // Subtle accent-tinted surface on hover (matches the rest of the
+        // popover) instead of the plain grey wash. Rounded so the active
+        // row reads as its own tile inside the scroll list.
+        background: hovered ? C.bgHover : "transparent",
+        borderRadius: 6,
+        margin: "2px 4px",
+        transition: "background 140ms ease",
       }}
-      onMouseEnter={(e) => e.currentTarget.style.background = C.bgHover}
-      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         {statusIcon}
         <span style={{ flex: 1, fontSize: 11, color: C.fg, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {change.description}
         </span>
-        <span style={{ fontSize: 9, color: C.fgMuted, flexShrink: 0 }}>{timeAgo(change.timestamp)}</span>
+        <span style={{
+          fontSize: 9, color: C.fgMuted, flexShrink: 0,
+          transition: "opacity 140ms ease",
+          opacity: hovered ? 0.9 : 0.65,
+        }}>{timeAgo(change.timestamp)}</span>
       </div>
-      <div style={{ fontSize: 9, color: C.fgMuted, fontFamily: C.mono, marginTop: 2, marginLeft: 16 }}>
+      <div style={{ fontSize: 9, color: C.fgMuted, fontFamily: C.mono, marginTop: 2, marginLeft: 18 }}>
         {change.filePath.split("/").pop()}:{change.line}
       </div>
       {expanded && change.diff && (
         <pre style={{
-          marginTop: 6, marginLeft: 16, padding: 6, borderRadius: 4,
-          background: "#111", fontSize: 9, fontFamily: C.mono,
-          color: C.fgDim, whiteSpace: "pre-wrap", lineHeight: 1.5,
-          maxHeight: 120, overflowY: "auto",
+          marginTop: 8, marginLeft: 18, padding: "8px 10px", borderRadius: 6,
+          background: C.bg, border: `1px solid ${C.borderLight}`,
+          fontSize: 10, fontFamily: C.mono,
+          color: C.fgDim, whiteSpace: "pre-wrap", lineHeight: 1.55,
+          maxHeight: 160, overflowY: "auto",
         }}>
           {change.diff.split("\n").map((line, i) => (
             <div key={i} style={{
               color: line.startsWith("+") ? C.success : line.startsWith("-") ? C.danger : C.fgDim,
+              background: line.startsWith("+") ? C.successSoft : line.startsWith("-") ? C.dangerSoft : "transparent",
+              padding: "0 4px", borderRadius: 2,
+              margin: "0 -4px",
             }}>{line}</div>
           ))}
         </pre>
@@ -737,6 +955,7 @@ export const Toolbar = React.memo(function Toolbar() {
     <div
       style={{ ...barBase, ...slideUp, left: 0, right: 0, margin: "0 auto", width: "fit-content", gap: 2 }}
       data-canvas-overlay="true"
+      data-canvas-toolbar="true"
     >
       {/*
        * Functional grouping:
@@ -822,6 +1041,7 @@ export const Toolbar = React.memo(function Toolbar() {
         position: "fixed", bottom: 72, left: 0, right: 0,
         display: "flex", justifyContent: "center",
         pointerEvents: "none", zIndex: 2147483647,
+        animation: `canvasFadeUp 220ms ${EASE.smooth} both`,
       }}>
         <span style={{
           fontSize: 10, fontWeight: 600, color: "#fff",

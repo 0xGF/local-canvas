@@ -69,10 +69,10 @@ export function PopFade({
     <div
       {...rest}
       style={{
+        transformOrigin: "center bottom",
         ...style,
         opacity: active ? 1 : 0,
-        transform: `${style?.transform ?? ""} ${active ? "scale(1) translateY(0)" : "scale(0.96) translateY(4px)"}`.trim(),
-        transformOrigin: "center bottom",
+        transform: `${style?.transform ?? ""} ${active ? "scale(1) translateY(0)" : "scale(0.94) translateY(6px)"}`.trim(),
         pointerEvents: active ? "auto" : "none",
         transition: reduce
           ? "none"
@@ -139,3 +139,4 @@ export function useSlideUp(key?: unknown) {
     willChange: "transform, opacity",
   } as React.CSSProperties;
 }
+

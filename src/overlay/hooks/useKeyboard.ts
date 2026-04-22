@@ -38,7 +38,14 @@ export function useKeyboard() {
       // a text input, including the AskAI chat and any app-side input the
       // user may have focused. The overlay-side inline editor tracks its own
       // state via `editingText`, which we also honour.
-      if (isMeta && e.key === "s") { e.preventDefault(); e.stopPropagation(); s.send({ type: "save" }); s.clearPending(); s.clearChanges(); return; }
+      // Cmd/Ctrl+S → open the existing Save popover on the toolbar so the
+      // user can pick "this breakpoint and up" vs "all screens" before
+      // committing. No-ops (to a toast) when nothing is pending.
+      if (isMeta && e.key === "s") {
+        e.preventDefault(); e.stopPropagation();
+        window.dispatchEvent(new CustomEvent("canvas:toggle-save-panel"));
+        return;
+      }
       const typing = isTyping(e);
       if (!typing && !useEditorStore.getState().editingText) {
         if (isMeta && e.key === "z" && !e.shiftKey) { e.preventDefault(); if (useEditorStore.getState().pendingCount <= 0) return; s.undo(); s.didUndo(); s.decrementPending(); useEditorStore.getState().showToast("↩ Undo"); return; }

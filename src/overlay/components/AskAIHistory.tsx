@@ -281,16 +281,20 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
       )}
       <PopFade
         open={open}
+        duration={220}
         style={{
-          position: "absolute", bottom: "100%", right: 0,
+          position: "absolute", bottom: "100%", left: 0, right: 0,
           marginBottom: 8,
           background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10,
           zIndex: 2147483647,
           boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-          width: 340, maxHeight: 440,
+          maxHeight: 440,
           display: "flex", flexDirection: "column",
           fontFamily: C.font,
           overflow: "hidden",
+          // Grow from the trigger icon (right side of the toolbar) rather
+          // than the centre — makes the open feel tied to the click.
+          transformOrigin: "right bottom",
         }}
       >
         {/* Header */}

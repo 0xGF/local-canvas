@@ -28,7 +28,15 @@ let copiedClasses: string[] = [];
 
 // Re-use the shared annotations client so ContextMenu and AnnotationPins
 // send through one code path.
-import { postAnnotation as sharedPostAnnotation } from "../utils/annotations.js";
+import { postAnnotation as sharedPostAnnotation, elementOccurrenceIndex } from "../utils/annotations.js";
+
+/** Append `#N` to a `file:line` elementPath when the target element isn't
+ *  the first of its source on the page. Keeps the path bare for unique
+ *  sources (most common case). */
+function withOccurrence(el: HTMLElement, path: string): string {
+  const idx = elementOccurrenceIndex(el);
+  return idx > 0 ? `${path}#${idx}` : path;
+}
 
 async function postAnnotation(opts: {
   comment: string;
@@ -74,7 +82,7 @@ function buildAnnotationOpts(
 ) {
   if (multi.length > 1) {
     const paths = multi
-      .map(s => s.source ? `${s.source.filePath}:${s.source.line}` : null)
+      .map(s => s.source ? withOccurrence(s.element, `${s.source.filePath}:${s.source.line}`) : null)
       .filter((p): p is string => !!p);
     const union = unionBoundingBox(multi.map(s => s.element));
     return {
@@ -88,10 +96,12 @@ function buildAnnotationOpts(
       boundingBox: union ?? undefined,
     };
   }
+  const fallbackPath = fallbackSource ? `${fallbackSource.filePath}:${fallbackSource.line}` : fallbackTag;
+  const onlyEl = multi[0]?.element;
   return {
     comment: prompt,
     element: `<${fallbackTag}>${fallbackClasses.length ? "." + fallbackClasses.join(".") : ""}`,
-    elementPath: fallbackSource ? `${fallbackSource.filePath}:${fallbackSource.line}` : fallbackTag,
+    elementPath: onlyEl && fallbackSource ? withOccurrence(onlyEl, fallbackPath) : fallbackPath,
     cssClasses: fallbackClasses.join(" "),
   };
 }
@@ -454,6 +464,8 @@ export const ContextMenu = React.memo(function ContextMenu() {
         background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
         boxShadow: "0 8px 32px rgba(0,0,0,0.5)", zIndex: 2147483647,
         pointerEvents: "auto", padding: 4, fontFamily: C.font, fontSize: 12,
+        transformOrigin: "top left",
+        animation: "canvasMenuEnter 140ms cubic-bezier(0.16, 1, 0.3, 1) both",
       }}
     >
       {/* Header */}

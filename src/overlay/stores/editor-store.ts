@@ -168,7 +168,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   clearMultiSelection: () => set({ multiSelection: [] }),
   setHoveredElement: (el) => set({ hoveredElement: el }),
 
-  propertiesOpen: false,
+  propertiesOpen: true,
   paletteOpen: false,
   layersOpen: !!_persisted.layersOpen,
   layersWidth: clampLayersWidth(_persisted.layersWidth) ?? 260,

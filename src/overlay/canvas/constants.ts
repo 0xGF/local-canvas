@@ -46,6 +46,11 @@ export interface SpacingBox { top: number; right: number; bottom: number; left: 
 
 export interface BadgeHit {
   x: number; y: number; w: number; h: number;
+  // Visual centre of the rendered value pill in iframe-doc coords. The hit
+  // rect above spans the whole draggable edge, which is much larger than
+  // the pill — use these when positioning UI that should sit on the pill
+  // itself (e.g. the double-click inline editor).
+  cx: number; cy: number;
   type: "margin" | "padding" | "gap";
   // "x" / "y" are only used when type === "gap" (column / row axis).
   side: "top" | "right" | "bottom" | "left" | "x" | "y";

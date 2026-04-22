@@ -107,12 +107,15 @@ export function drawValueBadge(ctx: CanvasRenderingContext2D, value: number, col
   ctx.save();
   ctx.font = BADGE_FONT;
   const tw = measureText(text, BADGE_FONT);
-  const pw = 5, bw = tw + pw * 2, bh = 14, bx = x - bw / 2, by = y - bh / 2;
+  const pw = 6, bw = tw + pw * 2, bh = 14, bx = x - bw / 2, by = y - bh / 2;
   ctx.fillStyle = color;
-  roundRect(ctx, bx, by, bw, bh, 4);
+  roundRect(ctx, bx, by, bw, bh, bh / 2);
   ctx.fill();
   ctx.fillStyle = "#fff"; ctx.textBaseline = "middle"; ctx.textAlign = "center";
-  ctx.fillText(text, x, y);
+  // `textBaseline: "middle"` uses the font's em-box midpoint, which sits
+  // above the optical center of the digit glyphs (descender space pulls
+  // the em box down). Nudge the draw y down by ~1px so "40" reads centred.
+  ctx.fillText(text, x, y + 1);
   ctx.restore();
 }
 
@@ -182,11 +185,9 @@ export function drawEdgeHandle(
     const tx = cx - tbw / 2;
     const ty = cy - tbh / 2;
 
-    // White border
-    ctx.fillStyle = "#fff";
-    roundRect(ctx, tx - 1, ty - 1, tbw + 2, tbh + 2, (tbh / 2) + 1);
-    ctx.fill();
-    // Colored background
+    // Colored background — no white ring. The outer rect used to paint a
+    // 1px white border around the pill which read as a stray outline over
+    // the hatched spacing zone.
     ctx.fillStyle = color;
     ctx.globalAlpha = hovered ? 1 : 0.85;
     roundRect(ctx, tx, ty, tbw, tbh, tbh / 2);
@@ -209,9 +210,6 @@ export function drawEdgeHandle(
   const bx = cx - rx, by = cy - ry;
   const bw = rx * 2, bh = ry * 2;
 
-  ctx.fillStyle = "#fff";
-  roundRect(ctx, bx - 1, by - 1, bw + 2, bh + 2, Math.min(rx, ry) + 1);
-  ctx.fill();
   ctx.fillStyle = color;
   ctx.globalAlpha = hovered ? 1 : 0.8;
   roundRect(ctx, bx, by, bw, bh, Math.min(rx, ry));
@@ -256,15 +254,13 @@ export function drawZeroNotch(
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Small dot at center to indicate "add spacing"
+    // Small dot at center to indicate "add spacing" — solid colored disc,
+    // no white ring underneath (the ring read as a stray border leaking
+    // past the hatched zone around the element).
     ctx.globalAlpha = 1;
-    ctx.fillStyle = "#fff";
-    ctx.beginPath();
-    ctx.arc(cx, cy, 5, 0, Math.PI * 2);
-    ctx.fill();
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
     ctx.fill();
   } else {
     // Default: small colored dash at midpoint

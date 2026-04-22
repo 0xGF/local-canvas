@@ -424,19 +424,66 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
         )}
       </canvas>
 
-      {/* Floating input for badge editing */}
-      {editBadge && (
-        <div style={{ position: "fixed", left: editBadge.x + editBadge.w / 2 - 22, top: editBadge.y + editBadge.h / 2 - 11, zIndex: 2147483647, pointerEvents: "auto" }} data-canvas-overlay="true">
-          <input
-            autoFocus
-            value={editValue}
-            onChange={e => setEditValue(e.target.value)}
-            onBlur={() => { commitEdit(); setEditBadge(null); }}
-            onKeyDown={e => { if (e.key === "Enter") { commitEdit(); setEditBadge(null); } if (e.key === "Escape") setEditBadge(null); }}
-            style={{ width: 52, height: 22, fontSize: 10, fontWeight: 600, fontFamily: FONT, color: "#fff", background: editBadge.type === "padding" ? COL.padding : COL.margin, border: "none", borderRadius: 4, textAlign: "center", outline: "none", padding: 0, boxShadow: "0 2px 12px rgba(0,0,0,0.4)" }}
-          />
-        </div>
-      )}
+      {/* Inline badge editor — positioned and sized to match the on-canvas
+          pill so the transition from display → edit reads as "the pill
+          became editable" rather than a separate UI opening. Scales with
+          iframe zoom so it stays pixel-aligned to the canvas-rendered
+          badge at any zoom level. */}
+      {editBadge && (() => {
+        const iframe = getEditorIframe();
+        const off = iframe ? getIframeOffset(iframe) : { x: 0, y: 0, scale: 1 };
+        const s = off.scale || 1;
+        // Pill metrics (must stay in sync with drawValueBadge in draw-helpers.ts)
+        const PILL_H = 14;
+        const PILL_PAD_X = 6;
+        const CHAR_W = 6; // 600 9px mono ≈ 6px per digit
+        const text = editValue || "0";
+        const width = Math.max(28, text.length * CHAR_W + PILL_PAD_X * 2);
+        const cx = editBadge.cx * s + off.x;
+        const cy = editBadge.cy * s + off.y;
+        const bg = editBadge.type === "padding" ? COL.padding : editBadge.type === "gap" ? COL.purple : COL.margin;
+        return (
+          <div
+            style={{
+              position: "fixed",
+              left: cx - (width * s) / 2,
+              top: cy - (PILL_H * s) / 2,
+              width: width * s,
+              height: PILL_H * s,
+              zIndex: 2147483647,
+              pointerEvents: "auto",
+            }}
+            data-canvas-overlay="true"
+          >
+            <input
+              autoFocus
+              value={editValue}
+              onChange={e => setEditValue(e.target.value)}
+              onBlur={() => { commitEdit(); setEditBadge(null); }}
+              onKeyDown={e => { if (e.key === "Enter") { commitEdit(); setEditBadge(null); } if (e.key === "Escape") setEditBadge(null); }}
+              onFocus={e => e.currentTarget.select()}
+              style={{
+                width: "100%",
+                height: "100%",
+                fontSize: 9 * s,
+                fontWeight: 600,
+                fontFamily: FONT,
+                color: "#fff",
+                background: bg,
+                border: "none",
+                borderRadius: (PILL_H * s) / 2,
+                textAlign: "center",
+                outline: "none",
+                padding: 0,
+                boxSizing: "border-box",
+                // Match the +1px y-nudge drawValueBadge applies so the
+                // digits sit in the same optical position as the canvas pill.
+                lineHeight: `${PILL_H * s + 1}px`,
+              }}
+            />
+          </div>
+        );
+      })()}
 
       {/* Drag tooltip removed — the notch pill already shows the live value */}
 

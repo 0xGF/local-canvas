@@ -21,6 +21,7 @@ vi.mock("../../../core/source-map/resolver.js", () => ({
 function createMockBadgeHit(overrides: Partial<BadgeHit> = {}): BadgeHit {
   return {
     x: 100, y: 100, w: 40, h: 14,
+    cx: 120, cy: 107,
     type: "padding", side: "top", value: 16, prefix: "pt",
     ...overrides,
   };

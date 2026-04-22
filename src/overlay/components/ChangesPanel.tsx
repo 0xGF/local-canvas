@@ -23,7 +23,10 @@ export function ChangesPanel() {
 
   return (
     <div
-      style={{ pointerEvents: "auto" }}
+      style={{
+        pointerEvents: "auto",
+        animation: "canvasFadeUp 200ms cubic-bezier(0.16, 1, 0.3, 1) both",
+      }}
       data-canvas-overlay="true"
       className="fixed bottom-16 right-4 w-80 max-h-96 bg-canvas-bg/95 backdrop-blur-md border border-canvas-border rounded-xl shadow-2xl overflow-hidden flex flex-col"
     >

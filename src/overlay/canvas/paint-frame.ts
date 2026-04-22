@@ -1,6 +1,6 @@
 import type { BadgeHit, TagBadgeHit, SpacingBox } from "./constants.js";
 import { COL, LABEL_FONT, SIDE_PREFIX } from "./constants.js";
-import { roundRect, drawDashedLine, drawDashedEdges, drawLabelBadge, drawValueBadge, drawHatchedRect, drawEdgeHandle, drawZeroNotch, drawResizeGrip, measureText } from "./draw-helpers.js";
+import { roundRect, drawDashedLine, drawDashedEdges, drawLabelBadge, drawValueBadge, drawHatchedRect, drawZeroNotch, drawResizeGrip, measureText } from "./draw-helpers.js";
 import { HAS_DRAW_ELEMENT } from "./constants.js";
 import type { SourceLocation } from "../../core/source-map/types.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
@@ -395,7 +395,7 @@ export function paintFrame(
                   if (zoomScale >= 0.8) drawValueBadge(ctx, Math.round(gW / spaceScale), COL.purple, gL + gW / 2, (gT + gB) / 2);
                   // Drag hit — expand cross-axis to a minimum 14px so thin gaps are reachable.
                   const hitW = Math.max(14, gW);
-                  badges.push({ x: gL - (hitW - gW) / 2, y: gT, w: hitW, h: gB - gT, type: "gap", side: "x", value: cg, prefix: "gap-x" });
+                  badges.push({ x: gL - (hitW - gW) / 2, y: gT, w: hitW, h: gB - gT, cx: gL + gW / 2, cy: (gT + gB) / 2, type: "gap", side: "x", value: cg, prefix: "gap-x" });
                 }
               }
               if (rg > 0 && b.top > a.bottom - 1 && a.right > b.left + 1 && a.left < b.right - 1) {
@@ -406,7 +406,7 @@ export function paintFrame(
                   // BUG FIX: gH is screen-space, divide by zoom to show CSS value
                   if (zoomScale >= 0.8) drawValueBadge(ctx, Math.round(gH / spaceScale), COL.purple, (gL + gR) / 2, gT + gH / 2);
                   const hitH = Math.max(14, gH);
-                  badges.push({ x: gL, y: gT - (hitH - gH) / 2, w: gR - gL, h: hitH, type: "gap", side: "y", value: rg, prefix: "gap-y" });
+                  badges.push({ x: gL, y: gT - (hitH - gH) / 2, w: gR - gL, h: hitH, cx: (gL + gR) / 2, cy: gT + gH / 2, type: "gap", side: "y", value: rg, prefix: "gap-y" });
                 }
               }
             }
@@ -486,6 +486,12 @@ export function paintFrame(
       // the exact symptom the user flagged ("works when zoomed in").
       const MIN_CROSS_SCREEN_PX = 10;
       const minCross = MIN_CROSS_SCREEN_PX / Math.max(0.1, vz);
+      // Queue spacing pill draws so the pill closest to the cursor can
+      // paint LAST and stay visually on top of any adjacent pill (e.g.
+      // margin + padding touching at the element edge — without this,
+      // the pill painted later — padding — always covers the margin the
+      // user is hovering).
+      const pillDraws: Array<{ hovered: boolean; distSq: number; draw: () => void }> = [];
       const drawSpacing = (cssVal: number, screenVal: number, color: string, x: number, y: number, type: "margin" | "padding", side: "top" | "right" | "bottom" | "left") => {
         if (cssVal <= 0) return;
         const prefix = SIDE_PREFIX[type][side];
@@ -523,29 +529,30 @@ export function paintFrame(
           hw = alongLen;
           hx = r.left + (r.width - alongLen) / 2;
         }
-        badges.push({ x: hx, y: hy, w: hw, h: hh, type, side, value: cssVal, prefix });
-        // Hover affordance: when the cursor is over the hit rect, scale the
-        // value badge up slightly so the user knows it's drag-ready. mousePos
-        // is iframe-doc coords (translated by the caller). Skip during an
-        // active drag of a DIFFERENT badge so only the one being dragged
-        // stays visually "active".
+        // Hover: cursor over the hit rect, ignoring the hover if another
+        // badge is currently being dragged (so the drag target stays active).
         const hovered = !!mousePos &&
           mousePos.x >= hx && mousePos.x <= hx + hw &&
           mousePos.y >= hy && mousePos.y <= hy + hh &&
           (!activeDrag || activeDrag.prefix === prefix);
-        // Text badge — only when zoomed in enough to be readable and not overlap notches
-        if (screenVal >= 24 && zoomScale >= 0.8) {
-          if (hovered) {
-            ctx.save();
-            ctx.translate(x, y);
-            ctx.scale(1.2, 1.2);
-            ctx.translate(-x, -y);
-            drawValueBadge(ctx, Math.round(cssVal), color, x, y);
-            ctx.restore();
-          } else {
-            drawValueBadge(ctx, Math.round(cssVal), color, x, y);
-          }
-        }
+        badges.push({ x: hx, y: hy, w: hw, h: hh, cx: x, cy: y, type, side, value: cssVal, prefix });
+        const distSq = mousePos ? (mousePos.x - x) ** 2 + (mousePos.y - y) ** 2 : Infinity;
+        pillDraws.push({
+          hovered,
+          distSq,
+          draw: () => {
+            if (hovered) {
+              ctx.save();
+              ctx.translate(x, y);
+              ctx.scale(1.2, 1.2);
+              ctx.translate(-x, -y);
+              drawValueBadge(ctx, Math.round(cssVal), color, x, y);
+              ctx.restore();
+            } else {
+              drawValueBadge(ctx, Math.round(cssVal), color, x, y);
+            }
+          },
+        });
       };
 
       drawSpacing(mRaw.top, m.top, COL.margin, r.left + r.width / 2, r.top - m.top / 2, "margin", "top");
@@ -556,6 +563,30 @@ export function paintFrame(
       drawSpacing(pRaw.bottom, p.bottom, COL.padding, r.left + r.width / 2, r.top + r.height - p.bottom / 2, "padding", "bottom");
       drawSpacing(pRaw.left, p.left, COL.padding, r.left + p.left / 2, r.top + r.height / 2, "padding", "left");
       drawSpacing(pRaw.right, p.right, COL.padding, r.left + r.width - p.right / 2, r.top + r.height / 2, "padding", "right");
+
+      // Non-hovered first, then hovered (ordered by distance-to-cursor —
+      // closest paints last, so the pill the user is aiming at floats
+      // above neighbours).
+      for (const d of pillDraws) if (!d.hovered) d.draw();
+      const hoveredSortedByDist = pillDraws.filter(d => d.hovered).sort((a, b) => b.distSq - a.distSq);
+      for (const d of hoveredSortedByDist) d.draw();
+
+      // Hit-test priority: move any badge the cursor is currently over to
+      // the front of the array, with the closest one first. Hit iterators
+      // return the first match, so this keeps grabbing consistent with
+      // what the user sees on top.
+      if (mousePos) {
+        const mx = mousePos.x, my = mousePos.y;
+        badges.sort((a, b) => {
+          const aHit = mx >= a.x && mx <= a.x + a.w && my >= a.y && my <= a.y + a.h ? 1 : 0;
+          const bHit = mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h ? 1 : 0;
+          if (aHit !== bHit) return bHit - aHit;
+          if (!aHit) return 0;
+          const aDist = (mx - a.cx) ** 2 + (my - a.cy) ** 2;
+          const bDist = (mx - b.cx) ** 2 + (my - b.cy) ** 2;
+          return aDist - bDist;
+        });
+      }
 
       // ── Drag-from-zero handles ──
       // When margin or padding is 0 on a side, add thin invisible hit zones along the edge
@@ -587,7 +618,7 @@ export function paintFrame(
         // "add padding" dot would drag margin instead (the exact bug
         // reported: "whenever i try and drag that green padding it just
         // drags the margin").
-        badges.unshift({ x: hx, y: hy, w: hw, h: hh, type, side, value: 0, prefix });
+        badges.unshift({ x: hx, y: hy, w: hw, h: hh, cx: hx + hw / 2, cy: hy + hh / 2, type, side, value: 0, prefix });
 
         // Only draw dashed line indicator when mouse is hovering near the edge
         const hoverPad = 12;
@@ -622,24 +653,12 @@ export function paintFrame(
       addZeroHandle(pRaw.left, "padding", "left");
       addZeroHandle(pRaw.right, "padding", "right");
 
-      // ── Visual notches for spacing values ──
-      // Hover detection helper
-      const isNearMouse = (x: number, y: number, radius: number) =>
-        mousePos && Math.abs(mousePos.x - x) < radius && Math.abs(mousePos.y - y) < radius;
+      // Value badges for non-zero spacing are drawn inside `drawSpacing`
+      // via `drawValueBadge`. Previously a second pill was drawn here via
+      // `drawEdgeHandle` at the same positions, which stacked two pills on
+      // top of each other and read as a stray outer ring around the badge.
       const midX = r.left + r.width / 2;
       const midY = r.top + r.height / 2;
-
-      // Padding edge handles (non-zero values — green pills)
-      if (p.top > 0) drawEdgeHandle(ctx, midX, r.top + p.top / 2, false, COL.padding, pRaw.top, !!isNearMouse(midX, r.top + p.top / 2, 20), zoomScale);
-      if (p.bottom > 0) drawEdgeHandle(ctx, midX, r.top + r.height - p.bottom / 2, false, COL.padding, pRaw.bottom, !!isNearMouse(midX, r.top + r.height - p.bottom / 2, 20), zoomScale);
-      if (p.left > 0) drawEdgeHandle(ctx, r.left + p.left / 2, midY, true, COL.padding, pRaw.left, !!isNearMouse(r.left + p.left / 2, midY, 20), zoomScale);
-      if (p.right > 0) drawEdgeHandle(ctx, r.left + r.width - p.right / 2, midY, true, COL.padding, pRaw.right, !!isNearMouse(r.left + r.width - p.right / 2, midY, 20), zoomScale);
-
-      // Margin edge handles (non-zero values — orange pills)
-      if (m.top > 0) drawEdgeHandle(ctx, midX, r.top - m.top / 2, false, COL.margin, mRaw.top, !!isNearMouse(midX, r.top - m.top / 2, 20), zoomScale);
-      if (m.bottom > 0) drawEdgeHandle(ctx, midX, r.top + r.height + m.bottom / 2, false, COL.margin, mRaw.bottom, !!isNearMouse(midX, r.top + r.height + m.bottom / 2, 20), zoomScale);
-      if (m.left > 0) drawEdgeHandle(ctx, r.left - m.left / 2, midY, true, COL.margin, mRaw.left, !!isNearMouse(r.left - m.left / 2, midY, 20), zoomScale);
-      if (m.right > 0) drawEdgeHandle(ctx, r.left + r.width + m.right / 2, midY, true, COL.margin, mRaw.right, !!isNearMouse(r.left + r.width + m.right / 2, midY, 20), zoomScale);
 
       // Zero-value notches — full edge highlight on hover, small dash by default
       // Hover detection uses the full edge zone (EDGE_THICKNESS), not just the notch center

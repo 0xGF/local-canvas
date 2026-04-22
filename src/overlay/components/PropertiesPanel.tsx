@@ -3390,6 +3390,7 @@ const panelStyle: React.CSSProperties = {
   pointerEvents: "auto", fontFamily: C.font, fontSize: 11,
   color: C.fg, WebkitFontSmoothing: "antialiased", userSelect: "none",
   zIndex: 2147483647,
+  animation: "canvasPanelSlideInRight 260ms cubic-bezier(0.16, 1, 0.3, 1) both",
 };
 
 const headerStyle: React.CSSProperties = {

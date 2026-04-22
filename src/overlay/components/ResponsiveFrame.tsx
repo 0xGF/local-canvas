@@ -118,12 +118,12 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
     const lock = setTimeout(() => {
       settledRef.current = true;
       setSettled(true);
-    }, 560);
+    }, 780);
     const fadeStart = setTimeout(() => {
       setWiping(true);
       setFrameRevealed(true);
-    }, 560);
-    const unmount = setTimeout(() => setLoaderMounted(false), 1120);
+    }, 780);
+    const unmount = setTimeout(() => setLoaderMounted(false), 1560);
     return () => {
       clearTimeout(lock);
       clearTimeout(fadeStart);
@@ -485,7 +485,7 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
           width,
           height,
           position: "relative",
-          transition: settled ? undefined : "height 500ms cubic-bezier(0.22, 0.8, 0.2, 1)",
+          transition: settled ? undefined : "height 720ms cubic-bezier(0.22, 0.8, 0.2, 1)",
         }}
       >
         {/* Frame — holds the iframe. The loading halftone is layered on
@@ -516,7 +516,7 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
             style={{
               width,
               height,
-              transition: settled ? undefined : "height 500ms cubic-bezier(0.22, 0.8, 0.2, 1)",
+              transition: settled ? undefined : "height 720ms cubic-bezier(0.22, 0.8, 0.2, 1)",
             }}
             title={`${width}px preview`}
           />

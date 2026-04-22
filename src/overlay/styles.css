@@ -572,6 +572,47 @@
   animation: slideIn 0.15s ease-out;
 }
 
+/* Side panel entrances. Keyframes on the panel root so the animation
+ * replays every time the panel remounts (open=false → null, open=true →
+ * fresh DOM node). No React state needed. */
+@keyframes canvasPanelSlideInLeft {
+  from { opacity: 0; transform: translateX(-24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes canvasPanelSlideInRight {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Context menu: subtle scale + fade from the click anchor. */
+@keyframes canvasMenuEnter {
+  from { opacity: 0; transform: scale(0.94); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* Generic bottom-anchored popup: rises + fades in. */
+@keyframes canvasFadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Command bar / centered dialog: the Tailwind `-translate-x-1/2` classes
+ * bake the X centering into `transform`, so the keyframe has to preserve
+ * translateX(-50%) while animating Y + scale. */
+@keyframes canvasCenterDialogEnter {
+  from { opacity: 0; transform: translate(-50%, -6px) scale(0.98); }
+  to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes canvasPanelSlideInLeft      { from, to { opacity: 1; transform: none; } }
+  @keyframes canvasPanelSlideInRight     { from, to { opacity: 1; transform: none; } }
+  @keyframes canvasMenuEnter             { from, to { opacity: 1; transform: none; } }
+  @keyframes canvasFadeUp                { from, to { opacity: 1; transform: none; } }
+  @keyframes canvasCenterDialogEnter     { from, to { opacity: 1; transform: translateX(-50%); } }
+}
+
 /* ═══ Halftone shimmer loader ═══
  * Dark surface with a faint-blue dot grid. A bluer band sweeps across,
  * clipped to the same dot grid via mask — so the shimmer is literally

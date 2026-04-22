@@ -20,10 +20,10 @@ export default function Overview() {
 
       <CodeBlock code="npx local-canvas dev --target 3000" />
 
-      <hr className="border-neutral-200" />
+      <hr className="border-neutral-200 2xl:mb-8" />
 
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold tracking-tight 2xl:text-left 2xl:text-[15px] 2xl:text-[23px]">The canvas is the point</h2>
+        <h2 className="text-lg font-semibold tracking-tight 2xl:text-left 2xl:text-[15px] 2xl:text-[23px] 2xl:mb-4 2xl:pb-[5px]" style={{ paddingBottom: "3px" }}>The Canvas</h2>
         <p className="text-[14px] text-neutral-600 leading-relaxed">
           The editing chrome — hover outlines, selection outlines, spacing
           badges, resize grips, dimension readouts, drag value pills, zero-value
@@ -52,8 +52,7 @@ export default function Overview() {
           </li>
         </ul>
         <LoopingClip
-          src="/demos/click-to-panel.mp4"
-          poster="/demos/click-to-panel.jpg"
+          src="/demos/overview.mp4"
           caption="Click an element → canvas chrome paints and the properties panel slides in."
         />
       </div>

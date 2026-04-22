@@ -566,6 +566,7 @@ function panelStyle(width: number): React.CSSProperties {
     pointerEvents: "auto", fontFamily: C.font, fontSize: 11,
     color: C.fg, WebkitFontSmoothing: "antialiased", userSelect: "none",
     zIndex: 2147483647,
+    animation: "canvasPanelSlideInLeft 260ms cubic-bezier(0.16, 1, 0.3, 1) both",
   };
 }
 

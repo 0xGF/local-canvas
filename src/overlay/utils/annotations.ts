@@ -287,10 +287,25 @@ export function findAllElementsForAnnotation(
 
 export function findElementForAnnotation(a: Pick<Annotation, "elementPath">): HTMLElement | null {
   if (!a.elementPath) return null;
-  const lastColon = a.elementPath.lastIndexOf(":");
+  // Allow a trailing `#N` occurrence suffix to disambiguate multiple
+  // elements sharing the same source (e.g. two <LoopingClip/> instances
+  // both rendering a <video data-source-line="57">). Without this the
+  // `querySelector` always returns the first match, and annotating any
+  // instance pins to the first one on the page.
+  let path = a.elementPath;
+  let index = 0;
+  const hash = path.lastIndexOf("#");
+  if (hash >= 0) {
+    const n = parseInt(path.slice(hash + 1), 10);
+    if (Number.isFinite(n) && n >= 0) {
+      index = n;
+      path = path.slice(0, hash);
+    }
+  }
+  const lastColon = path.lastIndexOf(":");
   if (lastColon < 0) return null;
-  const file = a.elementPath.slice(0, lastColon);
-  const line = a.elementPath.slice(lastColon + 1);
+  const file = path.slice(0, lastColon);
+  const line = path.slice(lastColon + 1);
   const sel = `[data-source-file="${CSS.escape(file)}"][data-source-line="${CSS.escape(line)}"]`;
 
   const iframe = getEditorIframe();
@@ -300,11 +315,31 @@ export function findElementForAnnotation(a: Pick<Annotation, "elementPath">): HT
 
   for (const doc of docs) {
     try {
-      const el = doc.querySelector(sel) as HTMLElement | null;
-      if (el) return el;
+      const matches = doc.querySelectorAll<HTMLElement>(sel);
+      if (matches.length === 0) continue;
+      return matches[index] ?? matches[0] ?? null;
     } catch { /* ignore invalid selectors */ }
   }
   return null;
+}
+
+/** Count how many elements in the same document share `el`'s source, and
+ *  return `el`'s 0-based index among them in document order. Used to
+ *  disambiguate components that render the same source line multiple
+ *  times on one page. Returns 0 when `el` is unique. */
+export function elementOccurrenceIndex(el: HTMLElement): number {
+  const file = el.getAttribute("data-source-file");
+  const line = el.getAttribute("data-source-line");
+  if (!file || !line) return 0;
+  const sel = `[data-source-file="${CSS.escape(file)}"][data-source-line="${CSS.escape(line)}"]`;
+  const doc = el.ownerDocument;
+  try {
+    const matches = Array.from(doc.querySelectorAll<HTMLElement>(sel));
+    const idx = matches.indexOf(el);
+    return idx < 0 ? 0 : idx;
+  } catch {
+    return 0;
+  }
 }
 
 /**

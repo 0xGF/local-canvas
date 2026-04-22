@@ -72,7 +72,10 @@ export function CommandBar() {
 
   return (
     <div
-      style={{ pointerEvents: "auto" }}
+      style={{
+        pointerEvents: "auto",
+        animation: "canvasCenterDialogEnter 200ms cubic-bezier(0.16, 1, 0.3, 1) both",
+      }}
       data-canvas-overlay="true"
       className="fixed top-1/4 left-1/2 -translate-x-1/2 w-[520px] bg-canvas-bg/95 backdrop-blur-md border border-canvas-border rounded-xl shadow-2xl overflow-hidden"
     >

@@ -42,6 +42,10 @@ const CLUSTER_DISTANCE = PIN_SIZE * 1.5;
 const PIN_REVEAL_STAGGER_MS = 55;
 const PIN_REVEAL_MAX_DELAY_MS = 440;
 const PIN_REVEAL_DURATION_MS = 260;
+// Mid-session pop-in for pins that arrive after the initial reveal window.
+// Slightly longer + bouncier than the boot reveal so a newly-posted
+// annotation visibly asserts itself.
+const PIN_ENTER_DURATION_MS = 380;
 
 interface PinPosition {
   annotation: Annotation;
@@ -205,12 +209,15 @@ interface PinProps {
   isHovered: boolean;
   /** Stagger delay (ms) for the initial reveal; -1 disables the animation. */
   revealDelay: number;
+  /** True while this pin is playing its mid-session pop-in (arrived after
+   *  the initial reveal window closed). Mutually exclusive with revealDelay. */
+  isEntering: boolean;
   /** Size of the stack this pin belongs to. 1 → solo pin (small, no label).
    *  2+ → group pin (normal size, count label). */
   stackSize: number;
 }
 
-const Pin = React.memo(function Pin({ position, isOpen, isFocused, onClick, onHover, onDismiss, isHovered, revealDelay, stackSize }: PinProps) {
+const Pin = React.memo(function Pin({ position, isOpen, isFocused, onClick, onHover, onDismiss, isHovered, revealDelay, isEntering, stackSize }: PinProps) {
   const status = position.annotation.status;
   const colors = pinColors(status);
   const isInProgress = position.annotation.status === "in_progress";
@@ -250,6 +257,12 @@ const Pin = React.memo(function Pin({ position, isOpen, isFocused, onClick, onHo
         animation: [
           revealDelay >= 0
             ? `canvasPinReveal ${PIN_REVEAL_DURATION_MS}ms ease-out ${revealDelay}ms both`
+            : null,
+          // New pin arriving mid-session — bouncy pop-in so the user notices
+          // it even if their eyes aren't on the pin's corner. Takes the
+          // transform channel, so the hover scale snaps back in once it ends.
+          isEntering
+            ? `canvasPinPopIn ${PIN_ENTER_DURATION_MS}ms cubic-bezier(0.34, 1.56, 0.64, 1) both`
             : null,
           isInProgress ? "canvasPinWorking 1.6s ease-in-out infinite" : null,
         ].filter(Boolean).join(", ") || undefined,
@@ -646,6 +659,53 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
     );
     return () => window.clearTimeout(t);
   }, [frameRevealed, positions.length]);
+
+  // Pop-in animation for pins that arrive after the initial reveal window.
+  // `seenIdsRef` tracks which pins we've already shown (so re-ordering or
+  // position shifts don't re-trigger the entrance). `seededRef` ensures the
+  // batch present when the initial reveal finishes is silently marked as
+  // "seen" without replaying the stagger.
+  const [enteringIds, setEnteringIds] = useState<Set<string>>(() => new Set());
+  const seenIdsRef = useRef<Set<string>>(new Set());
+  const seededRef = useRef(false);
+  const enterTimersRef = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    if (!initialRevealDone) {
+      seededRef.current = false;
+      return;
+    }
+    if (!seededRef.current) {
+      seededRef.current = true;
+      for (const p of positions) seenIdsRef.current.add(p.annotation.id);
+      return;
+    }
+    const newIds: string[] = [];
+    for (const p of positions) {
+      if (!seenIdsRef.current.has(p.annotation.id)) {
+        seenIdsRef.current.add(p.annotation.id);
+        newIds.push(p.annotation.id);
+      }
+    }
+    if (newIds.length === 0) return;
+    setEnteringIds((prev) => {
+      const next = new Set(prev);
+      for (const id of newIds) next.add(id);
+      return next;
+    });
+    const timerId = window.setTimeout(() => {
+      enterTimersRef.current.delete(timerId);
+      setEnteringIds((prev) => {
+        const next = new Set(prev);
+        for (const id of newIds) next.delete(id);
+        return next;
+      });
+    }, PIN_ENTER_DURATION_MS + 60);
+    enterTimersRef.current.add(timerId);
+  }, [positions, initialRevealDone]);
+  useEffect(() => () => {
+    for (const t of enterTimersRef.current) window.clearTimeout(t);
+    enterTimersRef.current.clear();
+  }, []);
   const [openId, setOpenId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -868,6 +928,10 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
           from { opacity: 0; }
           to { opacity: 1; }
         }
+        @keyframes canvasPinPopIn {
+          0%   { opacity: 0; transform: scale(0.4); }
+          100% { opacity: 1; transform: scale(1); }
+        }
         @keyframes canvasTypingDot {
           0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
           40%           { opacity: 1;    transform: translateY(-2px); }
@@ -898,6 +962,7 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
             isOpen={openId === p.annotation.id}
             isFocused={focusedId === p.annotation.id}
             revealDelay={revealDelay}
+            isEntering={enteringIds.has(p.annotation.id)}
             stackSize={stackSizeById.get(p.annotation.id) ?? 1}
             onClick={() => {
               const id = p.annotation.id;

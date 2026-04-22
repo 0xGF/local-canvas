@@ -51,9 +51,9 @@ export const useViewportStore = create<ViewportState>((set, get) => ({
     const pageH = container.scrollHeight;
     container.style.transform = prevTransform;
 
-    // Width-only fit. 0.72 leaves horizontal breathing room for the Layers /
+    // Width-only fit. 0.65 leaves horizontal breathing room for the Layers /
     // Properties panels that anchor to the left and right edges in edit mode.
-    const fitZoom = (viewW / pageW) * 0.72;
+    const fitZoom = (viewW / pageW) * 0.65;
     const clampedZoom = Math.max(0.1, Math.min(1, fitZoom));
     const scaledW = pageW * clampedZoom;
     const scaledH = pageH * clampedZoom;

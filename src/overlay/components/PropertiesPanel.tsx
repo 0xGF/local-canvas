@@ -2033,7 +2033,10 @@ function writeShadowLayers(h: ClassHelpers, sel: NonNullable<ReturnType<typeof u
   // targets the exact token on the element.
   const remove = h.classes.filter(c => /^shadow-\[/.test(h.stripBpPrefix(c)));
   const tokens = layers.map(shadowLayerToToken);
-  const add = tokens.length ? [`shadow-[${tokens.join(",")}]`] : undefined;
+  // Concatenate (rather than template-literal) so Tailwind's content scanner
+  // doesn't see a complete arbitrary-value utility and try to compile a CSS
+  // rule containing a literal JS placeholder.
+  const add = tokens.length ? ["shadow-[" + tokens.join(",") + "]"] : undefined;
   h.sendPrefixed({
     type: "modify-class", source: sel.source,
     remove: remove.length ? remove : undefined,
@@ -2247,7 +2250,8 @@ const TransformSection = React.memo(function TransformSection({ h, sel }: { h: C
     h.sendPrefixed({
       type: "modify-class", source: sel.source,
       remove: remove.length ? remove : undefined,
-      add: [`rotate-[${Math.round(n)}deg]`],
+      // Concat (not template-literal) so Tailwind's scanner doesn't compile this.
+      add: ["rotate-[" + Math.round(n) + "deg]"],
     });
   }, [h, sel.source]);
 

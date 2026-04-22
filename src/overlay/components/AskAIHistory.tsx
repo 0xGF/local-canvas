@@ -13,6 +13,7 @@ import {
   listAgentUndoEntries,
   undoAgentChange,
   simulateAgentEdit,
+  clearAllAgentationSessions,
   type Annotation,
   type AgentUndoEntry,
 } from "../utils/agentation.js";
@@ -162,6 +163,8 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => getHiddenAnnotationIds());
   const [loading, setLoading] = useState(false);
   const [undoEntries, setUndoEntries] = useState<AgentUndoEntry[]>([]);
+  const [confirmingClearAll, setConfirmingClearAll] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const showToast = useEditorStore(s => s.showToast);
 
@@ -302,13 +305,75 @@ export const AskAIHistory = React.memo(function AskAIHistory({ renderButton }: P
                     }}>{visible.length}</span>
                   )}
                 </span>
-                <button
-                  onClick={() => setOpen(false)}
-                  style={{ background: "none", border: "none", color: C.fgMuted, cursor: "pointer", padding: 2 }}
-                >
-                  <X size={12} />
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                  <button
+                    onClick={() => setConfirmingClearAll(true)}
+                    title="Delete every annotation across every session"
+                    style={{ background: "none", border: "none", color: C.fgMuted, cursor: "pointer", padding: 2, display: "flex" }}
+                    onMouseEnter={e => { e.currentTarget.style.color = C.danger; }}
+                    onMouseLeave={e => { e.currentTarget.style.color = C.fgMuted; }}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                  <button
+                    onClick={() => setOpen(false)}
+                    style={{ background: "none", border: "none", color: C.fgMuted, cursor: "pointer", padding: 2 }}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
               </div>
+
+              {confirmingClearAll && (
+                <div style={{
+                  padding: "10px 12px",
+                  borderBottom: `1px solid ${C.borderLight}`,
+                  background: "rgba(242,72,34,0.08)",
+                  display: "flex", flexDirection: "column", gap: 8,
+                }}>
+                  <span style={{ fontSize: 11, color: C.fg, lineHeight: 1.4 }}>
+                    Delete every annotation across every session? This cannot be undone.
+                  </span>
+                  <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                    <button
+                      onClick={() => setConfirmingClearAll(false)}
+                      disabled={clearing}
+                      style={{
+                        height: 22, padding: "0 8px", borderRadius: 4,
+                        border: `1px solid ${C.border}`, background: "transparent",
+                        color: C.fgDim, fontFamily: C.font, fontSize: 10,
+                        cursor: clearing ? "default" : "pointer",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={async () => {
+                        setClearing(true);
+                        const result = await clearAllAgentationSessions();
+                        setClearing(false);
+                        setConfirmingClearAll(false);
+                        if (!result) {
+                          showToast("Couldn't clear sessions (server unreachable?)");
+                          return;
+                        }
+                        setHiddenIds(new Set());
+                        showToast(`Cleared ${result.deletedAnnotations} annotation${result.deletedAnnotations === 1 ? "" : "s"} across ${result.sessions} session${result.sessions === 1 ? "" : "s"}`);
+                        refresh();
+                      }}
+                      disabled={clearing}
+                      style={{
+                        height: 22, padding: "0 10px", border: "none", borderRadius: 4,
+                        background: C.danger, color: "#fff",
+                        fontFamily: C.font, fontSize: 10, fontWeight: 600,
+                        cursor: clearing ? "default" : "pointer", opacity: clearing ? 0.6 : 1,
+                      }}
+                    >
+                      {clearing ? "Clearing…" : "Clear all"}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {latestUndoId && (
                 <div style={{

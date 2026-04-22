@@ -156,6 +156,17 @@ export async function createServer(options: ServerOptions) {
       });
       return;
     }
+    if (req.url === "/__canvas/clear-agentation-sessions" && req.method === "POST") {
+      if (!isLocalSameOrigin(req, serverPort)) { res.writeHead(403).end(); return; }
+      clearAllAgentationAnnotations().then((result) => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, ...result }));
+      }).catch((err) => {
+        res.writeHead(502, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: String(err) }));
+      });
+      return;
+    }
     if (req.url === "/__canvas/agent-undo" && req.method === "POST") {
       if (!isLocalSameOrigin(req, serverPort)) { res.writeHead(403).end(); return; }
       readJsonBody(req).then((raw) => {
@@ -272,5 +283,30 @@ function readJsonBody(req: import("http").IncomingMessage): Promise<unknown> {
     });
     req.on("error", reject);
   });
+}
+
+/** Delete every annotation across every session on the local agentation server
+ *  (port 6967). The agentation HTTP API has no bulk-delete or session-delete
+ *  endpoint, so we walk sessions → annotations → DELETE /annotations/:id. The
+ *  empty session shells stay behind (harmless — next POST to /sessions for a
+ *  given URL just reuses or recreates one), but the history popover renders
+ *  empty once annotations are gone, which is the user-visible goal. */
+async function clearAllAgentationAnnotations(): Promise<{ deletedAnnotations: number; sessions: number }> {
+  const base = "http://localhost:6967";
+  const sessionsRes = await fetch(`${base}/sessions`);
+  if (!sessionsRes.ok) throw new Error(`agentation sessions list: ${sessionsRes.status}`);
+  const sessions = await sessionsRes.json() as Array<{ id: string }>;
+  let deleted = 0;
+  for (const s of sessions) {
+    const detailRes = await fetch(`${base}/sessions/${s.id}`);
+    if (!detailRes.ok) continue;
+    const detail = await detailRes.json() as { annotations?: Array<{ id: string }> };
+    const annotations = detail.annotations || [];
+    for (const a of annotations) {
+      const delRes = await fetch(`${base}/annotations/${a.id}`, { method: "DELETE" });
+      if (delRes.ok) deleted++;
+    }
+  }
+  return { deletedAnnotations: deleted, sessions: sessions.length };
 }
 

@@ -203,6 +203,29 @@ export function unhideAllAnnotations() {
   writeHidden(new Set());
 }
 
+/**
+ * Destructive: ask the local editor server to delete every annotation across
+ * every session on the agentation server. Resets in-memory session state so
+ * the next annotation post opens a fresh session, and clears the local
+ * "hidden" set (those IDs are gone server-side now — no point tracking them).
+ *
+ * Returns the count of annotations actually deleted, or null on failure.
+ */
+export async function clearAllAgentationSessions(): Promise<{ deletedAnnotations: number; sessions: number } | null> {
+  try {
+    const res = await fetch("/__canvas/clear-agentation-sessions", { method: "POST" });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data?.ok) return null;
+    _sessionId = null;
+    _sessionUrl = null;
+    writeHidden(new Set());
+    return { deletedAnnotations: data.deletedAnnotations, sessions: data.sessions };
+  } catch {
+    return null;
+  }
+}
+
 // ── Cross-component event: open a pin's popover ──
 export function dispatchOpenAnnotationPin(annotationId: string) {
   window.dispatchEvent(new CustomEvent("canvas:open-annotation-pin", {

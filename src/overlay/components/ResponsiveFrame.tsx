@@ -26,6 +26,8 @@ function getBreakpointLabel(width: number): string {
 export const ResponsiveFrame = React.memo(function ResponsiveFrame() {
   const breakpoint = useEditorStore((s) => s.breakpoint);
   const mode = useEditorStore((s) => s.mode);
+  const selectElement = useEditorStore((s) => s.selectElement);
+  const setHoveredElement = useEditorStore((s) => s.setHoveredElement);
 
   // Hide #root — the iframe replaces it
   useEffect(() => {
@@ -36,6 +38,15 @@ export const ResponsiveFrame = React.memo(function ResponsiveFrame() {
       if (appRoot) appRoot.style.display = "";
     };
   }, [mode]);
+
+  // Clear selection + hover on breakpoint change — the iframe remounts with
+  // a fresh DOM, so any carried-over selection refers to a stale element.
+  // Without this, the overlay paints resize handles in the top-left corner
+  // of the newly-loading frame (element rect collapses to 0,0).
+  useEffect(() => {
+    selectElement(null);
+    setHoveredElement(null);
+  }, [breakpoint, selectElement, setHoveredElement]);
 
   if (mode !== "edit") return null;
 
@@ -49,19 +60,23 @@ export const ResponsiveFrame = React.memo(function ResponsiveFrame() {
 
 const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width: number }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  // Needs a non-zero default so scrollHeight measurement works for
-  // vh-based layouts (at iframe height 0, `100vh` sections collapse to 0
-  // and scrollHeight returns bogus values). 1000 is a reasonable viewport
-  // that most pages will either match or grow beyond.
-  const heightRef = useRef(1000);
+  // Start at 0 — the frame unfurls from 0 to the iframe's measured
+  // scrollHeight on load. The injected `.h-screen` / `.min-h-screen`
+  // override (see onLoad below) prevents vh-based layouts from
+  // collapsing to 0 at this viewport, so scrollHeight still reports
+  // the real natural content size from the very first measurement.
+  const heightRef = useRef(0);
   const measuredRef = useRef(false);
-  const [height, setHeight] = useState(1000);
+  // True once the initial 0→real transition has completed. Subsequent
+  // height changes (padding updates, HMR) snap instead of animating,
+  // so the canvas doesn't replay a long transition every measurement.
+  const settledRef = useRef(false);
+  const [height, setHeight] = useState(0);
+  const [settled, setSettled] = useState(false);
   const [loaded, setLoaded] = useState(false);
   // Flips true the first time we read a real scrollHeight from the iframe.
-  // The visible frame stays at opacity 0 until then, so the user never
-  // sees it morph from the 1000px placeholder to the real page height —
-  // a fullscreen halftone covers the viewport and fades out only after
-  // the frame is sized correctly and fitToPage has run.
+  // The halftone fade only starts after this, so the reveal never lands
+  // on the 1000px placeholder height.
   const [measured, setMeasured] = useState(false);
   const [loaderMounted, setLoaderMounted] = useState(true);
   const [wiping, setWiping] = useState(false);
@@ -70,19 +85,42 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
 
   const frameUrl = `${location.origin}${location.pathname}?__canvas_no_overlay`;
 
-  // Reveal sequence once the iframe's real height is known:
-  //   1. fitToPage — zoom/pan to fit the real frame size.
-  //   2. Next frame: fade frame in, start halftone wipe.
-  //   3. Unmount halftone after fade completes.
-  // fitToPage is intentionally NOT called on mount anymore — fitting to
-  // the 1000px placeholder before the real height lands makes the frame
-  // appear to grow past the initial viewport when it resizes.
+  // Before the frame is measured, park the viewport at the top — otherwise
+  // a persisted panY (from a previous session that fit a tall frame) leaves
+  // the label centered vertically, so the 0-height frame unfurls from the
+  // middle of the viewport instead of from the top. Runs once on mount.
   useEffect(() => {
-    if (!measured) { setLoaderMounted(true); setWiping(false); return; }
+    const vp = useViewportStore.getState();
+    vp.setPan(vp.panX, 40);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Reveal sequence once the iframe's real height has landed:
+  //   1. fitToPage — zoom/pan to fit the real frame size.
+  //   2. Height transitions 0 → real over 500ms (single smooth unfurl).
+  //   3. After the transition completes, freeze further transitions so
+  //      subsequent polling measurements snap instead of re-animating.
+  //   4. Halftone fades out after the transition settles.
+  //   5. Unmount halftone after fade completes.
+  useEffect(() => {
+    if (!measured) {
+      setLoaderMounted(true);
+      setWiping(false);
+      setSettled(false);
+      settledRef.current = false;
+      return;
+    }
     requestAnimationFrame(() => useViewportStore.getState().fitToPage());
-    const fadeStart = setTimeout(() => setWiping(true), 120);
-    const unmount = setTimeout(() => setLoaderMounted(false), 560);
+    // Freeze the transition shortly after it should have finished so later
+    // scrollHeight nudges (images loading, HMR) don't restart the animation.
+    const lock = setTimeout(() => {
+      settledRef.current = true;
+      setSettled(true);
+    }, 560);
+    const fadeStart = setTimeout(() => setWiping(true), 560);
+    const unmount = setTimeout(() => setLoaderMounted(false), 1120);
     return () => {
+      clearTimeout(lock);
       clearTimeout(fadeStart);
       clearTimeout(unmount);
     };
@@ -411,10 +449,6 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
         alignItems: "center",
         padding: 40,
         pointerEvents: "auto",
-        // Hidden until the real height lands + viewport fits. Prevents any
-        // visible morph from the 1000px placeholder default.
-        opacity: measured ? 1 : 0,
-        transition: "opacity 260ms ease-out",
       }}
     >
       {/* Label */}
@@ -442,31 +476,62 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
           width,
           height,
           position: "relative",
+          transition: settled ? undefined : "height 500ms cubic-bezier(0.22, 0.8, 0.2, 1)",
         }}
       >
-        {/* Frame — holds the iframe. A fullscreen halftone covers the
-            viewport during load (see sibling below), so the iframe fades
-            in at the correct size along with the container, with no
-            in-frame loader to coordinate. Card shadow fades in on load. */}
+        {/* Frame — holds the iframe. The loading halftone is layered on
+            top as a sibling below, scoped to this same rect, so the cover
+            + reveal effect stays inside the canvas area instead of bleeding
+            across the editor chrome. A 1px ring delineates the canvas
+            boundary against the dark editor background. */}
+        {/* Frame card sizes purely via `absolute inset-0` so it tracks the
+             wrap's transitioning height exactly. Setting inline height here
+             would override `bottom: 0` and snap the card to its final size
+             while the wrap is still animating, exposing iframe content below
+             the halftone cover during the unfurl. */}
         <div
           className={[
             "absolute inset-0 overflow-hidden rounded-lg",
+            "ring-1 ring-white/10",
             "transition-[background-color,box-shadow] duration-[350ms] ease-out",
             loaded
               ? "bg-white shadow-[0_4px_32px_rgba(0,0,0,0.4)]"
               : "bg-transparent shadow-none",
           ].join(" ")}
-          style={{ width, height }}
         >
           <iframe
             ref={iframeRef}
             src={frameUrl}
             scrolling="no"
             className="block border-0 overflow-hidden"
-            style={{ width, height }}
+            style={{
+              width,
+              height,
+              transition: settled ? undefined : "height 500ms cubic-bezier(0.22, 0.8, 0.2, 1)",
+            }}
             title={`${width}px preview`}
           />
         </div>
+
+        {/* Frame-scoped halftone cover — sits on top of the iframe and
+            beneath the overlay canvas, so the loading/reveal effect only
+            fills the canvas (iframe) rect rather than the whole viewport.
+            Fades out via `wiping` once the iframe has measured. */}
+        {loaderMounted && (
+          <div
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 1,
+              pointerEvents: wiping ? "none" : "auto",
+              overflow: "hidden",
+              borderRadius: 8,
+            }}
+          >
+            <HalftoneLoader wiping={wiping} rounded="" />
+          </div>
+        )}
 
         {/* Overlay canvas — sibling of the frame-div (not the iframe),
             so it composites above the iframe. Shares the same CSS
@@ -485,8 +550,13 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
             width,
             height,
             pointerEvents: "none",
-            // Canvas visibility is driven by the container's opacity fade
-            // (gated on `measured`) — no separate transition needed here.
+            // Hide overlay drawings (selection handles, hover outlines,
+            // badges) while the halftone covers the frame — otherwise on
+            // breakpoint change the re-mounted iframe's stale element refs
+            // paint resize handles in the top-left corner before the
+            // halftone has revealed. Fades in with the wipe.
+            opacity: loaderMounted ? 0 : 1,
+            transition: "opacity 220ms ease-out",
           }}
         >
           {HAS_DRAW_ELEMENT && (
@@ -525,25 +595,6 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
         </canvas>
       </div>
     </div>
-    {/* Fullscreen halftone cover — sits outside the transformed
-        responsive-frame-container so `position: fixed` behaves correctly
-        (CSS transforms on ancestors turn fixed into absolute). Covers the
-        viewport while the iframe's real height is being measured + the
-        viewport is fit, then fades out revealing the already-sized frame
-        underneath. No size morph visible to the user. */}
-    {loaderMounted && (
-      <div
-        aria-hidden="true"
-        style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 10,
-          pointerEvents: wiping ? "none" : "auto",
-        }}
-      >
-        <HalftoneLoader wiping={wiping} rounded="" />
-      </div>
-    )}
     </>
   );
 });

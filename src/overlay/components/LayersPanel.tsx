@@ -9,6 +9,7 @@ import {
   ChevronDown, ChevronRight, X, Search,
   Type, Square, Component, Code,
   ImageIcon, Heading1, ListIcon, MousePointerClick, Braces, LinkIcon,
+  Loader2,
 } from "./icons.js";
 const C = THEME;
 const EXPAND_KEY = "layers-expanded";
@@ -16,6 +17,17 @@ const EXPAND_KEY = "layers-expanded";
 // Accent for component rows — matches the purple already used for breakpoint
 // badges elsewhere in the overlay (keeps the visual vocabulary consistent).
 const COMPONENT_COLOR = "#a855f7";
+
+// Initial row reveal timing. Capped max-delay so a massive tree still finishes
+// staggering in well under a second; rows past the cap all land at max-delay.
+const REVEAL_STAGGER_MS = 10;
+const REVEAL_MAX_DELAY_MS = 350;
+const REVEAL_DURATION_MS = 200;
+
+// Grace period before showing the "no source-mapped elements" empty message
+// while the iframe is still loading its tree. Anything shorter flashes the
+// message on every open; anything longer feels stuck.
+const EMPTY_MESSAGE_DELAY_MS = 700;
 
 // ── Row icons by tag ────────────────────────────────────────────────────────
 function RowIcon({ tagName, isComponent }: { tagName: string; isComponent: boolean }) {
@@ -200,6 +212,33 @@ export const LayersPanel = React.memo(function LayersPanel() {
     [filteredTree, expandedForRender],
   );
 
+  // Initial row reveal — stagger rows in from the top the first time the
+  // tree populates after the panel opens. Once the stagger finishes we stop
+  // applying the animation so DOM mutations don't re-animate every row.
+  const [initialRevealDone, setInitialRevealDone] = useState(false);
+  useEffect(() => {
+    if (!open) setInitialRevealDone(false);
+  }, [open]);
+  useEffect(() => {
+    if (!open || initialRevealDone || rows.length === 0) return;
+    const lastDelay = Math.min((rows.length - 1) * REVEAL_STAGGER_MS, REVEAL_MAX_DELAY_MS);
+    const t = window.setTimeout(
+      () => setInitialRevealDone(true),
+      lastDelay + REVEAL_DURATION_MS + 50,
+    );
+    return () => window.clearTimeout(t);
+  }, [open, rows.length, initialRevealDone]);
+
+  // Delay showing the "no source-mapped elements" fallback so it doesn't
+  // flash during the iframe's initial tree-build window.
+  const [graceExpired, setGraceExpired] = useState(false);
+  useEffect(() => {
+    if (!open) { setGraceExpired(false); return; }
+    const t = window.setTimeout(() => setGraceExpired(true), EMPTY_MESSAGE_DELAY_MS);
+    return () => window.clearTimeout(t);
+  }, [open]);
+  const isInitialLoading = tree.length === 0 && !graceExpired;
+
   // Scroll selected row into view (after layout)
   useEffect(() => {
     if (!selectedPath.path || !listRef.current) return;
@@ -354,29 +393,44 @@ export const LayersPanel = React.memo(function LayersPanel() {
         onMouseLeave={() => setHovered(null)}
       >
         {rows.length === 0 && (
-          <div style={{
-            padding: "24px 14px", fontSize: 11, color: C.fgMuted,
-            textAlign: "center", lineHeight: 1.5,
-          }}>
-            {tree.length === 0 ? (
-              <>
-                <div style={{ color: C.fgDim, marginBottom: 4 }}>
-                  No source-mapped elements found.
-                </div>
-                <div style={{ fontSize: 10 }}>
-                  Waiting for the preview iframe to load. If this persists, make
-                  sure the local-canvas plugin is enabled in your dev config.
-                </div>
-              </>
-            ) : "No matches."}
-          </div>
+          isInitialLoading ? (
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              padding: "32px 14px", color: C.fgMuted,
+            }}>
+              <Loader2
+                size={14}
+                style={{ animation: "layerSpin 900ms linear infinite" }}
+              />
+            </div>
+          ) : (
+            <div style={{
+              padding: "24px 14px", fontSize: 11, color: C.fgMuted,
+              textAlign: "center", lineHeight: 1.5,
+            }}>
+              {tree.length === 0 ? (
+                <>
+                  <div style={{ color: C.fgDim, marginBottom: 4 }}>
+                    No source-mapped elements found.
+                  </div>
+                  <div style={{ fontSize: 10 }}>
+                    Waiting for the preview iframe to load. If this persists, make
+                    sure the local-canvas plugin is enabled in your dev config.
+                  </div>
+                </>
+              ) : "No matches."}
+            </div>
+          )
         )}
-        {rows.map((row) => {
+        {rows.map((row, index) => {
           const { node, depth } = row;
           const isExpanded = expandedForRender.has(node.path);
           const hasChildren = node.children.length > 0;
           const isSelected = selectedPath.path === node.path;
           const isHovered = hoveredPath === node.path;
+          const revealDelay = initialRevealDone
+            ? -1
+            : Math.min(index * REVEAL_STAGGER_MS, REVEAL_MAX_DELAY_MS);
           return (
             <Row
               key={node.path}
@@ -386,6 +440,7 @@ export const LayersPanel = React.memo(function LayersPanel() {
               isExpanded={isExpanded}
               isSelected={isSelected}
               isHovered={isHovered}
+              revealDelay={revealDelay}
               onToggle={toggleExpanded}
               onSelect={handleRowSelect}
               onHoverEnter={handleRowHoverEnter}
@@ -415,13 +470,15 @@ interface RowProps {
   isExpanded: boolean;
   isSelected: boolean;
   isHovered: boolean;
+  /** Stagger delay in ms for the initial reveal; -1 disables the animation. */
+  revealDelay: number;
   onToggle: (path: string) => void;
   onSelect: (node: TreeNode, event: React.MouseEvent) => void;
   onHoverEnter: (el: HTMLElement) => void;
 }
 
 const Row = React.memo(function Row({
-  node, depth, hasChildren, isExpanded, isSelected, isHovered,
+  node, depth, hasChildren, isExpanded, isSelected, isHovered, revealDelay,
   onToggle, onSelect, onHoverEnter,
 }: RowProps) {
   const background = isSelected
@@ -444,6 +501,10 @@ const Row = React.memo(function Row({
         height: 26, cursor: "pointer",
         background, color: C.fg,
         transition: "background 80ms linear",
+        ...(revealDelay >= 0 && {
+          animation: `layerRowReveal ${REVEAL_DURATION_MS}ms ease-out both`,
+          animationDelay: `${revealDelay}ms`,
+        }),
       }}
     >
       {/* Selected indicator — inset, doesn't shift layout */}

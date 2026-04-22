@@ -79,9 +79,11 @@ describe("LayersPanel", () => {
     expect(getByPlaceholderText("Filter layers")).toBeTruthy();
   });
 
-  it("shows an empty-state message when no source-mapped elements exist", () => {
-    const { getByText } = render(<LayersPanel />);
-    expect(getByText(/No source-mapped elements/i)).toBeTruthy();
+  it("shows an empty-state message when no source-mapped elements exist", async () => {
+    const { findByText } = render(<LayersPanel />);
+    // The empty message is gated behind a short grace window so it doesn't
+    // flash during the iframe's initial load; wait for it to surface.
+    expect(await findByText(/No source-mapped elements/i, {}, { timeout: 1500 })).toBeTruthy();
   });
 
   it("renders the root using its component name and children with their tag names", () => {

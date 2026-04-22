@@ -581,8 +581,8 @@
  * No mount animation — the loader paints fully opaque from first frame,
  * otherwise the iframe underneath ghosts through during any fade-in. */
 @keyframes halftone-shimmer-sweep {
-  0%   { background-position: 220% 0; }
-  100% { background-position: -120% 0; }
+  0%   { background-position: 0 220%; }
+  100% { background-position: 0 -120%; }
 }
 
 .halftone-loader {
@@ -595,16 +595,43 @@
    * user can start interacting with the live page as it reveals. */
   pointer-events: auto;
   background: #1f2126;
-  /* Simple opacity fade on reveal — the iframe sits underneath at full
-   * opacity, so fading the halftone uncovers it directly. No height
-   * transition or clip-path wipe since both caused visible lag (forced
-   * iframe reflows, heavy compositing) without adding much visual value. */
-  opacity: 1;
-  transition: opacity 380ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* Top-to-bottom soft wipe via linear-gradient mask.
+   * Mask is 300% tall:
+   *   0%..33%   fully transparent   (halftone hidden)
+   *   33%..67%  gradient            (soft feathered edge)
+   *   67%..100% fully black         (halftone visible)
+   * At mask-position 0 100% the black region covers the element — halftone
+   * fully visible. Animating to 0 0 slides the mask down so the transparent
+   * portion sweeps across from top to bottom, lightening the halftone and
+   * revealing the iframe progressively from the top. */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    transparent 33%,
+    #000 67%,
+    #000 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    transparent 33%,
+    #000 67%,
+    #000 100%
+  );
+  -webkit-mask-size: 100% 300%;
+  mask-size: 100% 300%;
+  -webkit-mask-position: 0 100%;
+  mask-position: 0 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  transition:
+    -webkit-mask-position 520ms cubic-bezier(0.4, 0, 0.2, 1),
+    mask-position 520ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .halftone-loader.wiping {
-  opacity: 0;
+  -webkit-mask-position: 0 0;
+  mask-position: 0 0;
 }
 
 /* Static faint-blue dot grid — tiny dots, visible baseline */
@@ -620,26 +647,41 @@
   background-size: 11px 11px;
 }
 
-/* Blue shimmer wave, clipped to the same dot grid via mask */
+/* Blue shimmer wave sweeping top-to-bottom, clipped to the same dot
+ * grid via mask. Gradient is now vertical (180deg) and the background
+ * is stretched on the Y axis so the keyframe animation moves along Y. */
 .halftone-loader::after {
   content: "";
   position: absolute;
   inset: 0;
   background: linear-gradient(
-    100deg,
+    180deg,
     transparent 0%,
     transparent 38%,
     rgba(170, 210, 245, 0.55) 50%,
     transparent 62%,
     transparent 100%
   );
-  background-size: 240% 100%;
-  background-position: 220% 0;
+  background-size: 100% 240%;
+  background-position: 0 220%;
   -webkit-mask-image: radial-gradient(circle, #000 10%, transparent 14%);
   mask-image: radial-gradient(circle, #000 10%, transparent 14%);
   -webkit-mask-size: 11px 11px;
   mask-size: 11px 11px;
   animation: halftone-shimmer-sweep 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+/* Layers-panel initial row reveal — staggered fade/slide-in from the top.
+ * Only applied on first population of the tree; subsequent mutations render
+ * without animation. Delay is capped so massive trees still finish quickly. */
+@keyframes layerRowReveal {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes layerSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 @keyframes tooltipIn {

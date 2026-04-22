@@ -3,10 +3,10 @@ import { CodeBlock } from "../components/CodeBlock";
 
 export default function Overview() {
   return (
-    <div className="max-w-[680px] px-6 pt-12 pb-16 space-y-8" style={{ paddingBottom: "0px" }}>
+    <div className="max-w-[680px] px-6 2xl:pt-12 2xl:pb-16 space-y-8 2xl:pb-[66px] 2xl:pb-1.5 2xl:pb-[113px] 2xl:pb-[89px] 2xl:pb-[73px] 2xl:pb-[58px] 2xl:pb-11 py-[60px]" style={{ paddingBottom: "37px" }}>
       <div className="xl:mb-2.5">
         <h1 className="text-2xl font-bold tracking-tight xl:mb-3 xl:contrast-79 xl:contrast-101">Introduction</h1>
-        <p className="text-[15px] text-neutral-500 leading-relaxed xl:outline-[#000000]">
+        <p className="text-[15px] text-neutral-500 leading-relaxed xl:outline-[#000000] 2xl:mt-[5px]">
           <strong className="text-neutral-800">Canvas Editor is a visual editing overlay for React.</strong>{" "}
           Select any element, tweak its Tailwind classes, drag to reorder — every
           change modifies your actual source files via AST mutations. It runs as

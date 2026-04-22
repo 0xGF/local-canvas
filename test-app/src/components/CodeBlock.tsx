@@ -29,7 +29,7 @@ export function CodeBlock({
         >
           {copied ? "Copied" : "Copy"}
         </button>
-        <pre className="font-mono text-[13px] leading-relaxed xl:text-[#D6D3D1] overflow-x-auto whitespace-pre">
+        <pre className="font-mono text-[13px] leading-relaxed text-[#FFF0E6] overflow-x-auto whitespace-pre text-[#FFFFFF]">
           {code}
         </pre>
       </div>

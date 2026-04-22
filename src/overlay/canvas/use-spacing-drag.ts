@@ -268,13 +268,21 @@ export function useSpacingDrag(
         // Top margin: drag down = increase. Bottom margin: drag up = increase.
         // Gap-x: drag right = increase. Gap-y: drag down = increase.
         const side = sd.badge.side;
+        const type = sd.badge.type;
         const isHorizontal = side === "left" || side === "right" || side === "x";
         let rawDelta: number;
         if (isHorizontal) {
           rawDelta = side === "right" ? (sd.startX - e.clientX) : (e.clientX - sd.startX);
         } else {
-          // Top/bottom/y: drag down = increase.
-          rawDelta = e.clientY - sd.startY;
+          // Outward-pull convention: dragging AWAY from the element grows the
+          // zone. Top padding badge sits inside near the top edge, so outward
+          // is down; top margin badge sits above the element, so outward is
+          // up. Bottom flips both. Gap-y keeps drag-down-increases.
+          const dy = e.clientY - sd.startY;
+          const invert =
+            (side === "top" && type === "margin") ||
+            (side === "bottom" && type === "padding");
+          rawDelta = invert ? -dy : dy;
         }
         if (Math.abs(rawDelta) > 3) sd.moved = true;
         if (!sd.moved) return;

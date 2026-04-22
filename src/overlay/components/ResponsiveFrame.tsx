@@ -133,9 +133,25 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
 
       // Dynamic height. First valid read also flips `measured`, which
       // triggers fitToPage + the halftone fade reveal.
+      //
+      // Why so many measurements: Chromium has a long-standing quirk where
+      // `scrollHeight` on a flex/grid column container excludes trailing
+      // `padding-bottom` of the container (content + top padding only). A page
+      // whose body/root is `flex flex-col py-48 …` will report scrollHeight
+      // short by 192px, cropping the frame and clipping the overlay. BCR bottom
+      // and offsetHeight both include the padding, so we take the max.
       const updateHeight = () => {
         void doc.body.offsetHeight;
-        const h = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight, doc.body.offsetHeight);
+        const bodyBcr = doc.body.getBoundingClientRect().bottom;
+        const docBcr = doc.documentElement.getBoundingClientRect().bottom;
+        const h = Math.max(
+          doc.body.scrollHeight,
+          doc.documentElement.scrollHeight,
+          doc.body.offsetHeight,
+          doc.documentElement.offsetHeight,
+          bodyBcr,
+          docBcr,
+        );
         if (h > 0 && h !== heightRef.current) { heightRef.current = h; setHeight(h); }
         if (h > 0 && !measuredRef.current) {
           measuredRef.current = true;

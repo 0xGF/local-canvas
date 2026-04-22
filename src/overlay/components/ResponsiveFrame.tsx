@@ -152,7 +152,23 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
           bodyBcr,
           docBcr,
         );
-        if (h > 0 && h !== heightRef.current) { heightRef.current = h; setHeight(h); }
+        if (h > 0 && h !== heightRef.current) {
+          const grew = h > heightRef.current;
+          heightRef.current = h;
+          setHeight(h);
+          // During the initial settle window the first measurement often
+          // lands before Tailwind + React hydration finish pushing the
+          // layout to its real height (common symptom: `pb-16` on the
+          // outer page doesn't make it into the initial fit, so the
+          // bottom padding ends up off-screen beneath the toolbar).
+          // fitToPage normally only runs once on `measured`; re-run it
+          // while we're still settling so the viewport keeps up with the
+          // post-measure growth. Once `settledRef` flips true (see the
+          // lock timer keyed on `measured`), user zoom/pan is respected.
+          if (grew && !settledRef.current && measuredRef.current) {
+            requestAnimationFrame(() => useViewportStore.getState().fitToPage());
+          }
+        }
         if (h > 0 && !measuredRef.current) {
           measuredRef.current = true;
           setMeasured(true);

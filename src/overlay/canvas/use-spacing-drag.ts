@@ -151,6 +151,13 @@ export function useSpacingDrag(
     // sibling of the iframe inside the transformed container — see CLAUDE.md).
     // Cursor events here arrive in outer-screen coords via translateCoords:true.
     // Translate the cursor into iframe-doc space before comparing to hit rects.
+    function setCursorEverywhere(c: string) {
+      document.body.style.cursor = c;
+      // Iframe content owns the cursor when the pointer is over it, so
+      // the parent-body cursor alone never shows through for hover hints.
+      const idoc = getIframeDocument();
+      if (idoc?.body) idoc.body.style.cursor = c;
+    }
     function toIframeDoc(x: number, y: number): { x: number; y: number } {
       const iframe = getEditorIframe();
       if (!iframe) return { x, y };
@@ -202,7 +209,7 @@ export function useSpacingDrag(
         const hadInlineStyleAtStart = !!(inlineKey && curSel?.element &&
           sourceStyleHasProperty(curSel.element, camelToKebabCss(inlineKey)));
         spacingDragRef.current = { badge, startX: e.clientX, startY: e.clientY, startValue: badge.value, moved: false, lastPx: badge.value, isTrusted: e.isTrusted, hadInlineStyleAtStart };
-        document.body.style.cursor = isHoriz ? "ew-resize" : "ns-resize";
+        setCursorEverywhere(isHoriz ? "ew-resize" : "ns-resize");
         document.body.style.userSelect = "none";
         setStyleProp(document.body, "webkitUserSelect", "none");
         return;
@@ -227,7 +234,7 @@ export function useSpacingDrag(
             cursorX: e.clientX, cursorY: e.clientY,
             ghostW: er.width * ifs, ghostH: er.height * ifs,
           };
-          document.body.style.cursor = "grabbing";
+          setCursorEverywhere("grabbing");
           document.body.style.userSelect = "none";
         }
       }
@@ -349,14 +356,20 @@ export function useSpacingDrag(
         return;
       }
 
-      // Cursor hints
-      if (hitTestBadge(e.clientX, e.clientY)) {
-        document.body.style.cursor = "ns-resize";
+      // Cursor hints. Setting `document.body.style.cursor` alone has no
+      // effect while the mouse is over the iframe — iframe content uses
+      // its own document's cursor — so mirror the cursor onto the iframe's
+      // body too. We also branch on axis here (the previous code always
+      // used ns-resize, which looked wrong on left/right spacing pins).
+      const bh = hitTestBadge(e.clientX, e.clientY);
+      let cursor = "";
+      if (bh) {
+        const isHoriz = bh.side === "left" || bh.side === "right";
+        cursor = isHoriz ? "ew-resize" : "ns-resize";
       } else if (hitTestTag(e.clientX, e.clientY)) {
-        document.body.style.cursor = "grab";
-      } else {
-        document.body.style.cursor = "";
+        cursor = "grab";
       }
+      setCursorEverywhere(cursor);
     }
 
     // Suppress the next click after a drag so it doesn't select a different element.
@@ -452,7 +465,7 @@ export function useSpacingDrag(
         }
         spacingDragRef.current = null;
         setDragTooltip(null);
-        document.body.style.cursor = "";
+        setCursorEverywhere("");
         document.body.style.userSelect = "";
         setStyleProp(document.body, "webkitUserSelect", "");
         return;
@@ -497,7 +510,7 @@ export function useSpacingDrag(
       }
       reorderRef.current = null;
       setReorderLine(null);
-      document.body.style.cursor = "";
+      setCursorEverywhere("");
       document.body.style.userSelect = "";
     }
 

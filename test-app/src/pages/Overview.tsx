@@ -23,7 +23,7 @@ export default function Overview() {
       <hr className="border-neutral-200" />
 
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold tracking-tight">The canvas is the point</h2>
+        <h2 className="text-lg font-semibold tracking-tight 2xl:text-left 2xl:text-[15px] 2xl:text-[23px]">The canvas is the point</h2>
         <p className="text-[14px] text-neutral-600 leading-relaxed">
           The editing chrome — hover outlines, selection outlines, spacing
           badges, resize grips, dimension readouts, drag value pills, zero-value

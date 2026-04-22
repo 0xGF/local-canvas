@@ -31,12 +31,17 @@ export const Slider = React.memo(function Slider({
   const trackRef = useRef<HTMLDivElement>(null);
   const [localInput, setLocalInput] = useState(String(value));
   const lastDragVal = useRef(value);
+  // After commit, the parent's `onCommit` is debounced + waits on HMR before
+  // `value` catches up. Holding the committed value here prevents the thumb
+  // from snapping back to the stale prop on mouseup.
+  const committedRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!dragging) {
-      setDragValue(value);
-      setLocalInput(String(value));
-    }
+    if (dragging) return;
+    if (committedRef.current !== null && committedRef.current !== value) return;
+    committedRef.current = null;
+    setDragValue(value);
+    setLocalInput(String(value));
   }, [value, dragging]);
 
   const getValueFromX = useCallback(
@@ -68,6 +73,7 @@ export const Slider = React.memo(function Slider({
       };
       const handleUp = () => {
         const finalVal = lastDragVal.current;
+        committedRef.current = finalVal;
         setDragging(false);
         setDragValue(finalVal);
         setLocalInput(String(finalVal));
@@ -81,7 +87,9 @@ export const Slider = React.memo(function Slider({
     [getValueFromX, onChange, onCommit],
   );
 
-  const displayValue = dragging ? dragValue : value;
+  const displayValue = dragging
+    ? dragValue
+    : (committedRef.current !== null ? committedRef.current : value);
   const pct = Math.max(0, Math.min(100, ((displayValue - min) / (max - min)) * 100));
 
   return (
@@ -120,7 +128,9 @@ export const Slider = React.memo(function Slider({
           onBlur={() => {
             const num = parseInt(localInput, 10);
             if (!isNaN(num)) {
-              onCommit(Math.max(min, Math.min(max, num)));
+              const clamped = Math.max(min, Math.min(max, num));
+              committedRef.current = clamped;
+              onCommit(clamped);
             } else {
               setLocalInput(String(value));
             }

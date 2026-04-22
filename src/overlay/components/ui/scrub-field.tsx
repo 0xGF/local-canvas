@@ -72,32 +72,74 @@ export const ScrubField = React.memo(function ScrubField({
     }
   }, [value, onChange]);
 
+  // Shared scrub session. `deadzone` defers engagement until the pointer has
+  // moved vertically by N px — used by the input handler so a normal
+  // click-to-focus still works, while a vertical drag turns into a scrub.
+  const beginScrub = useCallback((startY: number, startV: number, deadzone: number) => {
+    let engaged = deadzone === 0;
+    let pending: string | null = null;
+    let lastEmitted: string | null = null;
+    let rafId: number | null = null;
+    if (engaged) {
+      setDragging(true);
+      document.body.style.cursor = "ns-resize";
+    }
+    const flush = () => {
+      rafId = null;
+      if (pending === null || pending === lastEmitted) return;
+      lastEmitted = pending;
+      committedRef.current = pending;
+      setLocal(pending);
+      onChange(pending);
+    };
+    const onMove = (ev: PointerEvent) => {
+      const dy = startY - ev.clientY; // drag up = +
+      if (!engaged) {
+        if (Math.abs(dy) < deadzone) return;
+        engaged = true;
+        setDragging(true);
+        document.body.style.cursor = "ns-resize";
+        // Releasing focus avoids the input swallowing the rest of the drag
+        // as a text selection.
+        inputRef.current?.blur();
+      }
+      const shiftMul = ev.shiftKey ? 10 : 1;
+      const next = startV + (dy / scrubStep) * shiftMul;
+      pending = format(next);
+      if (rafId === null) rafId = requestAnimationFrame(flush);
+    };
+    const onUp = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        flush();
+      }
+      if (engaged) {
+        setDragging(false);
+        document.body.style.cursor = "";
+      }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [onChange, format, scrubStep]);
+
   const handleLabelDown = useCallback((e: React.PointerEvent) => {
     const num = parse(value);
     if (!Number.isFinite(num)) return;
     e.preventDefault();
-    setDragging(true);
-    const startY = e.clientY;
-    const startV = num;
-    const onMove = (ev: PointerEvent) => {
-      const dy = startY - ev.clientY; // drag up = +
-      const shiftMul = ev.shiftKey ? 10 : 1;
-      const next = startV + (dy / scrubStep) * shiftMul;
-      const out = format(next);
-      committedRef.current = out;
-      setLocal(out);
-      onChange(out);
-    };
-    const onUp = () => {
-      setDragging(false);
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      document.body.style.cursor = "";
-    };
-    document.body.style.cursor = "ns-resize";
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }, [value, onChange, parse, format, scrubStep]);
+    beginScrub(e.clientY, num, 0);
+  }, [value, parse, beginScrub]);
+
+  // Drag the input itself to scrub — gated by a deadzone so clicking to
+  // focus / select text still works. Only engages when the field already
+  // contains a numeric value.
+  const handleInputDown = useCallback((e: React.PointerEvent<HTMLInputElement>) => {
+    if (focused) return;
+    const num = parse(value);
+    if (!Number.isFinite(num)) return;
+    beginScrub(e.clientY, num, 4);
+  }, [focused, value, parse, beginScrub]);
 
   // Wheel over the scrub label also changes the value — same semantics as
   // arrow keys (1 / 10 with shift). Only runs when the value parses as a
@@ -153,6 +195,8 @@ export const ScrubField = React.memo(function ScrubField({
         ref={inputRef}
         value={local}
         placeholder={placeholder}
+        onPointerDown={handleInputDown}
+        onWheel={handleLabelWheel}
         onChange={e => setLocal(e.target.value)}
         onFocus={() => setFocused(true)}
         onBlur={() => { setFocused(false); commit(local); }}

@@ -136,7 +136,7 @@ export async function createServer(options: ServerOptions) {
       res.end(JSON.stringify(listSnapshots(projectRoot)));
       return;
     }
-    // ── Annotations API (replaces the old agentation-mcp :6967 bridge) ──
+    // ── Annotations API ──
     //
     // Storage lives at `{projectRoot}/.canvas-data/annotations.db`. The
     // overlay is the primary writer via these same-origin endpoints; the MCP
@@ -302,7 +302,7 @@ async function handleAnnotationsRoute(
   if (tail === "" || tail === "/") {
     if (method === "GET") {
       const url = urlObj.searchParams.get("url") || undefined;
-      const status = (urlObj.searchParams.get("status") as "pending" | "in_progress" | "resolved" | "dismissed" | null) || undefined;
+      const status = (urlObj.searchParams.get("status") as "pending" | "in_progress" | "needs_input" | "resolved" | "dismissed" | null) || undefined;
       return json(200, listAnnotations(projectRoot, { url, status: status || undefined }));
     }
     if (method === "POST") {
@@ -317,8 +317,6 @@ async function handleAnnotationsRoute(
         elementPath: String(body.elementPath),
         elementPaths: Array.isArray(body.elementPaths) ? body.elementPaths as string[] : undefined,
         cssClasses: typeof body.cssClasses === "string" ? body.cssClasses : undefined,
-        intent: typeof body.intent === "string" ? body.intent : undefined,
-        severity: typeof body.severity === "string" ? body.severity : undefined,
         x: typeof body.x === "number" ? body.x : undefined,
         y: typeof body.y === "number" ? body.y : undefined,
         boundingBox: body.boundingBox as { x: number; y: number; width: number; height: number } | undefined,
@@ -353,7 +351,7 @@ async function handleAnnotationsRoute(
     if (method === "PATCH") {
       const body = (await readJsonBody(req) ?? {}) as Record<string, unknown>;
       const updated = updateAnnotation(projectRoot, id, {
-        status: body.status as "pending" | "in_progress" | "resolved" | "dismissed" | undefined,
+        status: body.status as "pending" | "in_progress" | "needs_input" | "resolved" | "dismissed" | undefined,
         resolvedSummary: typeof body.resolvedSummary === "string" ? body.resolvedSummary : undefined,
         comment: typeof body.comment === "string" ? body.comment : undefined,
       });

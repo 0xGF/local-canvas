@@ -73,13 +73,16 @@ export const ScrubField = React.memo(function ScrubField({
   }, [value, onChange]);
 
   // Shared scrub session. `deadzone` defers engagement until the pointer has
-  // moved vertically by N px — used by the input handler so a normal
-  // click-to-focus still works, while a vertical drag turns into a scrub.
-  const beginScrub = useCallback((startY: number, startV: number, deadzone: number) => {
+  // moved vertically by N px AND more vertically than horizontally — so a
+  // normal click-to-focus (which often carries 2–6 px of jitter, especially
+  // on trackpads) doesn't engage and steal focus before the user can type.
+  // Label drag passes deadzone 0 to engage immediately.
+  const beginScrub = useCallback((startX: number, startY: number, startV: number, deadzone: number) => {
     let engaged = deadzone === 0;
     let pending: string | null = null;
     let lastEmitted: string | null = null;
     let rafId: number | null = null;
+    let cancelled = false;
     if (engaged) {
       setDragging(true);
       document.body.style.cursor = "ns-resize";
@@ -94,7 +97,16 @@ export const ScrubField = React.memo(function ScrubField({
     };
     const onMove = (ev: PointerEvent) => {
       const dy = startY - ev.clientY; // drag up = +
+      const dx = ev.clientX - startX;
       if (!engaged) {
+        // Horizontal dominance → user is selecting text, not scrubbing. Bail
+        // out of the scrub session entirely so typing/selection stays snappy.
+        if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 4) {
+          cancelled = true;
+          window.removeEventListener("pointermove", onMove);
+          window.removeEventListener("pointerup", onUp);
+          return;
+        }
         if (Math.abs(dy) < deadzone) return;
         engaged = true;
         setDragging(true);
@@ -109,6 +121,7 @@ export const ScrubField = React.memo(function ScrubField({
       if (rafId === null) rafId = requestAnimationFrame(flush);
     };
     const onUp = () => {
+      if (cancelled) return;
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
         flush();
@@ -128,17 +141,17 @@ export const ScrubField = React.memo(function ScrubField({
     const num = parse(value);
     if (!Number.isFinite(num)) return;
     e.preventDefault();
-    beginScrub(e.clientY, num, 0);
+    beginScrub(e.clientX, e.clientY, num, 0);
   }, [value, parse, beginScrub]);
 
-  // Drag the input itself to scrub — gated by a deadzone so clicking to
-  // focus / select text still works. Only engages when the field already
-  // contains a numeric value.
+  // Drag the input itself to scrub — gated by a generous deadzone so
+  // clicking to focus and typing still works reliably. Only engages when
+  // the field already contains a numeric value.
   const handleInputDown = useCallback((e: React.PointerEvent<HTMLInputElement>) => {
     if (focused) return;
     const num = parse(value);
     if (!Number.isFinite(num)) return;
-    beginScrub(e.clientY, num, 4);
+    beginScrub(e.clientX, e.clientY, num, 10);
   }, [focused, value, parse, beginScrub]);
 
   // Wheel over the scrub label also changes the value — same semantics as

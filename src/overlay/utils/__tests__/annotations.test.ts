@@ -5,7 +5,7 @@ import {
   dispatchOpenAnnotationPin,
   dispatchNavigatePin,
   dispatchToggleAIHistory,
-} from "../agentation.js";
+} from "../annotations.js";
 
 describe("findElementForAnnotation", () => {
   let el: HTMLElement;
@@ -164,7 +164,7 @@ describe("postAnnotation", () => {
   });
 
   it("POSTs to /__canvas/annotations and dispatches the posted event", async () => {
-    const { postAnnotation } = await import("../agentation.js");
+    const { postAnnotation } = await import("../annotations.js");
 
     const fakeAnnotation = { id: "ann-1", comment: "hi", elementPath: "f:1" };
     const postCalls: Array<{ url: string; body: unknown }> = [];

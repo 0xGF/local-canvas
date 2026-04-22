@@ -1,4 +1,12 @@
 import { CodeBlock } from "../components/CodeBlock";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 
 export default function MCP() {
   return (
@@ -6,134 +14,161 @@ export default function MCP() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight mb-3">MCP Server</h1>
         <p className="text-[15px] text-neutral-500 leading-relaxed">
-          Canvas Editor exposes a Model Context Protocol server so AI tools can
-          interact with the editor programmatically.
+          Local Canvas ships a stdio MCP server so your AI agent can pick up
+          "Ask AI" annotations, apply canvas mutations, and report back —
+          without leaving your editor and without API keys.
         </p>
       </div>
 
       <hr className="border-neutral-200" />
 
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold tracking-tight">Overview</h2>
+        <h2 className="text-lg font-semibold tracking-tight">Setup</h2>
         <p className="text-[14px] text-neutral-600 leading-relaxed">
-          The MCP server connects to the canvas editor's WebSocket and exposes
-          tools that map to source code mutations. This lets Claude Code (or any
-          MCP-compatible client) select elements, modify classes, insert
-          components, and reorder children — all through the same mutation
-          pipeline that the visual editor uses.
+          One line, no path hunting:
         </p>
-        <p className="text-[14px] text-neutral-600 leading-relaxed">
-          Each tool call creates a WebSocket connection to{" "}
-          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">localhost:6966</code>{" "}
-          (or your configured proxy port), sends the mutation, and waits up to
-          10 seconds for a{" "}
-          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">mutation-result</code>{" "}
-          response.
+        <CodeBlock code="claude mcp add local-canvas -- npx local-canvas mcp" />
+        <p className="text-[14px] text-neutral-500 leading-relaxed">
+          Binds the <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">local-canvas mcp</code>{" "}
+          subcommand as an MCP stdio server. The same{" "}
+          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">local-canvas</code>{" "}
+          binary also runs{" "}
+          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">dev</code>{" "}
+          (the overlay) and{" "}
+          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">init</code>{" "}
+          (Babel plugin scaffolding). One binary, one network port, no bridge
+          process.
         </p>
-      </div>
-
-      <hr className="border-neutral-200" />
-
-      <div className="space-y-6">
-        <h2 className="text-lg font-semibold tracking-tight">Available tools</h2>
-
-        <div className="space-y-4">
-          <h3 className="text-[14px] font-semibold text-neutral-800">
-            <code className="font-mono">canvas_select_element</code>
-          </h3>
-          <p className="text-[14px] text-neutral-600 leading-relaxed">
-            Select an element by CSS selector or by file path + line number.
-          </p>
-          <CodeBlock
-            code={`{
-  selector: "div.card",   // CSS selector
-  // or
-  filePath: "src/App.tsx",
-  line: 42
-}`}
-          />
-        </div>
-
-        <div className="space-y-4">
-          <h3 className="text-[14px] font-semibold text-neutral-800">
-            <code className="font-mono">canvas_modify_classes</code>
-          </h3>
-          <p className="text-[14px] text-neutral-600 leading-relaxed">
-            Add or remove Tailwind classes on an element.
-          </p>
-          <CodeBlock
-            code={`{
-  filePath: "src/components/Card.tsx",
-  line: 12,
-  add: ["p-6", "shadow-lg"],
-  remove: ["p-4"]
-}`}
-          />
-        </div>
-
-        <div className="space-y-4">
-          <h3 className="text-[14px] font-semibold text-neutral-800">
-            <code className="font-mono">canvas_insert_component</code>
-          </h3>
-          <p className="text-[14px] text-neutral-600 leading-relaxed">
-            Insert a component before, after, or as a child of a target element.
-          </p>
-          <CodeBlock
-            code={`{
-  filePath: "src/App.tsx",
-  line: 25,
-  position: "child",      // "before" | "after" | "child"
-  componentName: "Badge",
-  props: { variant: "secondary" }
-}`}
-          />
-        </div>
-
-        <div className="space-y-4">
-          <h3 className="text-[14px] font-semibold text-neutral-800">
-            <code className="font-mono">canvas_reorder</code>
-          </h3>
-          <p className="text-[14px] text-neutral-600 leading-relaxed">
-            Reorder children within a parent element.
-          </p>
-          <CodeBlock
-            code={`{
-  filePath: "src/App.tsx",
-  line: 18,
-  fromIndex: 0,
-  toIndex: 2
-}`}
-          />
-        </div>
-
-        <div className="space-y-4">
-          <h3 className="text-[14px] font-semibold text-neutral-800">
-            <code className="font-mono">canvas_get_page_info</code>
-          </h3>
-          <p className="text-[14px] text-neutral-600 leading-relaxed">
-            Returns information about the current page and selected element.
-            No parameters required.
-          </p>
-        </div>
       </div>
 
       <hr className="border-neutral-200" />
 
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold tracking-tight">Usage with Claude Code</h2>
+        <h2 className="text-lg font-semibold tracking-tight">How it connects</h2>
         <p className="text-[14px] text-neutral-600 leading-relaxed">
-          The MCP server is built with{" "}
-          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">@modelcontextprotocol/sdk</code>.
-          Point your MCP client at the canvas editor's endpoint to give Claude Code
-          the ability to visually edit your running app.
+          The MCP server itself has no port. Canvas mutations open a WebSocket
+          to{" "}
+          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">ws://localhost:6966/__canvas/ws</code>{" "}
+          per call (or your configured port). Annotation tools hit{" "}
+          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">http://localhost:6966/__canvas/annotations/*</code>.
+          Both paths are same-origin-checked on the server.
         </p>
-        <p className="text-[14px] text-neutral-600 leading-relaxed">What this enables:</p>
-        <ul className="list-disc pl-5 text-[14px] text-neutral-600 space-y-1 leading-relaxed">
-          <li>Select elements and modify their Tailwind classes</li>
-          <li>Insert new components at specific locations</li>
-          <li>Reorder elements within parent containers</li>
-          <li>Shared mutation pipeline — undo/redo works across visual edits and MCP calls</li>
-        </ul>
+      </div>
+
+      <hr className="border-neutral-200" />
+
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold tracking-tight">Canvas tools</h2>
+        <p className="text-[14px] text-neutral-600 leading-relaxed">
+          Write code through the same mutation pipeline the visual editor uses —
+          ts-morph edits, batching, undo, HMR.
+        </p>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[200px]">Tool</TableHead>
+              <TableHead>Purpose</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {[
+              ["canvas_select_element", "Select by CSS selector or {filePath, line}"],
+              ["canvas_modify_classes", "Add / remove Tailwind classes at a file:line"],
+              ["canvas_insert_component", "Insert JSX before / after / as child of a target"],
+              ["canvas_reorder", "Reorder siblings by {fromIndex, toIndex}"],
+              ["canvas_get_page_info", "Current page URL + selected element summary"],
+              ["canvas_get_page_layout", "Structural layout info for the current page"],
+            ].map(([name, desc]) => (
+              <TableRow key={name}>
+                <TableCell className="font-mono text-[12px]">{name}</TableCell>
+                <TableCell>{desc}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        <p className="text-[14px] text-neutral-500 leading-relaxed">
+          Agents that already have Edit / Write tools (Claude Code) can also
+          edit the files directly — the{" "}
+          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">canvas_*</code>{" "}
+          tools are optional.
+        </p>
+      </div>
+
+      <hr className="border-neutral-200" />
+
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold tracking-tight">Annotation tools</h2>
+        <p className="text-[14px] text-neutral-600 leading-relaxed">
+          Read user intent, report progress back. Status drives pin colour in
+          the overlay:{" "}
+          <strong className="text-neutral-800">pending</strong> (yellow) →{" "}
+          <strong className="text-neutral-800">in_progress</strong> (blue,
+          pulsing) →{" "}
+          <strong className="text-neutral-800">resolved</strong> (green) /{" "}
+          <strong className="text-neutral-800">dismissed</strong> (grey).
+        </p>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[220px]">Tool</TableHead>
+              <TableHead>Purpose</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {[
+              ["annotations_list_pending", "Poll pending work (no filters)"],
+              ["annotations_list", "Filter by status / url"],
+              ["annotations_get", "Fetch one annotation with its thread"],
+              ["annotations_acknowledge", "Flip pending → in_progress (pin pulses blue)"],
+              ["annotations_reply", "Append an agent message to the thread"],
+              ["annotations_resolve", "Mark done (optional summary shows on row)"],
+              ["annotations_dismiss", "Mark dismissed"],
+            ].map(([name, desc]) => (
+              <TableRow key={name}>
+                <TableCell className="font-mono text-[12px]">{name}</TableCell>
+                <TableCell>{desc}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      <hr className="border-neutral-200" />
+
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold tracking-tight">Recommended lifecycle</h2>
+        <CodeBlock code={`user posts annotation         -> status: pending (yellow pin)
+agent acknowledges            -> status: in_progress (blue pulsing pin)
+agent POSTs /__canvas/agent-snapshot with pre-edit file contents
+agent edits files             (canvas_modify_classes, or its own Edit tool)
+agent resolves with a summary -> status: resolved (green pin)`} />
+        <p className="text-[14px] text-neutral-600 leading-relaxed">
+          If the user hits Undo on the Ask AI history row,{" "}
+          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">/__canvas/agent-undo</code>{" "}
+          restores the files from the snapshot. Snapshots live in{" "}
+          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">.canvas-undo/snapshots.json</code>,
+          FIFO-trimmed to the 10 most recent entries.
+        </p>
+      </div>
+
+      <hr className="border-neutral-200" />
+
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold tracking-tight">Where annotations live</h2>
+        <p className="text-[14px] text-neutral-600 leading-relaxed">
+          Sqlite (WAL mode) at{" "}
+          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">{"{projectRoot}/.canvas-data/annotations.db"}</code>,
+          served same-origin at{" "}
+          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">/__canvas/annotations/*</code>{" "}
+          on the editor port. No second process, no second port, nothing leaves
+          the project directory.
+        </p>
+        <p className="text-[14px] text-neutral-500 leading-relaxed">
+          Stale / resolved annotations can be pruned with{" "}
+          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">bin/purge-resolved.sh</code>{" "}
+          (defaults to 14 days). The trash icon in the Ask AI history header
+          wipes everything in one click.
+        </p>
       </div>
     </div>
   );

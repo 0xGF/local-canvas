@@ -4,6 +4,8 @@ import { useWebSocket } from "./useWebSocket.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
 import { deepElementFromPoint } from "../utils/element-picker.js";
 import { attachToDocumentAndIframe, bind, getEditorIframe, getIframeDocument, getIframeOffset } from "../utils/iframe-events.js";
+import type { BadgeHit } from "../canvas/constants.js";
+import type { ResizeHandle } from "../canvas/use-resize-handles.js";
 
 /**
  * Double-click on text elements to edit them inline.
@@ -13,12 +15,21 @@ import { attachToDocumentAndIframe, bind, getEditorIframe, getIframeDocument, ge
  * Sets editor store `editingText` flag so useSelection yields
  * its mousedown/selectstart/click blockers during editing.
  */
-export function useTextEdit() {
+export function useTextEdit(
+  badgeHitsRef?: React.MutableRefObject<BadgeHit[]>,
+  resizeHandlesRef?: React.MutableRefObject<ResizeHandle[]>,
+) {
   const wsRef = useRef(useWebSocket());
   // Keep wsRef current every render
   wsRef.current = useWebSocket();
 
   const activeRef = useRef<{ element: HTMLElement; originalText: string } | null>(null);
+  // Stash the latest refs so the long-lived useEffect body reads current
+  // hit zones without re-running (the effect is keyed on `[]`).
+  const hitsRef = useRef(badgeHitsRef);
+  const handlesRef = useRef(resizeHandlesRef);
+  hitsRef.current = badgeHitsRef;
+  handlesRef.current = resizeHandlesRef;
 
   useEffect(() => {
     function commitAndClose() {
@@ -110,6 +121,32 @@ export function useTextEdit() {
         if (node instanceof HTMLElement) {
           if (node.id === "local-canvas-host") return;
           if (node.getAttribute?.("data-canvas-overlay") === "true") return;
+        }
+      }
+
+      // Don't intercept if the double-click lands on a drag zone (spacing
+      // badge, zero-handle edge, or resize handle). Those own the gesture:
+      // dblclick on a spacing badge opens the inline number input; dblclick
+      // on a resize handle is a no-op. In both cases we shouldn't fall
+      // through to "edit text" on the element behind the canvas.
+      const badges = hitsRef.current?.current;
+      const handles = handlesRef.current?.current;
+      if (badges?.length || handles?.length) {
+        const iframe = getEditorIframe();
+        const off = iframe ? getIframeOffset(iframe) : { x: 0, y: 0, scale: 1 };
+        const px = off.scale ? (e.clientX - off.x) / off.scale : e.clientX;
+        const py = off.scale ? (e.clientY - off.y) / off.scale : e.clientY;
+        if (badges) {
+          for (const hit of badges) {
+            if (px >= hit.x && px <= hit.x + hit.w && py >= hit.y && py <= hit.y + hit.h) return;
+          }
+        }
+        if (handles) {
+          const TOL = 4;
+          for (const h of handles) {
+            if (px >= h.x - TOL && px <= h.x + h.w + TOL &&
+                py >= h.y - TOL && py <= h.y + h.h + TOL) return;
+          }
         }
       }
 

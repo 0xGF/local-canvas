@@ -39,6 +39,13 @@ export default defineConfig({
                 brotliSize: true,
                 sourcemap: false,
               }),
+              visualizer({
+                filename: "dist/overlay/bundle-stats.json",
+                template: "raw-data",
+                gzipSize: true,
+                brotliSize: true,
+                sourcemap: false,
+              }),
             ]
           : []),
       ],

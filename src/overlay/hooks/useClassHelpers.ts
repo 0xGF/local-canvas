@@ -41,6 +41,10 @@ const PREFIX_TO_PREVIEW: Record<string, string | string[]> = {
   "min-h": "minHeight", "max-h": "maxHeight",
   gap: "gap", "gap-x": "columnGap", "gap-y": "rowGap",
   rounded: "borderRadius",
+  "rounded-tl": "borderTopLeftRadius",
+  "rounded-tr": "borderTopRightRadius",
+  "rounded-bl": "borderBottomLeftRadius",
+  "rounded-br": "borderBottomRightRadius",
   opacity: "opacity",
   z: "zIndex",
   order: "order",
@@ -66,7 +70,7 @@ function decodePreviewValue(prefix: string, value: string): string | null {
   if (!value) {
     if (prefix === "opacity") return "1";
     if (prefix === "z" || prefix === "order") return "auto";
-    if (prefix === "rounded") return "0px";
+    if (/^rounded(-(tl|tr|bl|br))?$/.test(prefix)) return "0px";
     if (/^(w|h|min-w|max-w|min-h|max-h)$/.test(prefix)) return "auto";
     return "0px"; // spacing
   }
@@ -79,7 +83,7 @@ function decodePreviewValue(prefix: string, value: string): string | null {
     if (bracket) return bracket[1];
     return Number.isFinite(Number(value)) ? value : null;
   }
-  if (prefix === "rounded") {
+  if (/^rounded(-(tl|tr|bl|br))?$/.test(prefix)) {
     const bracket = value.match(/^\[(.+)\]$/);
     if (bracket) return bracket[1];
     const radius: Record<string, string> = {

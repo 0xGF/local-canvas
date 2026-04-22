@@ -24,27 +24,28 @@ export const THEME = {
   borderLight: "#2f2f2f",
 
   // ── Status palette (pins + history rows + popover chips) ──────────────
-  // Tuned down from raw primaries so the discs read editorial, not neon.
+  // Matches the saturated brand palette used across the app — the same five
+  // bright hues you see in the recent-colors strip in PropertiesPanel.
   // `Hover` is the darker tone for hover/press; `Soft` is the translucent
   // chip-background tone.
-  accent: "#3b82f6",              // "in progress" / primary action
-  accentHover: "#2563eb",
-  accentSoft: "rgba(59,130,246,0.18)",
+  accent: "#06B6FF",              // "in progress" / primary action
+  accentHover: "#009fe0",
+  accentSoft: "rgba(6,182,255,0.18)",
 
-  success: "#10b981",             // "resolved"
-  successHover: "#0e9c6e",
-  successSoft: "rgba(16,185,129,0.16)",
+  success: "#24CA71",             // "resolved"
+  successHover: "#1ea961",
+  successSoft: "rgba(36,202,113,0.16)",
 
-  warning: "#e0a800",             // "pending" / attention
-  warningHover: "#b88900",
-  warningSoft: "rgba(224,168,0,0.18)",
+  warning: "#FFC300",             // "pending" / attention — bright yellow matching the palette saturation
+  warningHover: "#e0ab00",
+  warningSoft: "rgba(255,195,0,0.18)",
 
-  danger: "#f24822",              // destructive actions
-  dangerHover: "#d63a18",
-  dangerSoft: "rgba(242,72,34,0.12)",
+  danger: "#FE3737",              // destructive actions
+  dangerHover: "#e12929",
+  dangerSoft: "rgba(254,55,55,0.12)",
 
   attention: "#FE7338",           // "needs input" / agent is waiting for the user
-  attentionHover: "#e5611e",
+  attentionHover: "#e0611e",
   attentionSoft: "rgba(254,115,56,0.16)",
 
   // "Dismissed" reads as muted grey — borrows from the text scale so the
@@ -60,9 +61,11 @@ export const THEME = {
   // `canvasMargin` intentionally shares its hex with `attention` — spacing
   // badges read as "warm orange" for the same reason the status does. Kept
   // as a separate token so the semantic read is clearer at call sites.
+  // `canvasMargin` intentionally shares its hex with `attention` — spacing
+  // badges read as "warm orange" for the same reason the status does.
   canvasMargin: "#FE7338",        // margin badges + zones (orange)
-  canvasLayer: "#a855f7",         // layers / breakpoint / component indicator (purple)
-  canvasLayerSoft: "rgba(168,85,247,0.15)",
+  canvasLayer: "#874EFF",         // layers / breakpoint / component indicator (purple)
+  canvasLayerSoft: "rgba(135,78,255,0.15)",
 
   // ── Typography ────────────────────────────────────────────────────────
   mono: "'SF Mono','Fira Code','Fira Mono',monospace",

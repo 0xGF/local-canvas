@@ -311,15 +311,11 @@ export function useSelection() {
         e.stopPropagation();
         const source = resolveSource(target);
         const rect = target.getBoundingClientRect();
-        selectElement({
-          element: target, source, rect,
-          className: typeof target.className === "string" ? target.className : "",
-          tagName: target.tagName.toLowerCase(),
-          iframeRef: fromIframe && iframe ? iframe : undefined,
-        });
-        // Anchor the annotate menu at the element's horizontal centre so it
-        // opens OVER the element rather than at its left edge. ContextMenu
-        // interprets (x, y) as a centre-anchor when initialMode is set.
+        // DO NOT call selectElement here. Annotate mode is a dedicated tool;
+        // clicking an element should only open the AnnotatePill, not
+        // promote the element into the main selection (which would show
+        // spacing handles, highlights, open the properties panel, etc.).
+        // ContextMenu reads the element directly from the menu payload.
         const screenBox = fromIframe && iframe
           ? iframeRectToScreenBox(rect, iframe)
           : { left: rect.left, top: rect.top, width: rect.width, height: rect.height };

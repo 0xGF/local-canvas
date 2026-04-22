@@ -1,7 +1,7 @@
 /**
  * Lightweight CSS-based transitions (zero framer-motion).
  *
- * Design tools (agentation's overlay, etc.) get smooth motion with plain
+ * Design tools get smooth motion with plain
  * `transition` + `@keyframes`. Framer-motion is ~42KB gzipped; for our
  * overlay use-cases (fade-in popovers, expand/collapse, slide-up toolbar)
  * it's pure overhead.
@@ -37,7 +37,7 @@ export function PopFade({
   open: boolean;
   /** Transition duration in ms. Enter uses this; exit uses 70% of it. */
   duration?: number;
-  /** Use overshoot easing on enter. Default true (agentation-style pop). */
+  /** Use overshoot easing on enter. Default true . */
   bouncy?: boolean;
   children: React.ReactNode;
   style?: React.CSSProperties;

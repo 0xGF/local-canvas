@@ -1,87 +1,148 @@
-// [canvas simulate] agent edit @ 2026-04-22T03:31:03.617Z
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { CodeBlock } from "../components/CodeBlock";
+import { LoopingClip } from "../components/demos/LoopingClip";
 
 export default function Overview() {
   return (
-    <div className="max-w-[680px] px-6 2xl:pt-12 2xl:pb-16 space-y-8 2xl:pb-[66px] 2xl:pb-1.5 2xl:pb-[113px] 2xl:pb-[89px] 2xl:pb-[73px] 2xl:pb-[58px] 2xl:pb-11 py-[60px]" style={{ paddingBottom: "37px" }}>
-      <div className="xl:mb-2.5">
-        <h1 className="text-2xl font-bold tracking-tight xl:mb-3 xl:contrast-79 xl:contrast-101">Introduction</h1>
-        <p className="text-[15px] text-neutral-500 leading-relaxed xl:outline-[#000000] 2xl:mt-[5px]">
-          <strong className="text-neutral-800">Canvas Editor is a visual editing overlay for React.</strong>{" "}
-          Select any element, tweak its Tailwind classes, drag to reorder — every
-          change modifies your actual source files via AST mutations. It runs as
-          an HTTP proxy between your browser and dev server, injecting a Shadow
-          DOM overlay that never conflicts with your app's styles.
+    <div className="max-w-[680px] px-6 pt-12 pb-16 space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight mb-3">Introduction</h1>
+        <p className="text-[15px] text-neutral-500 leading-relaxed">
+          <strong className="text-neutral-800">Local Canvas is a visual editing overlay for React + Tailwind apps.</strong>{" "}
+          Select any element in your running dev server, drag to adjust spacing,
+          tweak classes in the properties panel, or ask an AI agent to make
+          changes — every edit writes directly back to your{" "}
+          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">.tsx</code>{" "}
+          source via ts-morph AST mutations. No export step, no re-implementation,
+          no design-to-code drift.
         </p>
       </div>
 
       <CodeBlock code="npx local-canvas dev --target 3000" />
 
-      <hr className="border-neutral-200 2xl:mb-8 xl:mb-5" />
+      <hr className="border-neutral-200" />
 
-      <div className="space-y-4 xl:outline-[#1C1917] xl:block xl:justify-start xl:items-start xl:flex-col">
-        <h2 className="text-lg font-semibold tracking-tight">Canvas Architecture</h2>
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold tracking-tight">The canvas is the point</h2>
         <p className="text-[14px] text-neutral-600 leading-relaxed">
-          The editor is three pieces working together:
+          The editing chrome — hover outlines, selection outlines, spacing
+          badges, resize grips, dimension readouts, drag value pills, zero-value
+          notches — is painted on a{" "}
+          <strong className="text-neutral-800">single <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">&lt;canvas&gt;</code> layer</strong>,
+          not as DOM elements chasing coordinates. That keeps it pixel-aligned
+          with the live page at any zoom, with zero reflow cost.
         </p>
-        <ul className="list-disc pl-5 text-[14px] text-neutral-600 space-y-2 leading-relaxed 2xl:bg-white">
-          <li className="">
-            <strong className="text-neutral-800">HTTP Proxy</strong> — forwards
-            requests to your dev server, injects the overlay script into HTML responses.
+        <p className="text-[14px] text-neutral-600 leading-relaxed">
+          It's glued together from two libraries that do the heavy lifting:
+        </p>
+        <ul className="list-disc pl-5 text-[14px] text-neutral-600 space-y-2 leading-relaxed">
+          <li>
+            <strong className="text-neutral-800">HTML-in-Canvas (<code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">drawElementImage</code>)</strong> —
+            Chrome's experimental Canvas API, used to rasterize the hover and
+            selection outline templates with real CSS rendering (pseudo-elements,
+            border-radius, the whole pipeline). Feature-detected; falls back to
+            a dashed rectangle when unavailable.
           </li>
           <li>
-            <strong className="text-neutral-800">Shadow DOM Overlay</strong> — renders
-            in an isolated Shadow DOM at z-index 2147483647. Your app's styles never
-            leak in or out.
+            <strong className="text-neutral-800"><code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">@chenglou/pretext</code></strong> —
+            DOM-free text measurement. Every badge sizes itself to its text; this
+            returns natural width and wrapped height synchronously with no DOM
+            layout. Two LRU caches wrap it so the synchronous cost happens once
+            per unique text.
+          </li>
+        </ul>
+        <LoopingClip
+          src="/demos/click-to-panel.mp4"
+          poster="/demos/click-to-panel.jpg"
+          caption="Click an element → canvas chrome paints and the properties panel slides in."
+        />
+      </div>
+
+      <hr className="border-neutral-200" />
+
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold tracking-tight">Architecture</h2>
+        <p className="text-[14px] text-neutral-600 leading-relaxed">
+          One process on port <strong>6966</strong>. Four cooperating pieces:
+        </p>
+        <ul className="list-disc pl-5 text-[14px] text-neutral-600 space-y-2 leading-relaxed">
+          <li>
+            <strong className="text-neutral-800">HTTP proxy</strong> — forwards
+            every request to your dev server, injects the overlay script into
+            HTML responses before{" "}
+            <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">{"</body>"}</code>.
           </li>
           <li>
-            <strong className="text-neutral-800">WebSocket</strong> — mutations are
-            batched (150ms), grouped by file:line, and applied via ts-morph. Full
-            undo/redo stack.
+            <strong className="text-neutral-800">Shadow DOM overlay</strong> —
+            renders inside an isolated Shadow DOM at z-index 2147483647, so your
+            app's styles never leak in or out. The canvas layer paints editing
+            chrome; a React app renders the toolbar, properties panel, layers
+            panel, and command bar.
+          </li>
+          <li>
+            <strong className="text-neutral-800">WebSocket + ts-morph</strong> —
+            mutations travel over{" "}
+            <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">/__canvas/ws</code>,
+            are batched in a 150ms window, grouped by file:line, and applied
+            via ts-morph AST edits. HMR picks up the file change and the page
+            updates live. Full undo/redo stack.
+          </li>
+          <li>
+            <strong className="text-neutral-800">Annotations + MCP</strong> —
+            "Ask AI" annotations persist in a sqlite file at{" "}
+            <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">.canvas-data/annotations.db</code>,
+            exposed to the overlay at{" "}
+            <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">/__canvas/annotations/*</code>{" "}
+            and to AI agents via a stdio MCP subcommand that talks back to the
+            same editor port.
           </li>
         </ul>
       </div>
 
-      <hr className="border-neutral-200 xl:mb-5" />
+      <hr className="border-neutral-200" />
 
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold tracking-tight">How the canvas works</h2>
+        <h2 className="text-lg font-semibold tracking-tight">How a click becomes a source edit</h2>
         <ol className="list-decimal pl-5 text-[14px] text-neutral-600 space-y-3 leading-relaxed">
           <li>
-            <strong className="text-neutral-800">Add the Babel plugin</strong>{" "}
-            (optional) — injects{" "}
+            <strong className="text-neutral-800">Source attrs are injected at dev time</strong>{" "}
+            by the Babel/Vite plugin. Every JSX element gets{" "}
             <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">data-source-file</code>,{" "}
             <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">data-source-line</code>, and{" "}
-            <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">data-source-col</code>{" "}
-            into every JSX element at dev time. Without it, source mapping falls
-            back to React DevTools fiber data. Works with any bundler.
+            <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">data-source-col</code>.
+            Without the plugin, the overlay falls back to React DevTools'{" "}
+            <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">_debugSource</code> fiber property.
           </li>
           <li>
-            <strong className="text-neutral-800">Start the editor proxy</strong> —
-            listens on port <strong>6966</strong> by default, forwards requests to your
-            dev server, and injects the overlay script before{" "}
-            <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">{"</body>"}</code>.
+            <strong className="text-neutral-800">Click resolves to a source location</strong>{" "}
+            by walking up the DOM tree to the nearest{" "}
+            <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">data-source-*</code>.
           </li>
           <li>
-            <strong className="text-neutral-800">Edit visually</strong> —
-            click any element to select it. The properties panel opens — change spacing,
-            typography, colors, layout. Every change writes directly to your source
-            file via{" "}
-            <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">ts-morph</code>.
-            Your dev server's hot reload picks it up.
+            <strong className="text-neutral-800">Edits emit a mutation</strong>{" "}
+            addressed by <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">{"{ filePath, line, column }"}</code>.
+            ts-morph finds the JSX element at that position and edits its{" "}
+            <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">className</code> or{" "}
+            <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">style</code> in place. HMR applies the result.
           </li>
         </ol>
+        <LoopingClip
+          src="/demos/drag-to-pad.mp4"
+          poster="/demos/drag-to-pad.jpg"
+          caption="Drag a spacing handle to add padding — the class writes back to the source file via ts-morph."
+        />
       </div>
 
-      <hr className="border-neutral-200 xl:mb-5" />
+      <hr className="border-neutral-200" />
 
       <div className="space-y-4">
         <h2 className="text-lg font-semibold tracking-tight">Supported className patterns</h2>
         <p className="text-[14px] text-neutral-600 leading-relaxed">
-          The mutation writer handles all common className formats. If no{" "}
-          <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">className</code>{" "}
-          exists, one is added automatically.
+          The writer handles the common shapes and refuses to touch ones where a
+          safe edit is undecidable. Dynamic branches (template literals with
+          interpolation, identifiers, ternaries, function calls) are detected
+          and left alone — the element appears read-only in the UI rather than
+          being silently mutated.
         </p>
 
         <Tabs defaultValue="string" className="w-full">

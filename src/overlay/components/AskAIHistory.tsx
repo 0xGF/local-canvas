@@ -11,7 +11,7 @@ import {
   updateAnnotationStatus,
   type Annotation,
   type AgentUndoEntry,
-} from "../utils/agentation.js";
+} from "../utils/annotations.js";
 import { useEditorStore } from "../stores/editor-store.js";
 
 const C = THEME;
@@ -33,6 +33,7 @@ function statusMeta(status?: string) {
   if (status === "resolved") return { color: C.success, label: "Resolved" };
   if (status === "dismissed") return { color: C.neutral, label: "Dismissed" };
   if (status === "in_progress") return { color: C.accent, label: "Working" };
+  if (status === "needs_input") return { color: C.attention, label: "Needs input" };
   return { color: C.warning, label: "Pending" };
 }
 

@@ -36,7 +36,7 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
 
   const resizeHandlesRef = useRef<ResizeHandle[]>([]);
   const { reorderRef, commitSpacing, spacingDragRef } = useSpacingDrag(badgeHitsRef, tagBadgeHitRef, resizeHandlesRef);
-  useTextEdit();
+  useTextEdit(badgeHitsRef, resizeHandlesRef);
   const { resizeTooltip } = useResizeHandles(resizeHandlesRef);
 
   // ── Commit badge text edit ──
@@ -72,10 +72,17 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
         }
       }
       const editorState = useEditorStore.getState();
+      // When the AnnotatePill is open (context menu in ai-prompt mode),
+      // keep the target element highlighted in the annotate accent even
+      // after the cursor has moved off — otherwise the user loses the
+      // visual tether between their prompt input and the element.
+      const aiMenu = editorState.contextMenu?.initialMode === "ai-prompt"
+        ? editorState.contextMenu.element
+        : null;
       const editor = {
         selectedElement: editorState.selectedElement,
-        hoveredElement: editorState.hoveredElement,
-        annotateMode: editorState.annotateMode,
+        hoveredElement: aiMenu ?? editorState.hoveredElement,
+        annotateMode: editorState.annotateMode || !!aiMenu,
       };
       const viewport = useViewportStore.getState();
 
@@ -371,8 +378,18 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
   // ── Double-click to edit badge value ──
   useEffect(() => {
     function onDblClick(e: MouseEvent) {
+      // Hits are stored in iframe-doc coords; translate the event from
+      // outer-screen coords (translateCoords:true) before comparing.
+      const iframe = getEditorIframe();
+      const off = iframe ? getIframeOffset(iframe) : { x: 0, y: 0, scale: 1 };
+      const px = off.scale ? (e.clientX - off.x) / off.scale : e.clientX;
+      const py = off.scale ? (e.clientY - off.y) / off.scale : e.clientY;
       for (const hit of badgeHitsRef.current) {
-        if (e.clientX >= hit.x && e.clientX <= hit.x + hit.w && e.clientY >= hit.y && e.clientY <= hit.y + hit.h) {
+        if (px >= hit.x && px <= hit.x + hit.w && py >= hit.y && py <= hit.y + hit.h) {
+          // Zero-handle hits live with the same BadgeHit shape but there's
+          // no value to edit (value=0). Don't open the input — the edge is
+          // only a drag surface for pulling from zero.
+          if (hit.value <= 0) return;
           e.preventDefault();
           e.stopPropagation();
           setEditValue(String(Math.round(hit.value)));
@@ -416,7 +433,7 @@ export const CanvasOverlayLayer = React.memo(function CanvasOverlayLayer() {
             onChange={e => setEditValue(e.target.value)}
             onBlur={() => { commitEdit(); setEditBadge(null); }}
             onKeyDown={e => { if (e.key === "Enter") { commitEdit(); setEditBadge(null); } if (e.key === "Escape") setEditBadge(null); }}
-            style={{ width: 52, height: 22, fontSize: 10, fontWeight: 600, fontFamily: FONT, color: "#fff", background: editBadge.type === "padding" ? COL.padding : COL.margin, border: "2px solid #fff", borderRadius: 4, textAlign: "center", outline: "none", padding: 0, boxShadow: "0 2px 12px rgba(0,0,0,0.4)" }}
+            style={{ width: 52, height: 22, fontSize: 10, fontWeight: 600, fontFamily: FONT, color: "#fff", background: editBadge.type === "padding" ? COL.padding : COL.margin, border: "none", borderRadius: 4, textAlign: "center", outline: "none", padding: 0, boxShadow: "0 2px 12px rgba(0,0,0,0.4)" }}
           />
         </div>
       )}

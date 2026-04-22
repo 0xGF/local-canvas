@@ -1,9 +1,32 @@
 import type { BadgeHit, TagBadgeHit, SpacingBox } from "./constants.js";
-import { COL, BADGE_FONT, FONT, SIDE_PREFIX } from "./constants.js";
-import { roundRect, drawDashedLine, drawDashedEdges, drawLabelBadge, drawValueBadge, drawHatchedRect, drawEdgeHandle, drawZeroNotch, drawResizeGrip } from "./draw-helpers.js";
+import { COL, LABEL_FONT, SIDE_PREFIX } from "./constants.js";
+import { roundRect, drawDashedLine, drawDashedEdges, drawLabelBadge, drawValueBadge, drawHatchedRect, drawEdgeHandle, drawZeroNotch, drawResizeGrip, measureText } from "./draw-helpers.js";
 import { HAS_DRAW_ELEMENT } from "./constants.js";
 import type { SourceLocation } from "../../core/source-map/types.js";
+import { resolveSource } from "../../core/source-map/resolver.js";
 import { getCachedStyle } from "../utils/style-cache.js";
+
+/** Render the top-left tag+component label pair shared by hover, annotate,
+ *  and selection. Keeps all three visually identical aside from the tag
+ *  badge colour. Returns total width drawn. */
+function drawElementLabel(
+  ctx: CanvasRenderingContext2D,
+  tag: string,
+  source: SourceLocation | null,
+  x: number,
+  y: number,
+  tagColor: string,
+  zoomScale: number,
+): number {
+  if (zoomScale < 0.35) return 0;
+  const tagW = drawLabelBadge(ctx, tag, x, y, tagColor);
+  if (!source?.filePath || zoomScale < 0.5) return tagW;
+  const fileName = source.filePath.split("/").pop()?.replace(/\.[jt]sx?$/, "") || "";
+  if (!fileName) return tagW;
+  const compLabel = `${fileName}:${source.line}`;
+  const compW = drawLabelBadge(ctx, compLabel, x + tagW + 3, y, COL.purple);
+  return tagW + 3 + compW;
+}
 
 interface EditorSnapshot {
   selectedElement: {
@@ -265,12 +288,11 @@ export function paintFrame(
       ctx.restore();
     }
 
-    // Tag label + dimensions
+    // Tag + component label — same layout as selection so hover, annotate,
+    // and selection all read as one consistent element identifier.
     const tag = hEl.tagName.toLowerCase();
-    const hCssW = parseFloat(hcs.width) || r.width;
-    const hCssH = parseFloat(hcs.height) || r.height;
-    const hDims = `${Math.round(hCssW)} × ${Math.round(hCssH)}`;
-    drawLabelBadge(ctx, `${tag}    ${hDims}`, r.left, r.top - 22, annotate ? COL.annotate : COL.blue);
+    const hSource = resolveSource(hEl);
+    drawElementLabel(ctx, tag, hSource, r.left, r.top - 22, annotate ? COL.annotate : COL.blue, zoomScale);
   };
 
   // ── Selected element ──
@@ -406,39 +428,13 @@ export function paintFrame(
         ctx.restore();
       }
 
-      // ── Combined tag + dims badge (show CSS dimensions, not screen) ──
-      let label = selectedElement.tagName;
-      const cssW = parseFloat(cs.width) || r.width;
-      const cssH = parseFloat(cs.height) || r.height;
-      // Tag badge + component badge + dimensions — only when zoomed in enough to read
-      let tagBw = 0;
+      // ── Tag + component label (same layout as hover/annotate) ──
       if (zoomScale >= 0.35) {
-        tagBw = drawLabelBadge(ctx, label, r.left, r.top - 22, COL.blue, false, true);
-        tagHit = { x: r.left, y: r.top - 22, w: tagBw, h: 18 };
-
-        // Purple component badge — show which component file the element is from
-        let componentBadgeEnd = r.left + tagBw;
-        if (selectedElement.source?.filePath && zoomScale >= 0.5) {
-          const fp = selectedElement.source.filePath;
-          // Extract component name from file path (e.g. "src/components/Sidebar.tsx" → "Sidebar")
-          const fileName = fp.split("/").pop()?.replace(/\.[jt]sx?$/, "") || "";
-          if (fileName) {
-            const compLabel = `${fileName}:${selectedElement.source.line}`;
-            const cw = drawLabelBadge(ctx, compLabel, r.left + tagBw + 3, r.top - 22, COL.purple);
-            componentBadgeEnd = r.left + tagBw + 3 + cw;
-          }
-        }
-
-        if (zoomScale >= 0.5) {
-          const dimsTxt = `${Math.round(cssW)} × ${Math.round(cssH)}`;
-          ctx.save();
-          ctx.font = `400 9px ${FONT}`;
-          ctx.fillStyle = "rgba(255,255,255,0.5)";
-          ctx.textBaseline = "middle";
-          ctx.textAlign = "left";
-          ctx.fillText(dimsTxt, componentBadgeEnd + 6, r.top - 13);
-          ctx.restore();
-        }
+        const label = selectedElement.tagName;
+        drawElementLabel(ctx, label, selectedElement.source ?? null, r.left, r.top - 22, COL.blue, zoomScale);
+        // Hit area covers the tag badge only (drag-to-reparent affordance).
+        const tagW = measureText(label, LABEL_FONT) + 10;
+        tagHit = { x: r.left, y: r.top - 22, w: tagW, h: 18 };
       }
 
       // ── Change indicator dot — orange dot on top-right if element was modified ──

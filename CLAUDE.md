@@ -26,12 +26,44 @@ The core value proposition is **speed and fidelity**: you edit the real app in i
 
 ## The two load-bearing libraries (do not replace these)
 
-From `README.md` — these are deliberately chosen and the whole product depends on them:
+Both are deliberately chosen and the whole product depends on them. Details matter here — "replace with something lighter" has come up before and is always a mistake.
 
-1. **[HTML-in-Canvas (`drawElementImage`)](https://developer.chrome.com/blog/html-in-canvas)** — Chrome's experimental Canvas API. Used to paint element previews, badges, labels, and spacing indicators onto the canvas. Falls back to manual canvas drawing when unavailable. **Do not propose replacing the canvas layer with DOM elements.** The canvas IS the USP.
-2. **[@chenglou/pretext](https://github.com/chenglou/pretext)** — DOM-free text measurement. Used wherever text is drawn on canvas so we never trigger reflows. Keep using it.
+### 1. [HTML-in-Canvas (`drawElementImage`)](https://developer.chrome.com/blog/html-in-canvas)
 
-Annotation storage for "Ask AI" history lives in-process: sqlite (WAL mode) at `{projectRoot}/.canvas-data/annotations.db`, served by the editor server at `/__canvas/annotations/*`, exposed to AI agents through MCP tools in `src/mcp/server.ts`. Everything goes through the one editor process — don't add a second HTTP server for annotations.
+Chrome's experimental Canvas API for rasterizing live DOM into a 2D canvas context.
+
+**Where it's called:** `src/overlay/canvas/paint-frame.ts` — two sites only, both for the hover and selection outline templates (small styled `<div>`s with `layoutsubtree` opt-in, drawn at the element's `getBoundingClientRect()`). Style lives in `src/overlay/canvas/constants.ts` (`BADGE_CSS`).
+
+**Everything else on the canvas is manual 2D ops**, via `src/overlay/canvas/draw-helpers.ts`:
+- `drawLabelBadge` — tag-name badge (top-left), optional grip dots
+- `drawDimsBadge` — `W × H` dimension readout (top-right)
+- `drawEdgeHandle` — spacing value pill (margin/padding px, drags)
+- `drawValueBadge` — generic numeric badge
+- `drawHatchedRect` — diagonal-hatched margin/padding zones
+- `drawDashedEdges` — selection outlines in fallback mode
+- `drawZeroNotch` — zero-value spacing affordance
+- `paintHandles` — 8 resize grips
+
+**Feature detect:** `src/overlay/canvas/constants.ts:2-4` checks `"drawElementImage" in CanvasRenderingContext2D.prototype`. When absent, outlines fall back to a dashed rect (`paint-frame.ts:254-260`); all other primitives keep working unchanged. **Do not assume availability in control flow** — always gate on the `HAS_DRAW_ELEMENT` flag.
+
+**Do not propose replacing the canvas layer with DOM elements.** The canvas IS the USP: pixel-perfect alignment at any zoom, zero reflow, one paint pass per frame.
+
+### 2. [@chenglou/pretext](https://github.com/chenglou/pretext)
+
+DOM-free text measurement — returns natural width, wrapped height, and line count for a given font + maxWidth + line-height, synchronously, with no DOM layout.
+
+**Where it's called:**
+- `src/overlay/canvas/draw-helpers.ts` — `prepareWithSegments()` + `measureNaturalWidth()` for every badge width (label, dims, edge pill, value badge). Cache key `font|text`, 500-entry LRU.
+- `src/overlay/utils/style-cache.ts` — `prepare()` + `layout()` for height and line-count (used for multi-line labels and annotation comment previews). 200-entry LRU.
+- Caches clear on HMR via `clearAllCaches()`.
+
+**Why it's load-bearing:** badges size themselves to their text. Without pretext you'd need either hidden measure `<div>`s (reflow per paint) or hardcoded text-width estimates (break on font/weight change). Both are worse.
+
+**Do not** call `ctx.measureText` directly for badge sizing (no height / line count) or spin up a measurement DOM node. Add new text draws through the same pretext-backed helpers.
+
+### Annotations storage
+
+Lives in-process: sqlite (WAL mode) at `{projectRoot}/.canvas-data/annotations.db`, served by the editor server at `/__canvas/annotations/*`, exposed to AI agents through MCP tools in `src/mcp/server.ts`. Everything goes through the one editor process — don't add a second HTTP server for annotations.
 
 ---
 
@@ -91,6 +123,35 @@ The iframe-direct handlers in `ResponsiveFrame.tsx` intentionally work in iframe
 - Mutations are addressed by `{ filePath, line, column }` resolved from `data-source-*` attrs or React fiber `_debugSource`. Do not invent a new addressing scheme.
 - Batching and undo live in `MutationWriter`. Preserve snapshots on every apply.
 
+### Tailwind + inline style — the dual-write model
+
+This is a **Tailwind-first** tool. The properties panel, drag handles, and `canvas_modify_classes` MCP tool all write Tailwind utility classes to `className`. Inline styles are the secondary path for things Tailwind doesn't express well.
+
+- **Class writes** go through `src/core/writer/class-modifier.ts`. Targets string-literal `className="..."` and safe object-expression patterns. **Template literals, identifiers, ternaries, and function calls in className are detected and left untouched** (`class-modifier.ts:210-213`) — adding classes to a dynamic branch would change runtime semantics unpredictably. The UI surfaces these elements as read-only rather than silently mutating them. Don't "improve" this by guessing.
+- **Named vs arbitrary values:** the writer prefers named Tailwind classes when the value is on-scale (`p-4`, `text-blue-500`, `rounded-md`) and falls back to bracket notation (`p-[13px]`, `bg-[#abc123]`) when not. The px→named-class mapping lives in `src/overlay/lib/tailwind-length.ts` and the constants in `src/core/tailwind/parser.ts`.
+- **Responsive / state variants** (`md:`, `hover:`, `focus:`, `group-hover:`, etc.) are preserved across edits and respected when the breakpoint switcher is active — a spacing drag on `md` writes `md:p-4`, not `p-4`. See `useClassHelpers()`.
+- **Inline styles** go through `src/core/writer/style-modifier.ts` — object literals only (`style={{ color: "red" }}`). Spreads, identifiers, interpolated template literals, and function calls bail with `applied: false`. Used for properties like selection colors, inset shadows, and custom CSS variable assignments.
+- **Preview-then-commit** (`PropertiesPanel.tsx:55-78`): the panel sets an inline style synchronously for a snappy preview, then clears it once the class mutation lands via HMR. Preserve this pattern — yanking the preview before HMR replaces it causes flash.
+- **Tailwind config is not deeply introspected.** `src/core/tailwind/config-reader.ts` loads hardcoded defaults and only detects whether a config file exists — it does not parse custom theme extensions. Known limitation; if asked to add custom-theme awareness, it is a real feature not a quick fix.
+- **CSS variable suggestions** come from `src/overlay/hooks/useCSSVariables.ts` — scans stylesheets + `:root` + computed styles for `--*`. These drive color-picker suggestions, not the writer.
+
+**Not supported, by design of the writer:** CSS Modules, SCSS, styled-components, emotion, styled-jsx, plain `.css` files, string-form `style="..."` attrs. Don't accept tickets that expand the writer to these without a broader design conversation.
+
+### What lives on canvas vs in React DOM
+
+Anything that tracks or annotates a specific element should be drawn on the canvas (single repaint, no per-frame DOM reads, no coordinate drift at zoom). Everything currently on canvas:
+
+- Hover outline, selection outline (via `drawElementImage` + fallback)
+- Spacing zones (hatched), edge handles (drag pills), zero-value notches
+- Resize handles (8 grips, with cursor hints)
+- Dimension readout (`W × H`), tag-name badge, value badges
+- Multi-selection outlines (shared rect-math path)
+- Flash/pulse on successful mutation
+
+React chrome that stays in DOM: Toolbar, PropertiesPanel, LayersPanel, ContextMenu, CommandBar, AnnotationPins (DOM at `z-index: 2147483644`, below the canvas at `2147483646`, so the canvas paints on top while clicks still land on pins thanks to `pointer-events: none` on the canvas layer), AskAIHistory popover, InlineTextEditor.
+
+If you're adding UI: element-anchored and transient → canvas; panels, popovers, and anything typeable → React DOM.
+
 ### Shadow DOM isolation is load-bearing
 - Overlay styles must stay inside the Shadow DOM. Do not inject `<style>` tags into the host `<head>` except for the explicit animation-pause stylesheet (`PAUSE_STYLE_ID`) which is intentional and scoped.
 - Document-level keyboard handlers need `composedPath()`, not `e.target`, to detect typing inside the Shadow DOM. There is already a memory about this — follow it.
@@ -136,7 +197,7 @@ The iframe-direct handlers in `ResponsiveFrame.tsx` intentionally work in iframe
 | `src/server/annotations-store.ts` | sqlite-backed annotations store (per-project `.canvas-data/annotations.db`) |
 | `src/mcp/server.ts` | MCP stdio server exposing canvas_* + annotations_* tools to AI agents |
 | `src/cli/index.ts` | `local-canvas dev` / `init` / `mcp` CLI entrypoint |
-| `src/overlay/utils/agentation.ts` | Overlay-side annotations client — wraps same-origin `/__canvas/annotations/*` and `/__canvas/agent-undo`. Filename is legacy; content is current. |
+| `src/overlay/utils/annotations.ts` | Overlay-side annotations client — wraps same-origin `/__canvas/annotations/*` and `/__canvas/agent-undo`. |
 | `src/server/agent-undo.ts` | Per-project snapshot ring at `.canvas-undo/snapshots.json` (FIFO, 10 entries), restores files on Undo |
 | `src/overlay/components/AnnotationPins.tsx` | Numbered pins, clustering, popover thread UI, drag-to-reposition |
 | `src/overlay/components/AskAIHistory.tsx` | History popover in the toolbar (clear-all, hide-all, status dots) |

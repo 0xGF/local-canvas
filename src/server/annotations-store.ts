@@ -1,16 +1,13 @@
 /**
- * Per-project sqlite-backed store for "Ask AI" annotations.
+ * Per-project sqlite-backed store for "Ask AI" annotations. The database
+ * lives at `{projectRoot}/.canvas-data/annotations.db` — it travels with the
+ * project so deleting one takes its annotations with it. The editor server
+ * is the only writer; WAL-mode concurrent reads from a sibling MCP stdio
+ * process are safe if that path is ever re-enabled.
  *
- * Replaces the former agentation-mcp HTTP/sqlite bridge. The database lives
- * under `{projectRoot}/.canvas-data/annotations.db` so it travels with the
- * project (delete the project → annotations go with it), and the editor
- * server is the only writer, so WAL-mode concurrent reads from a sibling
- * MCP stdio process are safe if we ever re-add that path.
- *
- * Sessions (as a first-class table) are deliberately gone. Each annotation
- * carries its own `url` column; the history popover filters client-side if
- * it wants only the current page. This kills the "one session per URL"
- * proliferation that agentation-mcp had.
+ * Each annotation carries its own `url` column; the history popover filters
+ * client-side when it only wants the current page. There is no `sessions`
+ * table — annotations are the primary entity.
  */
 
 import Database from "better-sqlite3";
@@ -31,8 +28,6 @@ export interface AnnotationRecord {
   elementPath: string;
   elementPaths?: string[];
   cssClasses?: string;
-  intent: string;
-  severity: string;
   status: "pending" | "in_progress" | "needs_input" | "resolved" | "dismissed";
   x?: number;
   y?: number;
@@ -50,8 +45,6 @@ export interface CreateAnnotationInput {
   elementPath: string;
   elementPaths?: string[];
   cssClasses?: string;
-  intent?: string;
-  severity?: string;
   x?: number;
   y?: number;
   boundingBox?: { x: number; y: number; width: number; height: number };
@@ -67,8 +60,6 @@ CREATE TABLE IF NOT EXISTS annotations (
   element_path TEXT NOT NULL,
   element_paths TEXT,
   css_classes TEXT,
-  intent TEXT NOT NULL DEFAULT 'change',
-  severity TEXT NOT NULL DEFAULT 'important',
   status TEXT NOT NULL DEFAULT 'pending',
   x REAL,
   y REAL,
@@ -116,8 +107,6 @@ function rowToRecord(row: Record<string, unknown>): AnnotationRecord {
     elementPath: row.element_path as string,
     elementPaths: row.element_paths ? JSON.parse(row.element_paths as string) : undefined,
     cssClasses: (row.css_classes as string) || undefined,
-    intent: row.intent as string,
-    severity: row.severity as string,
     status: row.status as AnnotationRecord["status"],
     x: row.x as number | null ?? undefined,
     y: row.y as number | null ?? undefined,
@@ -140,11 +129,11 @@ export function createAnnotation(projectRoot: string, input: CreateAnnotationInp
   const stmt = db.prepare(`
     INSERT INTO annotations (
       id, url, comment, element, element_path, element_paths, css_classes,
-      intent, severity, status, x, y, bounding_box, thread, resolved_summary,
+      status, x, y, bounding_box, thread, resolved_summary,
       created_at, updated_at
     ) VALUES (
       @id, @url, @comment, @element, @element_path, @element_paths, @css_classes,
-      @intent, @severity, 'pending', @x, @y, @bounding_box, '[]', NULL,
+      'pending', @x, @y, @bounding_box, '[]', NULL,
       @created_at, @updated_at
     )
   `);
@@ -158,8 +147,6 @@ export function createAnnotation(projectRoot: string, input: CreateAnnotationInp
       ? JSON.stringify(input.elementPaths)
       : null,
     css_classes: input.cssClasses ?? null,
-    intent: input.intent ?? "change",
-    severity: input.severity ?? "important",
     x: input.x ?? null,
     y: input.y ?? null,
     bounding_box: input.boundingBox ? JSON.stringify(input.boundingBox) : null,

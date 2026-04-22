@@ -189,6 +189,57 @@ export const RADIUS_PRESETS = [
   { value: "full", label: "100%" },
 ];
 
+// Spacing presets for margin/padding ScrubFields. Keys are the Tailwind
+// scale token, labels are the rendered pixel size so the user sees what
+// they're picking. Arbitrary values → p-[17px] etc. via the LENGTH parser.
+export const SPACING_PRESETS = [
+  { value: "0", label: "0" },
+  { value: "px", label: "1px" },
+  { value: "0.5", label: "2px" },
+  { value: "1", label: "4px" },
+  { value: "1.5", label: "6px" },
+  { value: "2", label: "8px" },
+  { value: "3", label: "12px" },
+  { value: "4", label: "16px" },
+  { value: "5", label: "20px" },
+  { value: "6", label: "24px" },
+  { value: "8", label: "32px" },
+  { value: "10", label: "40px" },
+  { value: "12", label: "48px" },
+  { value: "16", label: "64px" },
+  { value: "20", label: "80px" },
+  { value: "24", label: "96px" },
+  { value: "32", label: "128px" },
+  { value: "auto", label: "auto" },
+];
+
+// Font-size presets — Tailwind's default text-* scale with rendered px.
+// Arbitrary typed values → text-[17px] / text-[1.2rem].
+export const FONT_SIZE_PRESETS = [
+  { value: "xs", label: "12px" },
+  { value: "sm", label: "14px" },
+  { value: "base", label: "16px" },
+  { value: "lg", label: "18px" },
+  { value: "xl", label: "20px" },
+  { value: "2xl", label: "24px" },
+  { value: "3xl", label: "30px" },
+  { value: "4xl", label: "36px" },
+  { value: "5xl", label: "48px" },
+  { value: "6xl", label: "60px" },
+  { value: "7xl", label: "72px" },
+  { value: "8xl", label: "96px" },
+  { value: "9xl", label: "128px" },
+];
+
+// Border-width presets — Tailwind's fixed steps. Arbitrary → border-[3px].
+export const BORDER_WIDTH_PRESETS = [
+  { value: "0", label: "0" },
+  { value: "", label: "1px" },     // bare `border` = 1px
+  { value: "2", label: "2px" },
+  { value: "4", label: "4px" },
+  { value: "8", label: "8px" },
+];
+
 // Font weight presets; arbitrary numeric → font-[450] etc.
 export const FONT_WEIGHT_PRESETS = [
   { value: "thin", label: "100" },

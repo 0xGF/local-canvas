@@ -272,15 +272,10 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
           const source = resolveSource(target);
           const rect = target.getBoundingClientRect();
           const { x: ox, y: oy, scale } = getIframeOffset(iframe!);
-          selectElement({
-            element: target,
-            source,
-            rect,
-            className: typeof target.className === "string" ? target.className : "",
-            tagName: target.tagName.toLowerCase(),
-            iframeRef: iframe!,
-          });
-          // Anchor centred over the element (screen space).
+          // No selectElement here — annotate mode is its own tool and the
+          // properties panel / spacing handles / selection outline shouldn't
+          // come along when the user just wanted to drop an annotation.
+          // ContextMenu reads the target directly from the menu payload.
           const menuX = (rect.left + rect.width / 2) * scale + ox;
           const menuY = rect.top * scale + oy;
           useEditorStore.getState().setContextMenu({

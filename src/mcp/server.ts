@@ -109,6 +109,19 @@ const ANNOTATION_TOOLS = [
     },
   },
   {
+    name: "annotations_request_input",
+    description:
+      "The user's annotation doesn't have enough detail to act on. Post your clarifying question to the thread AND flip the annotation's status to `needs_input` so the overlay shows an orange pin / chip — the user sees they need to respond before work can continue. Use this instead of annotations_reply whenever you can't make the change without more info from the user.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        id: { type: "string" },
+        question: { type: "string", description: "Your clarifying question to the user" },
+      },
+      required: ["id", "question"],
+    },
+  },
+  {
     name: "annotations_reply",
     description:
       "Append a reply from the agent to an annotation's thread. The overlay renders the latest reply inline on each history row. Use this to explain what you did or ask a clarifying question.",
@@ -206,6 +219,23 @@ async function handleAnnotationTool(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "in_progress" }),
       });
+    case "annotations_request_input": {
+      // Append the agent's question, then flip to needs_input. Two HTTP
+      // calls because the thread + status endpoints are separate — doing
+      // them in order so the thread entry exists by the time the overlay
+      // re-polls and sees the new status.
+      const id = encodeURIComponent(String(args.id));
+      await req(`/${id}/thread`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "agent", content: String(args.question) }),
+      });
+      return req(`/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "needs_input" }),
+      });
+    }
     case "annotations_reply":
       return req(`/${encodeURIComponent(String(args.id))}/thread`, {
         method: "POST",

@@ -16,7 +16,7 @@ import {
   scrollToAndFocusAnnotation,
   type Annotation,
   type PinNavDirection,
-} from "../utils/agentation.js";
+} from "../utils/annotations.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { measureText } from "../utils/style-cache.js";
 import { getEditorIframe, getIframeOffset } from "../utils/iframe-events.js";
@@ -191,6 +191,7 @@ function pinColors(status: string | undefined): { bg: string; bgHover: string } 
   if (status === "resolved") return { bg: PIN_GREEN, bgHover: PIN_GREEN_DARK };
   if (status === "dismissed") return { bg: PIN_GREY, bgHover: PIN_GREY_DARK };
   if (status === "in_progress") return { bg: PIN_BLUE, bgHover: PIN_BLUE_DARK };
+  if (status === "needs_input") return { bg: C.attention, bgHover: C.attentionHover };
   return { bg: PIN_YELLOW, bgHover: PIN_YELLOW_DARK };
 }
 
@@ -290,6 +291,7 @@ function statusColor(status: string | undefined) {
   if (status === "resolved") return { bg: C.successSoft, fg: C.success };
   if (status === "dismissed") return { bg: C.neutralSoft, fg: C.neutral };
   if (status === "in_progress") return { bg: C.accentSoft, fg: C.accent };
+  if (status === "needs_input") return { bg: C.attentionSoft, fg: C.attention };
   return { bg: C.warningSoft, fg: C.warning };
 }
 
@@ -372,6 +374,10 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent, s
   return (
     <PopFade
       open={true}
+      // Marks this popover as overlay chrome so the document-level wheel
+      // handler in useViewport bails instead of hijacking scroll/zoom —
+      // otherwise scrolling a long thread scrolls the page/pans the canvas.
+      data-canvas-overlay="true"
       style={{
         position: "fixed",
         left: popX, top: popY,
@@ -434,13 +440,18 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent, s
         </button>
       </div>
 
-      {thread.length > 0 && (
-        <div style={{
-          maxHeight: 160, overflowY: "auto",
-          display: "flex", flexDirection: "column", gap: 4,
-          padding: "8px 12px",
-          borderBottom: `1px solid ${C.borderLight}`,
-        }}>
+      {(thread.length > 0 || status === "in_progress") && (
+        <div
+          // Stop wheel from bubbling up to the viewport pan/zoom handler even
+          // in the rare case the data-canvas-overlay marker is stripped.
+          onWheel={e => e.stopPropagation()}
+          style={{
+            maxHeight: 160, overflowY: "auto",
+            display: "flex", flexDirection: "column", gap: 4,
+            padding: "8px 12px",
+            borderBottom: `1px solid ${C.borderLight}`,
+          }}
+        >
           {thread.map((entry, i) => {
             const isAgent = entry.role === "agent";
             return (
@@ -460,6 +471,25 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent, s
               </div>
             );
           })}
+          {status === "in_progress" && (
+            <div style={{
+              alignSelf: "flex-start",
+              background: C.accentSoft,
+              color: C.accent,
+              fontSize: 10, lineHeight: 1.4,
+              padding: "4px 8px", borderRadius: 6,
+              display: "inline-flex", alignItems: "center", gap: 6,
+            }}>
+              <span style={{ display: "inline-flex", gap: 3 }}>
+                <span style={{ width: 4, height: 4, borderRadius: "50%", background: C.accent, animation: "canvasTypingDot 1.2s ease-in-out infinite 0ms" }} />
+                <span style={{ width: 4, height: 4, borderRadius: "50%", background: C.accent, animation: "canvasTypingDot 1.2s ease-in-out infinite 180ms" }} />
+                <span style={{ width: 4, height: 4, borderRadius: "50%", background: C.accent, animation: "canvasTypingDot 1.2s ease-in-out infinite 360ms" }} />
+              </span>
+              <span style={{ textTransform: "uppercase", letterSpacing: 0.4, fontSize: 8, opacity: 0.8 }}>
+                Working
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -586,7 +616,7 @@ function buildStacks(pins: PinPosition[]): Stack[] {
 }
 
 /**
- * Renders agentation-style numbered pins on the page for each pending
+ * Renders numbered annotation pins on the page for each pending
  * annotation. Hover → pencil icon. Click → popover for follow-up.
  */
 export const AnnotationPins = React.memo(function AnnotationPins() {
@@ -838,6 +868,10 @@ export const AnnotationPins = React.memo(function AnnotationPins() {
           from { opacity: 0; }
           to { opacity: 1; }
         }
+        @keyframes canvasTypingDot {
+          0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+          40%           { opacity: 1;    transform: translateY(-2px); }
+        }
       `}</style>
 
       {/* Click-outside backdrop when popover is open */}
@@ -954,6 +988,7 @@ const StackTaskList = React.memo(function StackTaskList({
           a.status === "resolved" ? "Resolved"
           : a.status === "dismissed" ? "Dismissed"
           : a.status === "in_progress" ? "In progress"
+          : a.status === "needs_input" ? "Needs input"
           : "Pending";
         const preview = a.comment || "(no prompt)";
         return (

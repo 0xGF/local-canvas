@@ -5,7 +5,7 @@ import { useChangesStore } from "../stores/changes-store.js";
 import { useWebSocket } from "./useWebSocket.js";
 import { attachToDocumentAndIframe, bind } from "../utils/iframe-events.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
-import { dispatchNavigatePin, dispatchToggleAIHistory } from "../utils/agentation.js";
+import { dispatchNavigatePin, dispatchToggleAIHistory } from "../utils/annotations.js";
 
 export function useKeyboard() {
   const { undo, redo, send } = useWebSocket();

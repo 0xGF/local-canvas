@@ -28,6 +28,8 @@ import {
   GRID_COLS_PRESETS, FLEX_ITEM_PRESETS,
   BORDER_STYLE_PRESETS,
   INSET_PRESETS,
+  SPACING_PRESETS, FONT_SIZE_PRESETS, BORDER_WIDTH_PRESETS, RADIUS_PRESETS,
+  LEADING_PRESETS, TRACKING_PRESETS,
 } from "./PropertiesPanel.constants.js";
 import {
   ASPECT_RATIO_PRESETS,
@@ -773,10 +775,10 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
       </div>
       {isPositioned && (
         <div className="grid grid-cols-2 gap-1.5">
-          <ScrubField label="T" title="Top"    {...lengthProps(h, "top",    phInset("top"))} />
-          <ScrubField label="R" title="Right"  {...lengthProps(h, "right",  phInset("right"))} />
-          <ScrubField label="B" title="Bottom" {...lengthProps(h, "bottom", phInset("bottom"))} />
-          <ScrubField label="L" title="Left"   {...lengthProps(h, "left",   phInset("left"))} />
+          <ScrubField label="T" title="Top"    presets={INSET_PRESETS} {...lengthProps(h, "top",    phInset("top"))} />
+          <ScrubField label="R" title="Right"  presets={INSET_PRESETS} {...lengthProps(h, "right",  phInset("right"))} />
+          <ScrubField label="B" title="Bottom" presets={INSET_PRESETS} {...lengthProps(h, "bottom", phInset("bottom"))} />
+          <ScrubField label="L" title="Left"   presets={INSET_PRESETS} {...lengthProps(h, "left",   phInset("left"))} />
         </div>
       )}
       <div className="grid grid-cols-2 gap-1.5">
@@ -938,15 +940,15 @@ const SpacingSection = React.memo(function SpacingSection({ h, sel }: { h: Class
       >
         {mode => mode === "linked" ? (
           <div className="grid grid-cols-2 gap-1.5">
-            <ScrubField label="PX" {...lengthProps(h, "px", phPx(cs?.paddingLeft))} />
-            <ScrubField label="PY" {...lengthProps(h, "py", phPx(cs?.paddingTop))} />
+            <ScrubField label="PX" presets={SPACING_PRESETS} {...lengthProps(h, "px", phPx(cs?.paddingLeft))} />
+            <ScrubField label="PY" presets={SPACING_PRESETS} {...lengthProps(h, "py", phPx(cs?.paddingTop))} />
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-1.5">
-            <ScrubField label="L" {...lengthProps(h, "pl", phPx(cs?.paddingLeft))} />
-            <ScrubField label="T" {...lengthProps(h, "pt", phPx(cs?.paddingTop))} />
-            <ScrubField label="R" {...lengthProps(h, "pr", phPx(cs?.paddingRight))} />
-            <ScrubField label="B" {...lengthProps(h, "pb", phPx(cs?.paddingBottom))} />
+            <ScrubField label="L" presets={SPACING_PRESETS} {...lengthProps(h, "pl", phPx(cs?.paddingLeft))} />
+            <ScrubField label="T" presets={SPACING_PRESETS} {...lengthProps(h, "pt", phPx(cs?.paddingTop))} />
+            <ScrubField label="R" presets={SPACING_PRESETS} {...lengthProps(h, "pr", phPx(cs?.paddingRight))} />
+            <ScrubField label="B" presets={SPACING_PRESETS} {...lengthProps(h, "pb", phPx(cs?.paddingBottom))} />
           </div>
         )}
       </LinkedInput>
@@ -962,20 +964,20 @@ const SpacingSection = React.memo(function SpacingSection({ h, sel }: { h: Class
       >
         {mode => mode === "linked" ? (
           <div className="grid grid-cols-2 gap-1.5">
-            <ScrubField label="MX" value={lengthDisplay(mx)} placeholder={phPx(cs?.marginLeft)}
+            <ScrubField label="MX" presets={SPACING_PRESETS} value={lengthDisplay(mx)} placeholder={phPx(cs?.marginLeft)}
               onChange={v => writeMargin("mx", lengthToTailwind(v))} />
-            <ScrubField label="MY" value={lengthDisplay(my)} placeholder={phPx(cs?.marginTop)}
+            <ScrubField label="MY" presets={SPACING_PRESETS} value={lengthDisplay(my)} placeholder={phPx(cs?.marginTop)}
               onChange={v => writeMargin("my", lengthToTailwind(v))} />
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-1.5">
-            <ScrubField label="L" value={lengthDisplay(ml)} placeholder={phPx(cs?.marginLeft)}
+            <ScrubField label="L" presets={SPACING_PRESETS} value={lengthDisplay(ml)} placeholder={phPx(cs?.marginLeft)}
               onChange={v => writeMargin("ml", lengthToTailwind(v))} />
-            <ScrubField label="T" value={lengthDisplay(mt)} placeholder={phPx(cs?.marginTop)}
+            <ScrubField label="T" presets={SPACING_PRESETS} value={lengthDisplay(mt)} placeholder={phPx(cs?.marginTop)}
               onChange={v => writeMargin("mt", lengthToTailwind(v))} />
-            <ScrubField label="R" value={lengthDisplay(mr)} placeholder={phPx(cs?.marginRight)}
+            <ScrubField label="R" presets={SPACING_PRESETS} value={lengthDisplay(mr)} placeholder={phPx(cs?.marginRight)}
               onChange={v => writeMargin("mr", lengthToTailwind(v))} />
-            <ScrubField label="B" value={lengthDisplay(mb)} placeholder={phPx(cs?.marginBottom)}
+            <ScrubField label="B" presets={SPACING_PRESETS} value={lengthDisplay(mb)} placeholder={phPx(cs?.marginBottom)}
               onChange={v => writeMargin("mb", lengthToTailwind(v))} />
           </div>
         )}
@@ -1368,11 +1370,11 @@ const BorderSection = React.memo(function BorderSection({ h, sel }: { h: ClassHe
       setStyleProp(sel.element, sideProp, n > 0 ? `${n}px` : "0px");
       if (n > 0) setStyleProp(sel.element, "borderStyle", "solid");
     }
-    h.sendPrefixed({
+    h.debouncedSendPrefixed("border-width", {
       type: "modify-class", source: sel.source,
       remove: remove.length ? remove : undefined,
       add: add ? [add] : undefined,
-    });
+    }, 120);
     if (sel.element) {
       clearInlineAfterClassUpdate(sel.element, "borderWidth");
       clearInlineAfterClassUpdate(sel.element, "borderTopWidth");
@@ -1490,6 +1492,7 @@ const BorderSection = React.memo(function BorderSection({ h, sel }: { h: ClassHe
             placeholder={`${computedBorderPx}px`}
             title="Border weight"
             format={n => `${Math.round(n)}px`}
+            presets={BORDER_WIDTH_PRESETS}
           />
           <SelectField
             icon={<BorderAll size={12} />}
@@ -1691,11 +1694,11 @@ const OutlineSection = React.memo(function OutlineSection({ h, sel }: { h: Class
       setStyleProp(sel.element, "outlineWidth", n > 0 ? `${n}px` : "0px");
       if (n > 0) setStyleProp(sel.element, "outlineStyle", "solid");
     }
-    h.sendPrefixed({
+    h.debouncedSendPrefixed("outline-width", {
       type: "modify-class", source: sel.source,
       remove: remove.length ? remove : undefined,
       add: add ? [add] : undefined,
-    });
+    }, 120);
     if (sel.element) {
       clearInlineAfterClassUpdate(sel.element, "outlineWidth");
       clearInlineAfterClassUpdate(sel.element, "outlineStyle");
@@ -1790,6 +1793,7 @@ const OutlineSection = React.memo(function OutlineSection({ h, sel }: { h: Class
             placeholder={`${outlineWidthPx}px`}
             title="Outline weight"
             format={n => `${Math.round(n)}px`}
+            presets={BORDER_WIDTH_PRESETS}
           />
           <SelectField
             icon={<Square size={12} />}
@@ -1904,11 +1908,15 @@ const RadiusSection = React.memo(function RadiusSection({ h, sel }: { h: ClassHe
     // `suffix === ""` represents the bare `rounded` class (4px) — emit it
     // as-is instead of `rounded-` which isn't a valid utility.
     const add = n <= 0 ? undefined : [suffix === "" ? "rounded" : `rounded-${suffix}`];
-    h.sendPrefixed({
+    if (sel.element) {
+      setStyleProp(sel.element, "borderRadius", `${Math.max(0, n)}px`);
+      clearInlineAfterClassUpdate(sel.element, "borderRadius");
+    }
+    h.debouncedSendPrefixed("rounded", {
       type: "modify-class", source: sel.source,
       remove: remove.length ? remove : undefined,
       add,
-    });
+    }, 120);
   }, [h, sel]);
 
   const writeCorner = useCallback((corner: "tl" | "tr" | "bl" | "br", n: number) => {
@@ -1967,6 +1975,7 @@ const RadiusSection = React.memo(function RadiusSection({ h, sel }: { h: ClassHe
             }}
             placeholder={`${computedRadius}px`}
             format={n => `${Math.round(n)}px`}
+            presets={RADIUS_PRESETS}
           />
           {toggle}
         </div>
@@ -1976,19 +1985,19 @@ const RadiusSection = React.memo(function RadiusSection({ h, sel }: { h: ClassHe
             <ScrubField label={<CornerGlyph corner="tl" />} value={`${tlPx}px`}
               onChange={v => writeCorner("tl", parseInt(v, 10) || 0)}
               placeholder={`${tlPx}px`} title="Top-left"
-              format={n => `${Math.round(n)}px`} />
+              format={n => `${Math.round(n)}px`} presets={RADIUS_PRESETS} />
             <ScrubField label={<CornerGlyph corner="tr" />} value={`${trPx}px`}
               onChange={v => writeCorner("tr", parseInt(v, 10) || 0)}
               placeholder={`${trPx}px`} title="Top-right"
-              format={n => `${Math.round(n)}px`} />
+              format={n => `${Math.round(n)}px`} presets={RADIUS_PRESETS} />
             <ScrubField label={<CornerGlyph corner="bl" />} value={`${blPx}px`}
               onChange={v => writeCorner("bl", parseInt(v, 10) || 0)}
               placeholder={`${blPx}px`} title="Bottom-left"
-              format={n => `${Math.round(n)}px`} />
+              format={n => `${Math.round(n)}px`} presets={RADIUS_PRESETS} />
             <ScrubField label={<CornerGlyph corner="br" />} value={`${brPx}px`}
               onChange={v => writeCorner("br", parseInt(v, 10) || 0)}
               placeholder={`${brPx}px`} title="Bottom-right"
-              format={n => `${Math.round(n)}px`} />
+              format={n => `${Math.round(n)}px`} presets={RADIUS_PRESETS} />
           </div>
           {toggle}
         </div>
@@ -2077,11 +2086,20 @@ function writeShadowLayers(h: ClassHelpers, sel: NonNullable<ReturnType<typeof u
   // doesn't see a complete arbitrary-value utility and try to compile a CSS
   // rule containing a literal JS placeholder.
   const add = tokens.length ? ["shadow-[" + tokens.join(",") + "]"] : undefined;
-  h.sendPrefixed({
+  if (sel.element) {
+    const cssLayers = layers.map(l => [
+      l.inset ? "inset" : "",
+      `${l.x}px`, `${l.y}px`, `${l.blur}px`, `${l.spread}px`,
+      (l.color || "rgb(0,0,0)"),
+    ].filter(Boolean).join(" "));
+    setStyleProp(sel.element, "boxShadow", cssLayers.length ? cssLayers.join(", ") : "none");
+    clearInlineAfterClassUpdate(sel.element, "boxShadow");
+  }
+  h.debouncedSendPrefixed("shadow", {
     type: "modify-class", source: sel.source,
     remove: remove.length ? remove : undefined,
     add,
-  });
+  }, 120);
 }
 
 function ShadowLayerRow({ layer, onChange }: {
@@ -2278,22 +2296,31 @@ const TransformSection = React.memo(function TransformSection({ h, sel }: { h: C
     if (!sel.source) return;
     const remove = h.classes.filter(c => ROTATE_CLASS_RE.test(h.stripBpPrefix(c)));
     const trimmed = raw.trim();
+    const applyPreview = (deg: number | null) => {
+      if (!sel.element) return;
+      // `rotate` CSS prop (individual transform) composes cleanly with `scale`.
+      setStyleProp(sel.element, "rotate", deg === null ? "" : `${deg}deg`);
+      clearInlineAfterClassUpdate(sel.element, "rotate");
+    };
     if (!trimmed) {
-      if (remove.length) h.sendPrefixed({ type: "modify-class", source: sel.source, remove });
+      applyPreview(null);
+      if (remove.length) h.debouncedSendPrefixed("rotate", { type: "modify-class", source: sel.source, remove }, 120);
       return;
     }
     const n = parseFloat(trimmed);
     if (!Number.isFinite(n) || n === 0) {
-      if (remove.length) h.sendPrefixed({ type: "modify-class", source: sel.source, remove });
+      applyPreview(null);
+      if (remove.length) h.debouncedSendPrefixed("rotate", { type: "modify-class", source: sel.source, remove }, 120);
       return;
     }
-    h.sendPrefixed({
+    applyPreview(Math.round(n));
+    h.debouncedSendPrefixed("rotate", {
       type: "modify-class", source: sel.source,
       remove: remove.length ? remove : undefined,
       // Concat (not template-literal) so Tailwind's scanner doesn't compile this.
       add: ["rotate-[" + Math.round(n) + "deg]"],
-    });
-  }, [h, sel.source]);
+    }, 120);
+  }, [h, sel.source, sel.element]);
 
   const writeScale = useCallback((raw: string) => {
     if (!sel.source) return;
@@ -2303,21 +2330,29 @@ const TransformSection = React.memo(function TransformSection({ h, sel }: { h: C
       return !bare.includes("scale-x-") && !bare.includes("scale-y-");
     });
     const trimmed = raw.trim();
+    const applyPreview = (pct: number | null) => {
+      if (!sel.element) return;
+      setStyleProp(sel.element, "scale", pct === null ? "" : String(pct / 100));
+      clearInlineAfterClassUpdate(sel.element, "scale");
+    };
     if (!trimmed) {
-      if (remove.length) h.sendPrefixed({ type: "modify-class", source: sel.source, remove });
+      applyPreview(null);
+      if (remove.length) h.debouncedSendPrefixed("scale", { type: "modify-class", source: sel.source, remove }, 120);
       return;
     }
     const n = parseFloat(trimmed);
     if (!Number.isFinite(n) || n === 100) {
-      if (remove.length) h.sendPrefixed({ type: "modify-class", source: sel.source, remove });
+      applyPreview(null);
+      if (remove.length) h.debouncedSendPrefixed("scale", { type: "modify-class", source: sel.source, remove }, 120);
       return;
     }
-    h.sendPrefixed({
+    applyPreview(n);
+    h.debouncedSendPrefixed("scale", {
       type: "modify-class", source: sel.source,
       remove: remove.length ? remove : undefined,
       add: [`scale-[${(n / 100).toFixed(2).replace(/\.?0+$/, "") || "0"}]`],
-    });
-  }, [h, sel.source]);
+    }, 120);
+  }, [h, sel.source, sel.element]);
 
   const hasTransform = rotateDeg !== 0 || scalePct !== 100;
 
@@ -2455,17 +2490,24 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
       return rest in FONT_SIZE_MAP || FONT_SIZE_BRACKET_RE.test(rest);
     });
     if (!trimmed) {
-      if (old.length) h.sendPrefixed({ type: "modify-class", source: sel.source, remove: old });
+      if (sel.element) {
+        setStyleProp(sel.element, "fontSize", "");
+      }
+      if (old.length) h.debouncedSendPrefixed("text-size", { type: "modify-class", source: sel.source, remove: old }, 120);
       return;
     }
     const n = parseFloat(trimmed);
     if (!Number.isFinite(n)) return;
-    h.sendPrefixed({
+    if (sel.element) {
+      setStyleProp(sel.element, "fontSize", `${Math.round(n)}px`);
+      clearInlineAfterClassUpdate(sel.element, "fontSize");
+    }
+    h.debouncedSendPrefixed("text-size", {
       type: "modify-class", source: sel.source,
       remove: old.length ? old : undefined,
       add: [`text-${encodeFontSizePx(Math.round(n))}`],
-    });
-  }, [h, sel.source]);
+    }, 120);
+  }, [h, sel.source, sel.element]);
 
   // ── Font weight ──────────────────────────────────────────────────────────
   const weightClass = findTypographyClass(h, bare => FONT_WEIGHT_RE.test(bare));
@@ -2534,17 +2576,22 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
     const trimmed = raw.trim();
     const current = leadingClass ? [leadingClass] : [];
     if (!trimmed) {
-      if (current.length) h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: current });
+      if (sel.element) setStyleProp(sel.element, "lineHeight", "");
+      if (current.length) h.debouncedSendPrefixed("leading", { type: "modify-class", source: sel.source!, remove: current }, 120);
       return;
     }
     const n = parseFloat(trimmed);
     if (!Number.isFinite(n)) return;
-    h.sendPrefixed({
+    if (sel.element) {
+      setStyleProp(sel.element, "lineHeight", `${n}px`);
+      clearInlineAfterClassUpdate(sel.element, "lineHeight");
+    }
+    h.debouncedSendPrefixed("leading", {
       type: "modify-class", source: sel.source!,
       remove: current.length ? current : undefined,
       add: [`leading-[${n}px]`],
-    });
-  }, [h, sel.source, leadingClass]);
+    }, 120);
+  }, [h, sel.source, sel.element, leadingClass]);
 
   const trackingClass = findTypographyClass(h, bare => /^tracking-/.test(bare));
   const trackingSuffix = trackingClass ? h.stripBpPrefix(trackingClass).slice(9) : "";
@@ -2555,17 +2602,22 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
     const trimmed = raw.trim();
     const current = trackingClass ? [trackingClass] : [];
     if (!trimmed) {
-      if (current.length) h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: current });
+      if (sel.element) setStyleProp(sel.element, "letterSpacing", "");
+      if (current.length) h.debouncedSendPrefixed("tracking", { type: "modify-class", source: sel.source!, remove: current }, 120);
       return;
     }
     const n = parseFloat(trimmed);
     if (!Number.isFinite(n)) return;
-    h.sendPrefixed({
+    if (sel.element) {
+      setStyleProp(sel.element, "letterSpacing", `${n}em`);
+      clearInlineAfterClassUpdate(sel.element, "letterSpacing");
+    }
+    h.debouncedSendPrefixed("tracking", {
       type: "modify-class", source: sel.source!,
       remove: current.length ? current : undefined,
       add: [`tracking-[${n}em]`],
-    });
-  }, [h, sel.source, trackingClass]);
+    }, 120);
+  }, [h, sel.source, sel.element, trackingClass]);
 
   // ── Text color (named or bracketed) ──────────────────────────────────────
   // Prefer the class value over the computed style. `cs.color` is the
@@ -2617,6 +2669,7 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
           onChange={writeFontSize}
           placeholder="auto"
           format={n => `${Math.max(0, Math.round(n))}px`}
+          presets={FONT_SIZE_PRESETS}
           title="Font size (px)"
         />
         <SelectField
@@ -2633,6 +2686,7 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
           onChange={writeLeading}
           placeholder="auto"
           format={n => `${Math.max(0, Math.round(n))}px`}
+          presets={LEADING_PRESETS}
           title="Line height (px)"
         />
         <ScrubField label="Track"
@@ -2641,6 +2695,7 @@ const TypographySection = React.memo(function TypographySection({ h, sel }: { h:
           placeholder="0"
           format={n => n.toFixed(2)}
           parse={v => parseFloat(v)}
+          presets={TRACKING_PRESETS}
           title="Letter spacing (em)"
         />
       </div>
@@ -3178,23 +3233,23 @@ function writeScaleValue(
   const trimmed = raw.trim();
   const remove = h.classes.filter(c => new RegExp(`^${prefix}(?:-|$)`).test(h.stripBpPrefix(c)));
   if (!trimmed) {
-    if (remove.length) h.sendPrefixed({ type: "modify-class", source: sel.source, remove });
+    if (remove.length) h.debouncedSendPrefixed(prefix, { type: "modify-class", source: sel.source, remove }, 120);
     return;
   }
   const n = parseInt(trimmed, 10);
   if (!Number.isFinite(n) || n <= 0) {
-    if (remove.length) h.sendPrefixed({ type: "modify-class", source: sel.source, remove });
+    if (remove.length) h.debouncedSendPrefixed(prefix, { type: "modify-class", source: sel.source, remove }, 120);
     return;
   }
   // Tailwind duration/delay scale (75/100/150/200/300/500/700/1000). Use the
   // named class when it matches exactly; bracket for anything else.
   const NAMED = new Set([0, 75, 100, 150, 200, 300, 500, 700, 1000]);
   const add = NAMED.has(n) ? [`${prefix}-${n}`] : [`${prefix}-[${n}ms]`];
-  h.sendPrefixed({
+  h.debouncedSendPrefixed(prefix, {
     type: "modify-class", source: sel.source,
     remove: remove.length ? remove : undefined,
     add,
-  });
+  }, 120);
 }
 
 // ──────────────────────────────────────────────────────────────────────────

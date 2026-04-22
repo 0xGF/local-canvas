@@ -6,6 +6,7 @@ import { resolveSource } from "../../core/source-map/resolver.js";
 import {
   Type, Copy, ClipboardPaste, Trash2,
   ArrowUp, ArrowDown, ArrowLeft, Layers, MessageSquarePlus, Sparkles,
+  ChevronDown, ChevronRight, Plus,
 } from "./icons.js";
 import { THEME } from "../theme.js";
 import { getEditorIframe, iframeRectToScreenBox } from "../utils/iframe-events.js";
@@ -25,10 +26,9 @@ interface MenuItem {
 
 let copiedClasses: string[] = [];
 
-// ── Agentation MCP bridge ──
-// Re-use the shared agentation client so ContextMenu and AnnotationPins
-// share the same session and port config.
-import { postAnnotation as sharedPostAnnotation } from "../utils/agentation.js";
+// Re-use the shared annotations client so ContextMenu and AnnotationPins
+// send through one code path.
+import { postAnnotation as sharedPostAnnotation } from "../utils/annotations.js";
 
 async function postAnnotation(opts: {
   comment: string;
@@ -36,7 +36,6 @@ async function postAnnotation(opts: {
   elementPath: string;
   elementPaths?: string[];
   cssClasses?: string;
-  intent?: "fix" | "change" | "question";
   boundingBox?: { x: number; y: number; width: number; height: number };
 }) {
   return sharedPostAnnotation(opts);
@@ -86,7 +85,6 @@ function buildAnnotationOpts(
       elementPath: paths.length > 0 ? paths.join(", ") : multi[0].tagName,
       elementPaths: paths.length > 1 ? paths : undefined,
       cssClasses: multi.map(s => s.className).filter(Boolean).join(" | "),
-      intent: "change" as const,
       boundingBox: union ?? undefined,
     };
   }
@@ -95,7 +93,6 @@ function buildAnnotationOpts(
     element: `<${fallbackTag}>${fallbackClasses.length ? "." + fallbackClasses.join(".") : ""}`,
     elementPath: fallbackSource ? `${fallbackSource.filePath}:${fallbackSource.line}` : fallbackTag,
     cssClasses: fallbackClasses.join(" "),
-    intent: "change" as const,
   };
 }
 
@@ -507,7 +504,7 @@ const AnnotatePill = React.memo(function AnnotatePill({
   element,
   fallbackX,
   fallbackYTop,
-  elementTag: _elementTag,
+  elementTag,
   onClose,
   onSubmit,
 }: {
@@ -523,9 +520,31 @@ const AnnotatePill = React.memo(function AnnotatePill({
 }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [cssOpen, setCssOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [dotPos, setDotPos] = useState<{ left: number; top: number } | null>(null);
+  const [flippedAbove, setFlippedAbove] = useState(false);
+
+  // Compact set of computed styles the user is most likely to want to see
+  // when annotating — text, layout, spacing. Full getComputedStyle has 400+
+  // properties; this curated list reads in one glance.
+  const cssProps = [
+    "color", "font-family", "font-size", "font-weight", "line-height",
+    "background-color", "border", "border-radius",
+    "padding", "margin", "width", "height",
+    "display", "position",
+  ];
+  const cssRows = (() => {
+    if (!element || !element.isConnected) return [];
+    const doc = element.ownerDocument;
+    const cs = doc.defaultView?.getComputedStyle(element);
+    if (!cs) return [];
+    return cssProps
+      .map(p => ({ prop: p, value: cs.getPropertyValue(p).trim() }))
+      .filter(r => r.value && r.value !== "none" && r.value !== "normal" && r.value !== "auto");
+  })();
 
   // Focus immediately on mount.
   useEffect(() => {
@@ -585,15 +604,18 @@ const AnnotatePill = React.memo(function AnnotatePill({
       // Prefer the live element rect so we track scroll/resize in the iframe.
       let anchorX = fallbackX;
       let anchorYTop = fallbackYTop;
+      let anchorYBottom = fallbackYTop;
       if (element && element.isConnected) {
         const rect = element.getBoundingClientRect();
         if (iframe && element.ownerDocument === iframe.contentDocument) {
           const screenBox = iframeRectToScreenBox(rect, iframe);
           anchorX = screenBox.left + screenBox.width / 2;
           anchorYTop = screenBox.top;
+          anchorYBottom = screenBox.top + screenBox.height;
         } else {
           anchorX = rect.left + rect.width / 2;
           anchorYTop = rect.top;
+          anchorYBottom = rect.bottom;
         }
       }
 
@@ -601,12 +623,22 @@ const AnnotatePill = React.memo(function AnnotatePill({
       const vh = window.innerHeight;
       const gap = 12;
       const left = clamp(anchorX - pillW / 2, 8, vw - pillW - 8);
-      const belowTop = anchorYTop + 16 + gap;
+      // Prefer below when the element's *top* is in the upper half of the
+      // viewport; flip above when its bottom is past the halfway mark and
+      // there isn't room below. This matches the user's "top → open below,
+      // bottom → open above" ask without jittering when the element
+      // straddles the midline.
+      const belowTop = anchorYBottom + gap;
       const fitsBelow = belowTop + pillH <= vh - 8;
-      const top = fitsBelow
-        ? clamp(belowTop, 8, vh - pillH - 8)
-        : clamp(anchorYTop - pillH - gap, 8, vh - pillH - 8);
+      const flipAbove = !fitsBelow;
+      const top = flipAbove
+        ? clamp(anchorYTop - pillH - gap, 8, vh - pillH - 8)
+        : clamp(belowTop, 8, vh - pillH - 8);
       setPos({ left, top });
+      setFlippedAbove(flipAbove);
+      // Preview dot anchored to the element's centre — sits between the
+      // target and the pill so the user sees "you're annotating HERE."
+      setDotPos({ left: anchorX, top: flipAbove ? anchorYTop : anchorYBottom });
     };
 
     place();
@@ -640,113 +672,185 @@ const AnnotatePill = React.memo(function AnnotatePill({
   };
 
   return (
-    <div
-      ref={boxRef}
-      data-canvas-overlay="true"
-      style={{
-        position: "fixed",
-        left: pos?.left ?? -9999,
-        top: pos?.top ?? -9999,
-        width: 380,
-        maxWidth: "calc(100vw - 16px)",
-        display: "flex",
-        // Center vertically so the placeholder/caret sits on the same axis
-        // as the submit button at rest. When the textarea grows past one
-        // line the button stays centred.
-        alignItems: "center",
-        gap: 8,
-        padding: "6px 6px 6px 12px",
-        // Match the rest of the overlay chrome (toolbar, context menu, popovers)
-        // — solid dark surface, subtle border, 10px radius, single consistent
-        // shadow. Previously a floating frosted pill that felt out of place
-        // against the rest of the UI.
-        borderRadius: 10,
-        background: C.bg,
-        border: `1px solid ${C.border}`,
-        boxShadow:
-          "0 10px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3)",
-        zIndex: 2147483647,
-        opacity: pos ? 1 : 0, // hide until measured so it doesn't flicker at (-9999,-9999)
-        transition: "opacity 100ms ease",
-        fontFamily: C.font,
-      }}
-    >
-      <textarea
-        ref={inputRef}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            submit();
-          }
-        }}
-        placeholder="Ask AI to change this…"
-        rows={1}
+    <>
+      {/* Preview dot at the click anchor — a small warning-coloured disc
+          showing the user exactly where their annotation will drop. Lives
+          between the element and the pill; flips side when the pill flips. */}
+      {dotPos && (
+        <div
+          aria-hidden
+          style={{
+            position: "fixed",
+            left: dotPos.left - 10,
+            top: dotPos.top - 10,
+            width: 20, height: 20,
+            borderRadius: "50%",
+            background: C.warning,
+            color: "#fff",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
+            zIndex: 2147483647,
+            pointerEvents: "none",
+            transition: "left 120ms ease, top 120ms ease",
+          }}
+        >
+          <Plus size={12} />
+        </div>
+      )}
+
+      <div
+        ref={boxRef}
+        data-canvas-overlay="true"
+        onClick={e => e.stopPropagation()}
         style={{
-          flex: 1,
-          // Match the circular send button height so both sit on the same
-          // baseline when the input is a single line. Grows vertically
-          // (capped by maxHeight) as the user types.
-          minHeight: 28,
-          maxHeight: 160,
-          resize: "none",
-          background: "transparent",
-          border: "none",
-          outline: "none",
-          color: C.fg,
-          fontSize: 13,
-          lineHeight: "20px",
-          padding: "4px 0",
-          margin: 0,
-          display: "block",
+          position: "fixed",
+          left: pos?.left ?? -9999,
+          top: pos?.top ?? -9999,
+          width: 340,
+          maxWidth: "calc(100vw - 16px)",
+          display: "flex", flexDirection: "column",
+          borderRadius: 10,
+          background: C.bg,
+          border: `1px solid ${C.border}`,
+          boxShadow: "0 10px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3)",
+          zIndex: 2147483647,
+          opacity: pos ? 1 : 0,
+          transition: "opacity 100ms ease",
           fontFamily: C.font,
-          boxSizing: "border-box",
+          overflow: "hidden",
         }}
-        onInput={(e) => {
-          const el = e.currentTarget;
-          // Reset then set from scrollHeight so the box shrinks when the
-          // user deletes text.
-          el.style.height = "28px";
-          el.style.height = Math.min(160, el.scrollHeight) + "px";
-        }}
-      />
-      <button
-        onClick={submit}
-        disabled={!canSend}
-        aria-label="Send"
-        style={{
-          flexShrink: 0,
-          width: 28,
-          height: 28,
-          borderRadius: 6,
-          border: "none",
-          // Accent-blue send (matches the rest of the overlay's primary
-          // action treatment — toolbar, toggle group, etc.). Disabled state
-          // uses the same muted surface as other idle controls.
-          background: canSend ? C.accent : "rgba(255,255,255,0.06)",
-          color: canSend ? "#fff" : C.fgMuted,
-          cursor: canSend ? "pointer" : "default",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          transition: "background 120ms ease, color 120ms ease",
-          padding: 0,
-        }}
-        title={canSend ? "Send (↵)" : undefined}
       >
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
-          <path
-            d="M8 13V3M8 3l-4 4M8 3l4 4"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+        {/* Header — tag name with chevron that expands the computed CSS. */}
+        <button
+          onClick={() => setCssOpen(o => !o)}
+          style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "8px 10px",
+            background: "transparent",
+            border: "none",
+            borderBottom: cssOpen ? `1px solid ${C.borderLight}` : "none",
+            color: C.fg,
+            fontFamily: C.mono,
+            fontSize: 11,
+            fontWeight: 500,
+            cursor: "pointer",
+            outline: "none",
+            textAlign: "left",
+          }}
+        >
+          {cssOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+          <span style={{ color: C.fgDim }}>{elementTag}</span>
+        </button>
+
+        {cssOpen && (
+          <div
+            onWheel={e => e.stopPropagation()}
+            style={{
+              maxHeight: 200,
+              overflowY: "auto",
+              padding: "8px 10px",
+              background: C.bgAlt,
+              borderBottom: `1px solid ${C.borderLight}`,
+              fontFamily: C.mono,
+              fontSize: 10,
+              lineHeight: 1.6,
+              color: C.fg,
+            }}
+          >
+            {cssRows.length === 0 ? (
+              <span style={{ color: C.fgMuted }}>No computed styles.</span>
+            ) : (
+              cssRows.map(r => (
+                <div key={r.prop}>
+                  <span style={{ color: C.canvasLayer }}>{r.prop}</span>
+                  <span style={{ color: C.fgDim }}>: </span>
+                  <span style={{ color: C.fg }}>{r.value}</span>
+                  <span style={{ color: C.fgDim }}>;</span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        <div style={{ padding: "10px 10px 6px" }}>
+          <textarea
+            ref={inputRef}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            placeholder="What should change?"
+            rows={1}
+            style={{
+              width: "100%",
+              minHeight: 28,
+              maxHeight: 160,
+              resize: "none",
+              background: C.bgAlt,
+              border: `1px solid ${C.borderLight}`,
+              borderRadius: 6,
+              outline: "none",
+              color: C.fg,
+              fontSize: 12,
+              lineHeight: "20px",
+              padding: "6px 8px",
+              margin: 0,
+              display: "block",
+              fontFamily: C.font,
+              boxSizing: "border-box",
+            }}
+            onInput={(e) => {
+              const el = e.currentTarget;
+              el.style.height = "28px";
+              el.style.height = Math.min(160, el.scrollHeight) + "px";
+            }}
           />
-        </svg>
-      </button>
-    </div>
+        </div>
+
+        <div style={{
+          display: "flex", justifyContent: "flex-end", gap: 6,
+          padding: "0 10px 10px",
+        }}>
+          <button
+            onClick={() => {
+              useEditorStore.getState().setAnnotateMode(false);
+              onClose();
+            }}
+            disabled={sending}
+            style={{
+              background: "transparent", border: "none",
+              color: C.fgDim, fontSize: 11,
+              padding: "4px 10px", borderRadius: 4, cursor: "pointer",
+              fontFamily: C.font,
+              outline: "none",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={!canSend}
+            style={{
+              background: canSend ? C.warning : C.bgAlt,
+              color: canSend ? "#fff" : C.fgMuted,
+              border: "none", borderRadius: 4,
+              padding: "4px 14px", fontSize: 11, fontWeight: 600,
+              cursor: canSend ? "pointer" : "default",
+              fontFamily: C.font,
+              outline: "none",
+            }}
+            title={canSend ? "Send (↵)" : undefined}
+          >
+            {sending ? "Sending…" : "Add"}
+          </button>
+        </div>
+      </div>
+    </>
   );
 });
 

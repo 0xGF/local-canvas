@@ -169,6 +169,21 @@ export function useSpacingDrag(
 
     function hitTestBadge(x: number, y: number): BadgeHit | null {
       const p = toIframeDoc(x, y);
+      // Resize handles overlap with spacing hits at edge midpoints (and
+      // corners). They're small, specific targets — let them win so the
+      // cursor doesn't start *both* a resize drag AND a spacing drag at
+      // the same time. Without this the user grabbing the left edge near
+      // midY would simultaneously resize width and increase margin-left.
+      const handles = resizeHandlesRef?.current;
+      if (handles) {
+        const TOL = 4; // matches tolerance in use-resize-handles.ts
+        for (const h of handles) {
+          if (p.x >= h.x - TOL && p.x <= h.x + h.w + TOL &&
+              p.y >= h.y - TOL && p.y <= h.y + h.h + TOL) {
+            return null;
+          }
+        }
+      }
       for (const hit of badgeHitsRef.current) {
         if (p.x >= hit.x && p.x <= hit.x + hit.w && p.y >= hit.y && p.y <= hit.y + hit.h) return hit;
       }

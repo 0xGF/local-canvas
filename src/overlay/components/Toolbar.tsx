@@ -12,7 +12,7 @@ import {
   MessagesSquare,
   Layers,
 } from "./icons.js";
-// Loaded on demand so the AI history + agentation client stay out of the
+// Loaded on demand so the AI history + annotations client stay out of the
 // critical-path bundle.
 const AskAIHistory = lazy(() =>
   import("./AskAIHistory.js").then(m => ({ default: m.AskAIHistory }))

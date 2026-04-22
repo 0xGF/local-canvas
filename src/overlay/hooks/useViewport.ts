@@ -51,12 +51,15 @@ export const useViewportStore = create<ViewportState>((set, get) => ({
     const pageH = container.scrollHeight;
     container.style.transform = prevTransform;
 
-    const fitZoom = Math.min(viewW / pageW, viewH / pageH) * 0.85;
+    // Width-only fit. 0.72 leaves horizontal breathing room for the Layers /
+    // Properties panels that anchor to the left and right edges in edit mode.
+    const fitZoom = (viewW / pageW) * 0.72;
     const clampedZoom = Math.max(0.1, Math.min(1, fitZoom));
     const scaledW = pageW * clampedZoom;
     const scaledH = pageH * clampedZoom;
     const panX = (viewW - scaledW) / 2;
-    const panY = (viewH - scaledH) / 2;
+    // Anchor to top for tall pages; center vertically only when page fits
+    const panY = scaledH <= viewH ? (viewH - scaledH) / 2 : 40;
     set({ zoom: clampedZoom, panX, panY });
   },
 }));

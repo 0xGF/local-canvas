@@ -1,13 +1,8 @@
 /**
- * Client for the annotations API, served same-origin by the local-canvas
- * editor server at `/__canvas/annotations/*`. Replaces the former
- * agentation-mcp HTTP bridge on :6967 — annotation storage now lives in a
- * per-project sqlite file and is owned by the editor process directly.
- *
- * The public surface (post/list/hide/nav helpers) is preserved so the
- * overlay components didn't all need to change at once. The "session"
- * concept is now a no-op kept for API compat with consumers that still
- * call `getOrCreateSession()` / `currentSessionId()`.
+ * Client for the local-canvas annotations API, served same-origin by the
+ * editor server at `/__canvas/annotations/*`. Annotation storage lives in
+ * a per-project sqlite file under `.canvas-data/annotations.db` and is
+ * owned by the editor process.
  */
 
 import { getEditorIframe } from "./iframe-events.js";
@@ -38,13 +33,11 @@ export interface Annotation {
    *      group — don't create per-path resolution entries. */
   elementPaths?: string[];
   cssClasses?: string;
-  intent?: string;
-  severity?: string;
   url: string;
   timestamp: number;
   /** Epoch ms of the last server-side update — flip to resolved, thread append, etc. */
   updatedAt?: number;
-  status?: "pending" | "in_progress" | "resolved" | "dismissed";
+  status?: "pending" | "in_progress" | "needs_input" | "resolved" | "dismissed";
   x?: number;
   y?: number;
   boundingBox?: { x: number; y: number; width: number; height: number };
@@ -62,7 +55,6 @@ export interface PostAnnotationOpts {
    *  full list alongside the primary elementPath and boundingBox. */
   elementPaths?: string[];
   cssClasses?: string;
-  intent?: "fix" | "change" | "question" | "undo";
   x?: number;
   y?: number;
   boundingBox?: { x: number; y: number; width: number; height: number };
@@ -75,26 +67,7 @@ function pageKey(): string {
   return `${window.location.origin}${window.location.pathname}`;
 }
 
-// ── Session-concept shim ──────────────────────────────────────────────────
-// The old agentation-mcp model had one session per URL. The new storage is
-// project-wide and tags each annotation with its page URL directly, so the
-// "session id" is synthetic — a stable token we hand out so pre-existing
-// consumers (AnnotationPins, etc.) can keep their `if (!currentSessionId())
-// await getOrCreateSession()` guards without a rewrite. It has no bearing
-// on server state.
-let _sessionId: string | null = null;
-
-export async function getOrCreateSession(): Promise<string> {
-  if (!_sessionId) _sessionId = `page_${Math.random().toString(36).slice(2, 10)}`;
-  return _sessionId;
-}
-
-export function currentSessionId(): string | null {
-  return _sessionId;
-}
-
 export async function postAnnotation(opts: PostAnnotationOpts): Promise<Annotation> {
-  await getOrCreateSession();
   const res = await fetch(BASE, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -106,8 +79,6 @@ export async function postAnnotation(opts: PostAnnotationOpts): Promise<Annotati
         ? { elementPaths: opts.elementPaths }
         : {}),
       cssClasses: opts.cssClasses,
-      intent: opts.intent || "change",
-      severity: "important",
       url: window.location.href,
       timestamp: Date.now(),
       // Server now treats these as optional; passing them through when known
@@ -241,7 +212,7 @@ export async function appendAnnotationThread(
  */
 export async function updateAnnotationStatus(
   id: string,
-  status: "pending" | "in_progress" | "resolved" | "dismissed",
+  status: "pending" | "in_progress" | "needs_input" | "resolved" | "dismissed",
   resolvedSummary?: string,
 ): Promise<Annotation | null> {
   try {
@@ -273,14 +244,6 @@ export async function clearAllAnnotations(): Promise<{ deleted: number } | null>
   } catch {
     return null;
   }
-}
-
-/** @deprecated Use clearAllAnnotations. Kept as a shim so callers in flight
- *  during the agentation→annotations rename don't break. */
-export async function clearAllAgentationSessions(): Promise<{ deletedAnnotations: number; sessions: number } | null> {
-  const res = await clearAllAnnotations();
-  if (!res) return null;
-  return { deletedAnnotations: res.deleted, sessions: 0 };
 }
 
 // ── Cross-component event: open a pin's popover ──

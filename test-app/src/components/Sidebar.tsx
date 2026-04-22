@@ -70,6 +70,7 @@ const groups: NavGroup[] = [
           "Breakpoint previews",
           "Animation pause",
           "Undo with HMR awareness",
+          "Changes panel & diff view",
         ),
       },
       {

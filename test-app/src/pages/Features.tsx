@@ -199,6 +199,41 @@ export default function Features() {
           history row via <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">/__canvas/agent-undo</code>.
         </p>
       </div>
+
+      <hr className="border-neutral-200" />
+
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold tracking-tight">Changes panel &amp; diff view</h2>
+        <ul className="list-disc pl-5 text-[14px] text-neutral-600 space-y-2 leading-relaxed">
+          <li>
+            The <strong className="text-neutral-800">Save</strong> button in the
+            bottom bar doubles as a pending-changes counter. Click it to open a
+            popover listing every queued mutation with its file path, line
+            number, status (pending / applied / failed) and time.
+          </li>
+          <li>
+            Each change expands to a unified{" "}
+            <strong className="text-neutral-800">diff</strong> of the actual
+            source edit — red <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">-</code>{" "}
+            / green <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">+</code>{" "}
+            lines of the JSX that got rewritten. Useful when a Tailwind edit
+            lands in a surprising place and you want to verify it before
+            hitting <strong>⌘S</strong>.
+          </li>
+          <li>
+            A <strong className="text-neutral-800">Discard Changes</strong>{" "}
+            trash button sits next to Save with a confirm popover — wipes every
+            pending mutation without touching files that have already been
+            written.
+          </li>
+          <li>
+            Toolbar popups (Settings, Breakpoint, History, Save) are{" "}
+            <strong className="text-neutral-800">mutually exclusive</strong> —
+            opening one closes the others, so you never end up with
+            overlapping panels.
+          </li>
+        </ul>
+      </div>
     </div>
   );
 }

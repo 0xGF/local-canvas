@@ -11,11 +11,17 @@ import { prepare, layout, type PreparedText } from "@chenglou/pretext";
 interface CachedStyle {
   className: string;
   style: CSSStyleDeclaration;
+  map: StylePropertyMapReadOnly | null;
   timestamp: number;
 }
 
 const styleCache = new WeakMap<HTMLElement, CachedStyle>();
 const CACHE_TTL = 500; // ms — invalidate after half a second
+
+// Feature-detect Typed OM. Chrome/Edge/Safari 17.4+ support it; older
+// browsers get the string-based fallback.
+const HAS_TYPED_OM =
+  typeof Element !== "undefined" && "computedStyleMap" in Element.prototype;
 
 /**
  * Get computed style with caching. Avoids repeated getComputedStyle calls
@@ -32,8 +38,50 @@ export function getCachedStyle(el: HTMLElement): CSSStyleDeclaration {
   }
 
   const style = getComputedStyle(el);
-  styleCache.set(el, { className: currentClass, style, timestamp: now });
+  styleCache.set(el, { className: currentClass, style, map: null, timestamp: now });
   return style;
+}
+
+/**
+ * Get the element's typed computed-style map, cached alongside the string
+ * form. Hot paths use this to read resolved lengths numerically without
+ * `parseFloat(cs.x)`. Returns `null` when Typed OM isn't available — callers
+ * must handle the fallback (or use `cssPx`, which does).
+ */
+export function getCachedStyleMap(el: HTMLElement): StylePropertyMapReadOnly | null {
+  if (!HAS_TYPED_OM) return null;
+  const now = performance.now();
+  const cached = styleCache.get(el);
+  const currentClass = typeof el.className === "string" ? el.className : "";
+
+  if (cached && cached.className === currentClass && now - cached.timestamp < CACHE_TTL) {
+    if (cached.map) return cached.map;
+    cached.map = el.computedStyleMap();
+    return cached.map;
+  }
+
+  const map = el.computedStyleMap();
+  const style = getComputedStyle(el);
+  styleCache.set(el, { className: currentClass, style, map, timestamp: now });
+  return map;
+}
+
+/**
+ * Read a resolved length from a Typed OM map as a px number. Returns 0 for
+ * keywords (e.g. `auto`), missing properties, or non-numeric values. Passing
+ * a `null` map (Typed OM unavailable) also returns 0 — the caller should
+ * fall back to `getComputedStyle` + `parseFloat` in that case.
+ */
+export function cssPx(
+  map: StylePropertyMapReadOnly | null,
+  prop: string,
+): number {
+  if (!map) return 0;
+  const v = map.get(prop);
+  if (v && "value" in v && typeof (v as CSSUnitValue).value === "number") {
+    return (v as CSSUnitValue).value;
+  }
+  return 0;
 }
 
 /**

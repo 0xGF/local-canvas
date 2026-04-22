@@ -7,6 +7,7 @@ import { TW_PX, TW_NAMES, COL } from "./constants.js";
 import { attachToDocumentAndIframe, bind } from "../utils/iframe-events.js";
 import { markDragEnd } from "../utils/drag-state.js";
 import { sourceStyleHasProperty } from "../utils/inline-style-source.js";
+import { getCachedStyleMap, cssPx } from "../utils/style-cache.js";
 
 export type HandlePosition = "top" | "right" | "bottom" | "left" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
@@ -164,13 +165,13 @@ export function useResizeHandles(handlesRef: React.MutableRefObject<ResizeHandle
       e.preventDefault();
       e.stopPropagation();
 
-      const cs = getComputedStyle(sel.element);
+      const map = getCachedStyleMap(sel.element);
       dragRef.current = {
         handle,
         startX: e.clientX,
         startY: e.clientY,
-        startWidth: parseFloat(cs.width) || sel.rect.width,
-        startHeight: parseFloat(cs.height) || sel.rect.height,
+        startWidth: cssPx(map, "width") || sel.rect.width,
+        startHeight: cssPx(map, "height") || sel.rect.height,
         moved: false,
         hadInlineWidthAtStart: sourceStyleHasProperty(sel.element, "width"),
         hadInlineHeightAtStart: sourceStyleHasProperty(sel.element, "height"),
@@ -263,18 +264,18 @@ export function useResizeHandles(handlesRef: React.MutableRefObject<ResizeHandle
       if (drag.moved) {
         const sel = useEditorStore.getState().selectedElement;
         if (sel?.element) {
-          const cs = getComputedStyle(sel.element);
+          const map = getCachedStyleMap(sel.element);
           const pos = drag.handle.position;
           const el = sel.element;
           const didW = pos.includes("left") || pos.includes("right");
           const didH = pos.includes("top") || pos.includes("bottom");
 
           if (didW) {
-            const finalW = Math.round(parseFloat(cs.width) || 0);
+            const finalW = Math.round(cssPx(map, "width"));
             commitSize("w", finalW);
           }
           if (didH) {
-            const finalH = Math.round(parseFloat(cs.height) || 0);
+            const finalH = Math.round(cssPx(map, "height"));
             commitSize("h", finalH);
           }
 

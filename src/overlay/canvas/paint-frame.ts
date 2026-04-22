@@ -4,7 +4,7 @@ import { roundRect, drawDashedLine, drawDashedEdges, drawLabelBadge, drawValueBa
 import { HAS_DRAW_ELEMENT } from "./constants.js";
 import type { SourceLocation } from "../../core/source-map/types.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
-import { getCachedStyle } from "../utils/style-cache.js";
+import { getCachedStyle, getCachedStyleMap, cssPx } from "../utils/style-cache.js";
 
 /** Render the top-left tag+component label pair shared by hover, annotate,
  *  and selection. Keeps all three visually identical aside from the tag
@@ -196,18 +196,19 @@ export function paintFrame(
 
     // Compute margin/padding for hovered element
     const hcs = getCachedStyle(hEl);
+    const hmap = getCachedStyleMap(hEl);
     const hz = (v: number) => v * spaceScale;
     const hm = {
-      top: hz(parseFloat(hcs.marginTop) || 0),
-      right: hz(parseFloat(hcs.marginRight) || 0),
-      bottom: hz(parseFloat(hcs.marginBottom) || 0),
-      left: hz(parseFloat(hcs.marginLeft) || 0),
+      top: hz(cssPx(hmap, "margin-top")),
+      right: hz(cssPx(hmap, "margin-right")),
+      bottom: hz(cssPx(hmap, "margin-bottom")),
+      left: hz(cssPx(hmap, "margin-left")),
     };
     const hp = {
-      top: hz(parseFloat(hcs.paddingTop) || 0),
-      right: hz(parseFloat(hcs.paddingRight) || 0),
-      bottom: hz(parseFloat(hcs.paddingBottom) || 0),
-      left: hz(parseFloat(hcs.paddingLeft) || 0),
+      top: hz(cssPx(hmap, "padding-top")),
+      right: hz(cssPx(hmap, "padding-right")),
+      bottom: hz(cssPx(hmap, "padding-bottom")),
+      left: hz(cssPx(hmap, "padding-left")),
     };
 
     // Draw margin zones (diagonal hatching)
@@ -227,8 +228,8 @@ export function paintFrame(
     // Draw gap zones for flex/grid
     const hDisplay = hcs.display;
     if (hDisplay === "flex" || hDisplay === "inline-flex" || hDisplay === "grid" || hDisplay === "inline-grid") {
-      const hrg = parseFloat(hcs.rowGap) || 0;
-      const hcg = parseFloat(hcs.columnGap) || 0;
+      const hrg = cssPx(hmap, "row-gap");
+      const hcg = cssPx(hmap, "column-gap");
       if (hrg > 0 || hcg > 0) {
         const children = Array.from(hEl.children).filter(c => c instanceof HTMLElement && getCachedStyle(c).position !== "absolute") as HTMLElement[];
         const childRects = children.map(c => {
@@ -308,30 +309,36 @@ export function paintFrame(
         right: rawRect.right * ifs + ox, bottom: rawRect.bottom * ifs + oy,
       };
       const cs = getCachedStyle(el);
+      const map = getCachedStyleMap(el);
 
       // Scale factor: getComputedStyle returns CSS values, getBoundingClientRect returns screen values.
       // We scale CSS spacing to match screen coordinates.
       const sz = (v: number) => v * spaceScale;
 
-      const isAutoH = cs.marginLeft === cs.marginRight &&
+      const mTop = cssPx(map, "margin-top");
+      const mRight = cssPx(map, "margin-right");
+      const mBottom = cssPx(map, "margin-bottom");
+      const mLeft = cssPx(map, "margin-left");
+
+      const isAutoH = mLeft === mRight &&
         (el.style.marginLeft === "auto" || el.style.marginRight === "auto" ||
         el.className?.includes?.("mx-auto") || el.className?.includes?.("m-auto"));
-      const isAutoV = cs.marginTop === cs.marginBottom &&
+      const isAutoV = mTop === mBottom &&
         (el.style.marginTop === "auto" || el.style.marginBottom === "auto" ||
         el.className?.includes?.("my-auto") || el.className?.includes?.("m-auto"));
 
       // Raw CSS values (for badge display)
       const mRaw: SpacingBox = {
-        top: isAutoV ? 0 : parseFloat(cs.marginTop) || 0,
-        right: isAutoH ? 0 : parseFloat(cs.marginRight) || 0,
-        bottom: isAutoV ? 0 : parseFloat(cs.marginBottom) || 0,
-        left: isAutoH ? 0 : parseFloat(cs.marginLeft) || 0,
+        top: isAutoV ? 0 : mTop,
+        right: isAutoH ? 0 : mRight,
+        bottom: isAutoV ? 0 : mBottom,
+        left: isAutoH ? 0 : mLeft,
       };
       const pRaw: SpacingBox = {
-        top: parseFloat(cs.paddingTop) || 0,
-        right: parseFloat(cs.paddingRight) || 0,
-        bottom: parseFloat(cs.paddingBottom) || 0,
-        left: parseFloat(cs.paddingLeft) || 0,
+        top: cssPx(map, "padding-top"),
+        right: cssPx(map, "padding-right"),
+        bottom: cssPx(map, "padding-bottom"),
+        left: cssPx(map, "padding-left"),
       };
 
       // Override with active drag value so zones update in real-time during drag
@@ -367,8 +374,8 @@ export function paintFrame(
       // ── Gap zones ──
       const display = cs.display;
       if (display === "flex" || display === "inline-flex" || display === "grid" || display === "inline-grid") {
-        const rg = parseFloat(cs.rowGap) || 0;
-        const cg = parseFloat(cs.columnGap) || 0;
+        const rg = cssPx(map, "row-gap");
+        const cg = cssPx(map, "column-gap");
         if (rg > 0 || cg > 0) {
           const children = Array.from(el.children).filter(c => c instanceof HTMLElement && getCachedStyle(c).position !== "absolute") as HTMLElement[];
           const childRects = children.map(c => {
@@ -470,24 +477,48 @@ export function paintFrame(
       //   left/right → vertical strip along the edge (thick × tall)
       // Previously every side used (wide × 14), so left/right was rotated 90°
       // and only a narrow band at the vertical midline was draggable.
-      const SPACING_CORNER_INSET = 20;
+      const SPACING_CORNER_INSET = 12;
+      // Minimum in SCREEN pixels so the hit rect stays accessible at any
+      // zoom level. At 1x zoom a 10px iframe-doc band equals 10 screen px;
+      // at 0.5x zoom (zoomed out) we need a 20px iframe-doc band to give
+      // the user the same 10 screen-px target. Without this, narrow
+      // padding/margin values at low zoom were effectively unclickable —
+      // the exact symptom the user flagged ("works when zoomed in").
+      const MIN_CROSS_SCREEN_PX = 10;
+      const minCross = MIN_CROSS_SCREEN_PX / Math.max(0.1, vz);
       const drawSpacing = (cssVal: number, screenVal: number, color: string, x: number, y: number, type: "margin" | "padding", side: "top" | "right" | "bottom" | "left") => {
         if (cssVal <= 0) return;
         const prefix = SIDE_PREFIX[type][side];
         const isHoriz = side === "left" || side === "right";
-        const crossThickness = Math.max(14, screenVal);
+        // Tight thickness so the hit rect tracks the visible band the user
+        // sees. For padding we also cap at ~half the element's cross
+        // dimension so left/right (or top/bottom) hit rects never overlap
+        // in the middle — on a narrow element, that overlap made it
+        // impossible to reliably hit whichever side the cursor was closer to.
+        const crossDim = isHoriz ? r.width : r.height;
+        const paddingMax = Math.max(minCross, crossDim / 2 - 2);
+        const desired = Math.max(minCross, screenVal);
+        const crossThickness = type === "padding"
+          ? Math.min(desired, paddingMax)
+          : desired;
         let hx: number, hy: number, hw: number, hh: number;
         if (isHoriz) {
-          // Vertical strip along the left/right edge
           hw = crossThickness;
-          hx = x - crossThickness / 2;
+          if (type === "margin") {
+            hx = side === "left" ? r.left - crossThickness : r.left + r.width;
+          } else {
+            hx = side === "left" ? r.left : r.left + r.width - crossThickness;
+          }
           const alongLen = Math.max(14, r.height - SPACING_CORNER_INSET * 2);
           hh = alongLen;
           hy = r.top + (r.height - alongLen) / 2;
         } else {
-          // Horizontal strip across the top/bottom edge
           hh = crossThickness;
-          hy = y - crossThickness / 2;
+          if (type === "margin") {
+            hy = side === "top" ? r.top - crossThickness : r.top + r.height;
+          } else {
+            hy = side === "top" ? r.top : r.top + r.height - crossThickness;
+          }
           const alongLen = Math.max(14, r.width - SPACING_CORNER_INSET * 2);
           hw = alongLen;
           hx = r.left + (r.width - alongLen) / 2;
@@ -549,7 +580,14 @@ export function paintFrame(
         }
         // Skip if element too small for inset
         if (hw <= 0 || hh <= 0) return;
-        badges.push({ x: hx, y: hy, w: hw, h: hh, type, side, value: 0, prefix });
+        // UNSHIFT (not push) so padding zero-handles register BEFORE the
+        // sized margin hit rects. The hit-test is first-match-wins, and
+        // padding zero-handles share their outer edge with a non-zero
+        // margin's inner edge — if margin went first, clicking the green
+        // "add padding" dot would drag margin instead (the exact bug
+        // reported: "whenever i try and drag that green padding it just
+        // drags the margin").
+        badges.unshift({ x: hx, y: hy, w: hw, h: hh, type, side, value: 0, prefix });
 
         // Only draw dashed line indicator when mouse is hovering near the edge
         const hoverPad = 12;

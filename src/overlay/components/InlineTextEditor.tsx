@@ -4,6 +4,7 @@ import { useWebSocket } from "../hooks/useWebSocket.js";
 import { resolveSource } from "../../core/source-map/resolver.js";
 import { deepElementFromPoint } from "../utils/element-picker.js";
 import { THEME } from "../theme.js";
+import { getCachedStyleMap, cssPx } from "../utils/style-cache.js";
 
 const C = THEME;
 
@@ -96,6 +97,7 @@ export const InlineTextEditor = React.memo(function InlineTextEditor() {
   if (!editing) return null;
 
   const cs = getComputedStyle(editing.element);
+  const map = getCachedStyleMap(editing.element);
   const rect = editing.element.getBoundingClientRect();
 
   return (
@@ -138,7 +140,7 @@ export const InlineTextEditor = React.memo(function InlineTextEditor() {
           background: "rgba(0,0,0,0.8)",
           border: `2px solid ${C.accent}`,
           borderRadius: 4,
-          padding: `${parseFloat(cs.paddingTop) || 2}px ${parseFloat(cs.paddingRight) || 4}px`,
+          padding: `${cssPx(map, "padding-top") || 2}px ${cssPx(map, "padding-right") || 4}px`,
           outline: "none",
           resize: "both",
           overflow: "auto",

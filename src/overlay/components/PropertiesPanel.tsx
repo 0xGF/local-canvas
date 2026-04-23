@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useReadonlyStyleStore } from "../stores/readonly-style-store.js";
 import { useClassHelpers } from "../hooks/useClassHelpers.js";
@@ -52,19 +52,45 @@ import {
 import { THEME } from "../theme.js";
 import { arbitraryColorValue, clearInlineAfterClassUpdate, type ClassHelpers, type Sel } from "./properties/shared.js";
 
-// Each section now lives in its own file under `./properties/`. They're
-// imported eagerly (rather than via `React.lazy`) because the synchronous
-// test harness — 77 `mount()` call sites — queries the DOM immediately
-// after render and doesn't await Suspense. Code organisation is the win
-// here; chunking can come back if/when the tests move to async flushing.
-import { ShadowSection, InnerShadowSection } from "./properties/shadow-section.js";
-import { TransformSection } from "./properties/transform-section.js";
-import { BlendingSection } from "./properties/blending-section.js";
-import { TypographySection } from "./properties/typography-section.js";
-import { SelectionColorsSection } from "./properties/selection-colors-section.js";
-import { FiltersSection, BackdropFiltersSection } from "./properties/filters-section.js";
-import { TransitionsSection } from "./properties/transitions-section.js";
-import { InteractivitySection } from "./properties/interactivity-section.js";
+// Each section lives in its own file under `./properties/` and is
+// `React.lazy`'d so rarely-opened sections are deferred into their own
+// chunks. The panel body wraps each group in a `Suspense fallback={null}`
+// so the section renders as blank-until-ready — cheap because the
+// section's `<Section>` header is already its own collapsed state.
+//
+// The test harness (`__tests__/PropertiesPanel.test.tsx`) awaits a
+// two-stage `act(async)` flush inside `mount()` so the Suspense cycle
+// resolves before each test queries the DOM.
+const LazyShadowSection = lazy(() =>
+  import("./properties/shadow-section.js").then(m => ({ default: m.ShadowSection }))
+);
+const LazyInnerShadowSection = lazy(() =>
+  import("./properties/shadow-section.js").then(m => ({ default: m.InnerShadowSection }))
+);
+const LazyTransformSection = lazy(() =>
+  import("./properties/transform-section.js").then(m => ({ default: m.TransformSection }))
+);
+const LazyBlendingSection = lazy(() =>
+  import("./properties/blending-section.js").then(m => ({ default: m.BlendingSection }))
+);
+const LazyTypographySection = lazy(() =>
+  import("./properties/typography-section.js").then(m => ({ default: m.TypographySection }))
+);
+const LazySelectionColorsSection = lazy(() =>
+  import("./properties/selection-colors-section.js").then(m => ({ default: m.SelectionColorsSection }))
+);
+const LazyFiltersSection = lazy(() =>
+  import("./properties/filters-section.js").then(m => ({ default: m.FiltersSection }))
+);
+const LazyBackdropFiltersSection = lazy(() =>
+  import("./properties/filters-section.js").then(m => ({ default: m.BackdropFiltersSection }))
+);
+const LazyTransitionsSection = lazy(() =>
+  import("./properties/transitions-section.js").then(m => ({ default: m.TransitionsSection }))
+);
+const LazyInteractivitySection = lazy(() =>
+  import("./properties/interactivity-section.js").then(m => ({ default: m.InteractivitySection }))
+);
 
 const C = THEME;
 
@@ -182,20 +208,26 @@ export const PropertiesPanel = React.memo(function PropertiesPanel() {
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overlay-scroll-stable">
         <LayoutSection h={helpers} sel={sel} />
         <SpacingSection h={helpers} sel={sel} />
-        <TypographySection h={helpers} sel={sel} />
+        <Suspense fallback={null}>
+          <LazyTypographySection h={helpers} sel={sel} />
+        </Suspense>
         <RadiusSection h={helpers} sel={sel} />
-        <TransformSection h={helpers} sel={sel} />
-        <BlendingSection h={helpers} sel={sel} />
+        <Suspense fallback={null}>
+          <LazyTransformSection h={helpers} sel={sel} />
+          <LazyBlendingSection h={helpers} sel={sel} />
+        </Suspense>
         <FillSection h={helpers} sel={sel} />
         <OutlineSection h={helpers} sel={sel} />
         <BorderSection h={helpers} sel={sel} />
-        <ShadowSection h={helpers} sel={sel} />
-        <InnerShadowSection h={helpers} sel={sel} />
-        <SelectionColorsSection h={helpers} sel={sel} />
-        <FiltersSection h={helpers} sel={sel} />
-        <BackdropFiltersSection h={helpers} sel={sel} />
-        <TransitionsSection h={helpers} sel={sel} />
-        <InteractivitySection h={helpers} sel={sel} />
+        <Suspense fallback={null}>
+          <LazyShadowSection h={helpers} sel={sel} />
+          <LazyInnerShadowSection h={helpers} sel={sel} />
+          <LazySelectionColorsSection h={helpers} sel={sel} />
+          <LazyFiltersSection h={helpers} sel={sel} />
+          <LazyBackdropFiltersSection h={helpers} sel={sel} />
+          <LazyTransitionsSection h={helpers} sel={sel} />
+          <LazyInteractivitySection h={helpers} sel={sel} />
+        </Suspense>
       </div>
     </div>
   );

@@ -7,7 +7,7 @@
  */
 import React from "react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, cleanup, fireEvent, screen } from "@testing-library/react";
+import { act, render, cleanup, fireEvent, screen } from "@testing-library/react";
 
 // ── Module mocks (must run before component import) ──────────────────────
 
@@ -60,10 +60,24 @@ function selectElement(el: HTMLElement) {
   });
 }
 
-function mount(classes: string, tag = "div") {
+async function mount(classes: string, tag = "div") {
   const el = makeEl(classes, tag);
   selectElement(el);
-  const utils = render(<PropertiesPanel />);
+  let utils!: ReturnType<typeof render>;
+  // PropertiesPanel lazy-loads rarely-opened sections (Shadow, Typography,
+  // Filters, Transitions, Interactivity, etc.) via `React.lazy` so each
+  // gets its own chunk. The sync `render()` commits the Suspense fallback
+  // first; one tick later the imports resolve and the sections render.
+  // Wrapping in `act(async)` flushes that cycle so the returned utils
+  // observe the fully-rendered tree — tests can then query DOM nodes
+  // without waiting.
+  await act(async () => {
+    utils = render(<PropertiesPanel />);
+  });
+  // Extra microtask flush — some lazy imports chain a second layer
+  // (e.g. color-picker-popover inside Typography) which resolves on the
+  // next microtask.
+  await act(async () => { await Promise.resolve(); });
   return { el, ...utils };
 }
 
@@ -187,28 +201,28 @@ afterEach(() => {
 // ════════════════════════════════════════════════════════════════════════
 
 describe("Layout section", () => {
-  it("reads width from `w-4` as '16px' (lengthDisplay decodes scale → px)", () => {
-    mount("w-4");
+  it("reads width from `w-4` as '16px' (lengthDisplay decodes scale → px)", async () => {
+    await mount("w-4");
     const inp = findScrubInput("W");
     expect(inp).toBeTruthy();
     expect(inp!.value).toBe("16px");
   });
 
-  it("writes width via lengthToTailwind — `w-6` for 24px", () => {
-    mount("w-4");
+  it("writes width via lengthToTailwind — `w-6` for 24px", async () => {
+    await mount("w-4");
     typeInScrub("W", "24");
     expect(lastMutation().add).toContain("w-6");
     expect(lastMutation().remove).toContain("w-4");
   });
 
-  it("off-scale width falls back to bracket `w-[13px]`", () => {
-    mount("");
+  it("off-scale width falls back to bracket `w-[13px]`", async () => {
+    await mount("");
     typeInScrub("W", "13");
     expect(lastMutation().add).toEqual(["w-[13px]"]);
   });
 
-  it("height, min-w, max-w, min-h, max-h each map correctly", () => {
-    mount("");
+  it("height, min-w, max-w, min-h, max-h each map correctly", async () => {
+    await mount("");
     typeInScrub("H", "16");
     expect(lastMutation().add).toContain("h-4");
     typeInScrub("MIN W", "8");
@@ -221,20 +235,20 @@ describe("Layout section", () => {
     expect(lastMutation().add).toContain("max-h-4");
   });
 
-  it("flip-x toggles -scale-x-100", () => {
-    mount("");
+  it("flip-x toggles -scale-x-100", async () => {
+    await mount("");
     clickIconButton("Flip horizontal");
     expect(lastMutation().add).toContain("-scale-x-100");
   });
 
-  it("flip-y removes existing -scale-y-100 (incl. prefixed)", () => {
-    mount("md:-scale-y-100");
+  it("flip-y removes existing -scale-y-100 (incl. prefixed)", async () => {
+    await mount("md:-scale-y-100");
     clickIconButton("Flip vertical");
     expect(lastMutation().remove).toContain("md:-scale-y-100");
   });
 
-  it("display=flex swaps block→flex", () => {
-    mount("block");
+  it("display=flex swaps block→flex", async () => {
+    await mount("block");
     const btn = Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
       .find(b => (b.textContent || "").trim() === "Flex");
     expect(btn).toBeTruthy();
@@ -244,28 +258,28 @@ describe("Layout section", () => {
     expect(m.add).toContain("flex");
   });
 
-  it("display=hidden swaps block→hidden", () => {
-    mount("block");
+  it("display=hidden swaps block→hidden", async () => {
+    await mount("block");
     const btn = Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
       .find(b => (b.textContent || "").trim() === "Hide");
     fireEvent.click(btn!);
     expect(lastMutation().add).toContain("hidden");
   });
 
-  it("position=absolute writes `absolute`", () => {
-    mount("");
+  it("position=absolute writes `absolute`", async () => {
+    await mount("");
     selectOption("Position", /^Absolute$/);
     expect(lastMutation().add).toEqual(["absolute"]);
   });
 
-  it("z-index writes `z-10`", () => {
-    mount("");
+  it("z-index writes `z-10`", async () => {
+    await mount("");
     typeInScrub("Z", "10");
     expect(lastMutation().add).toEqual(["z-10"]);
   });
 
-  it("top/right/bottom/left write length classes when positioned", () => {
-    mount("relative");
+  it("top/right/bottom/left write length classes when positioned", async () => {
+    await mount("relative");
     typeInScrub("Top", "16");
     expect(lastMutation().add).toContain("top-4");
     typeInScrub("Right", "8");
@@ -276,20 +290,20 @@ describe("Layout section", () => {
     expect(lastMutation().add).toContain("left-2");
   });
 
-  it("overflow writes `overflow-hidden`", () => {
-    mount("");
+  it("overflow writes `overflow-hidden`", async () => {
+    await mount("");
     selectOption("Overflow", /hidden/i);
     expect(lastMutation().add).toContain("overflow-hidden");
   });
 
-  it("aspect-ratio writes `aspect-square`", () => {
-    mount("");
+  it("aspect-ratio writes `aspect-square`", async () => {
+    await mount("");
     typeInScrub("Aspect ratio", "square");
     expect(lastMutation().add).toContain("aspect-square");
   });
 
-  it("object-fit writes `object-cover`", () => {
-    mount("", "img");
+  it("object-fit writes `object-cover`", async () => {
+    await mount("", "img");
     selectOption("Object fit", /cover/i);
     expect(lastMutation().add).toContain("object-cover");
   });
@@ -300,20 +314,20 @@ describe("Layout section", () => {
 // ════════════════════════════════════════════════════════════════════════
 
 describe("Spacing section", () => {
-  it("linked padding-X writes `px-4` for 16px", () => {
-    mount("");
+  it("linked padding-X writes `px-4` for 16px", async () => {
+    await mount("");
     typeInScrub("PX", "16");
     expect(lastMutation().add).toContain("px-4");
   });
 
-  it("linked padding-Y writes `py-2` for 8px", () => {
-    mount("");
+  it("linked padding-Y writes `py-2` for 8px", async () => {
+    await mount("");
     typeInScrub("PY", "8");
     expect(lastMutation().add).toContain("py-2");
   });
 
-  it("negative margin writes an arbitrary-value class for -8px", () => {
-    mount("");
+  it("negative margin writes an arbitrary-value class for -8px", async () => {
+    await mount("");
     typeInScrub("MX", "-8");
     // Current encoding: lengthToTailwind emits `[-8px]` for off-scale
     // negatives; writeMargin passes it through → `mx-[-8px]`. Either form
@@ -323,8 +337,8 @@ describe("Spacing section", () => {
     expect(ok).toBe(true);
   });
 
-  it("clearing margin removes the class (prefix-aware)", () => {
-    mount("md:mx-4");
+  it("clearing margin removes the class (prefix-aware)", async () => {
+    await mount("md:mx-4");
     typeInScrub("MX", "");
     expect(lastMutation().remove).toContain("md:mx-4");
   });
@@ -335,78 +349,78 @@ describe("Spacing section", () => {
 // ════════════════════════════════════════════════════════════════════════
 
 describe("Typography section", () => {
-  it("reads `text-lg` as 18px font-size", () => {
-    mount("text-lg");
+  it("reads `text-lg` as 18px font-size", async () => {
+    await mount("text-lg");
     const inp = findScrubInput(/Font size/);
     expect(inp).toBeTruthy();
     expect(inp!.value).toBe("18px");
   });
 
-  it("writes `text-2xl` for 24px", () => {
-    mount("text-lg");
+  it("writes `text-2xl` for 24px", async () => {
+    await mount("text-lg");
     typeInScrub(/Font size/, "24");
     expect(lastMutation().add).toContain("text-2xl");
     expect(lastMutation().remove).toContain("text-lg");
   });
 
-  it("off-scale font-size writes bracket `text-[13px]`", () => {
-    mount("");
+  it("off-scale font-size writes bracket `text-[13px]`", async () => {
+    await mount("");
     typeInScrub(/Font size/, "13");
     expect(lastMutation().add).toContain("text-[13px]");
   });
 
-  it("font-weight writes `font-bold`", () => {
-    mount("");
+  it("font-weight writes `font-bold`", async () => {
+    await mount("");
     selectOption("Font weight", /bold 700/i);
     expect(lastMutation().add).toContain("font-bold");
   });
 
-  it("italic toggle removes when present (prefix-aware)", () => {
-    mount("md:italic");
+  it("italic toggle removes when present (prefix-aware)", async () => {
+    await mount("md:italic");
     clickIconButton("Italic");
     expect(lastMutation().remove).toContain("md:italic");
   });
 
-  it("underline toggle adds `underline`", () => {
-    mount("");
+  it("underline toggle adds `underline`", async () => {
+    await mount("");
     clickIconButton("Underline");
     expect(lastMutation().add).toContain("underline");
   });
 
-  it("line-through toggle adds `line-through`", () => {
-    mount("");
+  it("line-through toggle adds `line-through`", async () => {
+    await mount("");
     clickIconButton("Strikethrough");
     expect(lastMutation().add).toContain("line-through");
   });
 
-  it("text-align writes `text-center`", () => {
-    mount("");
+  it("text-align writes `text-center`", async () => {
+    await mount("");
     // ToggleGroup buttons' aria-label defaults to label ?? value — the
     // text-align items have no label, so aria-label = "center".
     clickIconButton("center");
     expect(lastMutation().add).toContain("text-center");
   });
 
-  it("text-transform writes `uppercase`", () => {
-    mount("");
+  it("text-transform writes `uppercase`", async () => {
+    await mount("");
     selectOption("Text transform", /uppercase/i);
     expect(lastMutation().add).toContain("uppercase");
   });
 
-  it("leading writes `leading-[20px]`", () => {
-    mount("");
+  it("leading writes `leading-[20px]`", async () => {
+    await mount("");
     typeInScrub(/Line height/, "20");
     expect(lastMutation().add).toContain("leading-[20px]");
   });
 
-  it("tracking writes `tracking-[0.05em]`", () => {
-    mount("");
+  it("tracking writes `tracking-[0.05em]`", async () => {
+    await mount("");
     typeInScrub(/Letter spacing/, "0.05");
     expect(lastMutation().add).toContain("tracking-[0.05em]");
   });
 
-  it("strips md: prefix when removing font-size", () => {
-    mount("md:text-lg");
+  it("strips md: prefix when removing font-size", async () => {
+    await mount("md:text-lg");
     typeInScrub(/Font size/, "");
     expect(lastMutation().remove).toContain("md:text-lg");
   });
@@ -423,32 +437,32 @@ describe("Radius section", () => {
     clickIconButton(/Per-corner radius|Switch to per-corner/i);
   }
 
-  it("per-corner top-left writes `rounded-tl-lg` for 8px", () => {
-    mount("");
+  it("per-corner top-left writes `rounded-tl-lg` for 8px", async () => {
+    await mount("");
     enterSplitMode();
     typeInScrub("Top-left", "8");
     expect(lastMutation().add).toContain("rounded-tl-lg");
   });
 
-  it("per-corner top-right writes `rounded-tr-md` for 6px", () => {
-    mount("");
+  it("per-corner top-right writes `rounded-tr-md` for 6px", async () => {
+    await mount("");
     enterSplitMode();
     typeInScrub("Top-right", "6");
     expect(lastMutation().add).toContain("rounded-tr-md");
   });
 
-  it("off-scale per-corner writes `rounded-br-[5px]`", () => {
-    mount("");
+  it("off-scale per-corner writes `rounded-br-[5px]`", async () => {
+    await mount("");
     enterSplitMode();
     typeInScrub("Bottom-right", "5");
     expect(lastMutation().add).toContain("rounded-br-[5px]");
   });
 
-  it("detects `md:rounded-lg` via hasValue so the section auto-opens", () => {
+  it("detects `md:rounded-lg` via hasValue so the section auto-opens", async () => {
     // Spot-check the prefix-aware detection path. The actual sweep happens
     // inside `writeLinked` (driven by a custom Slider); that code path is
     // covered by the existing unit tests for the radius helpers.
-    mount("md:rounded-lg");
+    await mount("md:rounded-lg");
     // If hasValue missed the prefixed class, the body wouldn't render and
     // the corner-mode toggle button wouldn't be present in the DOM.
     const toggle = Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
@@ -462,20 +476,20 @@ describe("Radius section", () => {
 // ════════════════════════════════════════════════════════════════════════
 
 describe("Transform section", () => {
-  it("rotate writes `rotate-[45deg]`", () => {
-    mount("");
+  it("rotate writes `rotate-[45deg]`", async () => {
+    await mount("");
     typeInScrub("Rotate (deg)", "45");
     expect(lastMutation().add).toEqual(["rotate-[45deg]"]);
   });
 
-  it("scale 150% writes `scale-[1.5]`", () => {
-    mount("");
+  it("scale 150% writes `scale-[1.5]`", async () => {
+    await mount("");
     typeInScrub("Uniform scale", "150");
     expect(lastMutation().add).toEqual(["scale-[1.5]"]);
   });
 
-  it("rotate 0 removes existing rotate (prefix-aware)", () => {
-    mount("md:rotate-[45deg]");
+  it("rotate 0 removes existing rotate (prefix-aware)", async () => {
+    await mount("md:rotate-[45deg]");
     typeInScrub("Rotate (deg)", "0");
     expect(lastMutation().remove).toContain("md:rotate-[45deg]");
   });
@@ -486,20 +500,20 @@ describe("Transform section", () => {
 // ════════════════════════════════════════════════════════════════════════
 
 describe("Blending section", () => {
-  it("opacity 50 writes `opacity-50`", () => {
-    mount("");
+  it("opacity 50 writes `opacity-50`", async () => {
+    await mount("");
     typeInScrub("Opacity", "50");
     expect(lastMutation().add).toContain("opacity-50");
   });
 
-  it("mix-blend writes `mix-blend-multiply`", () => {
-    mount("");
+  it("mix-blend writes `mix-blend-multiply`", async () => {
+    await mount("");
     selectOption(/Mix blend mode/, /multiply/i);
     expect(lastMutation().add).toContain("mix-blend-multiply");
   });
 
-  it("strips md: prefix on mix-blend change", () => {
-    mount("md:mix-blend-multiply");
+  it("strips md: prefix on mix-blend change", async () => {
+    await mount("md:mix-blend-multiply");
     selectOption(/Mix blend mode/, /screen/i);
     expect(lastMutation().remove).toContain("md:mix-blend-multiply");
     expect(lastMutation().add).toContain("mix-blend-screen");
@@ -511,8 +525,8 @@ describe("Blending section", () => {
 // ════════════════════════════════════════════════════════════════════════
 
 describe("Fill section", () => {
-  it("Remove fill sweeps all bg-* (including prefixed)", () => {
-    mount("bg-red-500 md:bg-blue-300");
+  it("Remove fill sweeps all bg-* (including prefixed)", async () => {
+    await mount("bg-red-500 md:bg-blue-300");
     clickIconButton("Remove fill");
     const m = lastMutation();
     expect(m.remove).toEqual(
@@ -520,8 +534,8 @@ describe("Fill section", () => {
     );
   });
 
-  it("Add fill writes a solid default bg (named or hex bracket)", () => {
-    mount("");
+  it("Add fill writes a solid default bg (named or hex bracket)", async () => {
+    await mount("");
     clickIconButton("Add fill");
     // Fill picks either `bg-white` (named mapping) or `bg-[#FFFFFF]` for the
     // default. Accept either since we don't want to lock the impl to one.
@@ -535,26 +549,26 @@ describe("Fill section", () => {
 // ════════════════════════════════════════════════════════════════════════
 
 describe("Outline section", () => {
-  it("Add outline writes default `outline`", () => {
-    mount("");
+  it("Add outline writes default `outline`", async () => {
+    await mount("");
     clickIconButton("Add outline");
     expect(lastMutation().add).toContain("outline");
   });
 
-  it("weight 4 writes `outline-4`", () => {
-    mount("outline");
+  it("weight 4 writes `outline-4`", async () => {
+    await mount("outline");
     typeInScrub("Outline weight", "4");
     expect(lastMutation().add).toContain("outline-4");
   });
 
-  it("off-scale weight writes `outline-[3px]`", () => {
-    mount("outline");
+  it("off-scale weight writes `outline-[3px]`", async () => {
+    await mount("outline");
     typeInScrub("Outline weight", "3");
     expect(lastMutation().add).toContain("outline-[3px]");
   });
 
-  it("Remove outline sweeps tokens (prefix-aware)", () => {
-    mount("md:outline-2 outline-dashed outline-offset-2 outline-[#ff0000]");
+  it("Remove outline sweeps tokens (prefix-aware)", async () => {
+    await mount("md:outline-2 outline-dashed outline-offset-2 outline-[#ff0000]");
     clickIconButton("Remove outline");
     const m = lastMutation();
     expect(m.remove).toEqual(
@@ -562,14 +576,14 @@ describe("Outline section", () => {
     );
   });
 
-  it("style selector writes `outline-dashed`", () => {
-    mount("outline");
+  it("style selector writes `outline-dashed`", async () => {
+    await mount("outline");
     selectOption("Outline style", /dashed/i);
     expect(lastMutation().add).toContain("outline-dashed");
   });
 
-  it("Hide outline writes `outline-none`", () => {
-    mount("outline");
+  it("Hide outline writes `outline-none`", async () => {
+    await mount("outline");
     clickIconButton("Hide outline");
     expect(lastMutation().add).toContain("outline-none");
   });
@@ -580,28 +594,28 @@ describe("Outline section", () => {
 // ════════════════════════════════════════════════════════════════════════
 
 describe("Border section", () => {
-  it("Add border writes default `border`", () => {
-    mount("");
+  it("Add border writes default `border`", async () => {
+    await mount("");
     clickIconButton("Add border");
     expect(lastMutation().add).toContain("border");
   });
 
-  it("weight 2 writes `border-2`; off-scale writes `border-[3px]`", () => {
-    mount("border");
+  it("weight 2 writes `border-2`; off-scale writes `border-[3px]`", async () => {
+    await mount("border");
     typeInScrub("Border weight", "2");
     expect(lastMutation().add).toContain("border-2");
     typeInScrub("Border weight", "3");
     expect(lastMutation().add).toContain("border-[3px]");
   });
 
-  it("sides=Top writes `border-t`", () => {
-    mount("border");
+  it("sides=Top writes `border-t`", async () => {
+    await mount("border");
     selectOption("Border sides", /^Top$/);
     expect(lastMutation().add).toContain("border-t");
   });
 
-  it("Remove border sweeps tokens (prefix-aware)", () => {
-    mount("md:border-2 border-dashed border-[#000000]");
+  it("Remove border sweeps tokens (prefix-aware)", async () => {
+    await mount("md:border-2 border-dashed border-[#000000]");
     clickIconButton("Remove border");
     const m = lastMutation();
     expect(m.remove).toEqual(
@@ -609,8 +623,8 @@ describe("Border section", () => {
     );
   });
 
-  it("Hide border writes `border-none`", () => {
-    mount("border");
+  it("Hide border writes `border-none`", async () => {
+    await mount("border");
     clickIconButton("Hide border");
     expect(lastMutation().add).toContain("border-none");
   });
@@ -621,36 +635,36 @@ describe("Border section", () => {
 // ════════════════════════════════════════════════════════════════════════
 
 describe("Shadow section", () => {
-  it("preset writes `shadow-md`", () => {
-    mount("");
+  it("preset writes `shadow-md`", async () => {
+    await mount("");
     selectOption("Shadow preset", /md/i);
     expect(lastMutation().add).toContain("shadow-md");
   });
 
-  it("Add shadow creates a new bracket layer", () => {
-    mount("");
+  it("Add shadow creates a new bracket layer", async () => {
+    await mount("");
     clickIconButton(/Add shadow layer/i);
     expect(lastMutation().add?.[0]).toMatch(/^shadow-\[/);
   });
 
-  it("existing `xl:shadow-[...]` renders a removable layer", () => {
-    mount("xl:shadow-[0px_4px_8px_0px_rgba(0,0,0,0.1)]");
+  it("existing `xl:shadow-[...]` renders a removable layer", async () => {
+    await mount("xl:shadow-[0px_4px_8px_0px_rgba(0,0,0,0.1)]");
     const remove = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(b =>
       /Remove this shadow layer/i.test(b.getAttribute("aria-label") || b.getAttribute("title") || ""),
     );
     expect(remove).toBeTruthy();
   });
 
-  it("Removing a layer with xl: prefix strips the prefixed class", () => {
-    mount("xl:shadow-[0px_4px_8px_0px_rgba(0,0,0,0.1)]");
+  it("Removing a layer with xl: prefix strips the prefixed class", async () => {
+    await mount("xl:shadow-[0px_4px_8px_0px_rgba(0,0,0,0.1)]");
     clickIconButton(/Remove this shadow layer/i);
     expect(lastMutation().remove).toContain("xl:shadow-[0px_4px_8px_0px_rgba(0,0,0,0.1)]");
   });
 });
 
 describe("Inner shadow section", () => {
-  it("Add inner shadow writes an inset bracket class", () => {
-    mount("");
+  it("Add inner shadow writes an inset bracket class", async () => {
+    await mount("");
     clickIconButton(/Add inner shadow layer/i);
     expect(lastMutation().add?.[0]).toMatch(/^shadow-\[inset_/);
   });
@@ -661,51 +675,51 @@ describe("Inner shadow section", () => {
 // ════════════════════════════════════════════════════════════════════════
 
 describe("Filters section", () => {
-  it("blur 8 writes `blur-[8px]`", () => {
-    mount("");
+  it("blur 8 writes `blur-[8px]`", async () => {
+    await mount("");
     typeInScrub("Blur", "8");
     const m = lastMutation();
     expect(m.add?.some(c => c === "blur-[8px]")).toBe(true);
   });
 
-  it("brightness 150 writes `brightness-150`", () => {
-    mount("");
+  it("brightness 150 writes `brightness-150`", async () => {
+    await mount("");
     typeInScrub("Bright", "150");
     expect(lastMutation().add?.some(c => c === "brightness-150")).toBe(true);
   });
 
-  it("contrast 75 writes `contrast-75`", () => {
-    mount("");
+  it("contrast 75 writes `contrast-75`", async () => {
+    await mount("");
     typeInScrub("Cntr", "75");
     expect(lastMutation().add?.some(c => c === "contrast-75")).toBe(true);
   });
 
-  it("saturate 200 writes `saturate-200`", () => {
-    mount("");
+  it("saturate 200 writes `saturate-200`", async () => {
+    await mount("");
     typeInScrub("Satur", "200");
     expect(lastMutation().add?.some(c => c === "saturate-200")).toBe(true);
   });
 
-  it("hue-rotate 45 writes `hue-rotate-[45deg]`", () => {
-    mount("");
+  it("hue-rotate 45 writes `hue-rotate-[45deg]`", async () => {
+    await mount("");
     typeInScrub("Hue", "45");
     expect(lastMutation().add?.some(c => c === "hue-rotate-[45deg]")).toBe(true);
   });
 
-  it("grayscale 50 writes `grayscale-50`", () => {
-    mount("");
+  it("grayscale 50 writes `grayscale-50`", async () => {
+    await mount("");
     typeInScrub("Gray", "50");
     expect(lastMutation().add?.some(c => c === "grayscale-50")).toBe(true);
   });
 
-  it("invert 100 writes `invert-100`", () => {
-    mount("");
+  it("invert 100 writes `invert-100`", async () => {
+    await mount("");
     typeInScrub("Invert", "100");
     expect(lastMutation().add?.some(c => c === "invert-100")).toBe(true);
   });
 
-  it("sepia 60 writes `sepia-60`", () => {
-    mount("");
+  it("sepia 60 writes `sepia-60`", async () => {
+    await mount("");
     typeInScrub("Sepia", "60");
     expect(lastMutation().add?.some(c => c === "sepia-60")).toBe(true);
   });
@@ -716,38 +730,38 @@ describe("Filters section", () => {
 // ════════════════════════════════════════════════════════════════════════
 
 describe("Transitions section", () => {
-  it("transition=all writes `transition-all`", () => {
-    mount("");
+  it("transition=all writes `transition-all`", async () => {
+    await mount("");
     selectOption("Transition property", /^All$/);
     expect(lastMutation().add).toContain("transition-all");
   });
 
-  it("timing function writes `ease-in-out`", () => {
-    mount("");
+  it("timing function writes `ease-in-out`", async () => {
+    await mount("");
     selectOption("Timing function", /in-out/i);
     expect(lastMutation().add).toContain("ease-in-out");
   });
 
-  it("duration 200 writes `duration-200` (named scale)", () => {
-    mount("");
+  it("duration 200 writes `duration-200` (named scale)", async () => {
+    await mount("");
     typeInScrub("Duration (ms)", "200");
     expect(lastMutation().add).toContain("duration-200");
   });
 
-  it("duration 250 writes `duration-[250ms]` (off-scale bracket)", () => {
-    mount("");
+  it("duration 250 writes `duration-[250ms]` (off-scale bracket)", async () => {
+    await mount("");
     typeInScrub("Duration (ms)", "250");
     expect(lastMutation().add).toContain("duration-[250ms]");
   });
 
-  it("delay 100 writes `delay-100`", () => {
-    mount("");
+  it("delay 100 writes `delay-100`", async () => {
+    await mount("");
     typeInScrub("Delay (ms)", "100");
     expect(lastMutation().add).toContain("delay-100");
   });
 
-  it("animation writes `animate-spin`", () => {
-    mount("");
+  it("animation writes `animate-spin`", async () => {
+    await mount("");
     selectOption("Animation", /spin/i);
     expect(lastMutation().add).toContain("animate-spin");
   });
@@ -758,26 +772,26 @@ describe("Transitions section", () => {
 // ════════════════════════════════════════════════════════════════════════
 
 describe("Interactivity section", () => {
-  it("cursor writes `cursor-pointer`", () => {
-    mount("");
+  it("cursor writes `cursor-pointer`", async () => {
+    await mount("");
     selectOption("Cursor", /^Pointer$/);
     expect(lastMutation().add).toContain("cursor-pointer");
   });
 
-  it("pointer-events writes `pointer-events-none`", () => {
-    mount("");
+  it("pointer-events writes `pointer-events-none`", async () => {
+    await mount("");
     selectOption("Pointer events", /^None$/);
     expect(lastMutation().add).toContain("pointer-events-none");
   });
 
-  it("user-select writes `select-none`", () => {
-    mount("");
+  it("user-select writes `select-none`", async () => {
+    await mount("");
     selectOption("User select", /^None$/);
     expect(lastMutation().add).toContain("select-none");
   });
 
-  it("strips md: prefix on cursor change", () => {
-    mount("md:cursor-pointer");
+  it("strips md: prefix on cursor change", async () => {
+    await mount("md:cursor-pointer");
     selectOption("Cursor", /^Wait$/);
     const m = lastMutation();
     expect(m.remove).toContain("md:cursor-pointer");

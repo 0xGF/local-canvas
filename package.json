@@ -24,7 +24,8 @@
       "types": "./dist/plugin/vite.d.ts",
       "import": "./dist/plugin/vite.mjs",
       "require": "./dist/plugin/vite.js"
-    }
+    },
+    "./swc": "./dist/plugin/swc/local_canvas_swc_plugin.wasm"
   },
   "files": [
     "dist"
@@ -33,6 +34,8 @@
     "build": "tsup && npm run build:overlay",
     "build:server": "tsup",
     "build:overlay": "vite build --config overlay.vite.config.ts",
+    "build:swc": "(cd src/plugin/swc && cargo build-wasip1 --release) && mkdir -p dist/plugin/swc && cp src/plugin/swc/target/wasm32-wasip1/release/local_canvas_swc_plugin.wasm dist/plugin/swc/local_canvas_swc_plugin.wasm",
+    "prepublishOnly": "npm run build && npm run build:swc",
     "analyze:overlay": "ANALYZE=1 vite build --config overlay.vite.config.ts",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",

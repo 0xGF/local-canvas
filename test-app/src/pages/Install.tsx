@@ -47,7 +47,8 @@ export default function Install() {
         <Tabs defaultValue="vite" className="w-full">
           <TabsList>
             <TabsTrigger value="vite">Vite</TabsTrigger>
-            <TabsTrigger value="babel">Babel / Webpack / Next</TabsTrigger>
+            <TabsTrigger value="next">Next.js</TabsTrigger>
+            <TabsTrigger value="babel">Babel / Webpack</TabsTrigger>
             <TabsTrigger value="none">No plugin</TabsTrigger>
           </TabsList>
           <TabsContent value="vite">
@@ -59,6 +60,26 @@ export default defineConfig({
   plugins: [react(), localCanvasPlugin()]
 })`}
             />
+          </TabsContent>
+          <TabsContent value="next">
+            <CodeBlock
+              filename="next.config.js"
+              code={`/** @type {import('next').NextConfig} */
+module.exports = {
+  experimental: {
+    swcPlugins: [
+      [require.resolve('local-canvas/swc'), {}],
+    ],
+  },
+}`}
+            />
+            <p className="text-[14px] text-neutral-500 leading-relaxed mt-3">
+              Uses the bundled SWC plugin (WASM) — runs inside Next's own SWC
+              transform, so there's no Babel step and Turbopack picks it up
+              automatically. The{" "}
+              <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">experimental.swcPlugins</code>{" "}
+              key is Next's own naming; the plugin itself is stable.
+            </p>
           </TabsContent>
           <TabsContent value="babel">
             <CodeBlock

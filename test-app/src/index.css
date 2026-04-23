@@ -44,3 +44,60 @@
   height: 1px;
   background: #e7e5e4;
 }
+
+/* ═══ Motion ═══════════════════════════════════════════════════════════
+ * Subtle entrance animations for docs content. Intentionally understated —
+ * 8px of travel, 0.3–0.4s durations, soft ease-out. The goal is "feels
+ * alive" not "attention-grabbing".
+ *
+ * Rule: durations never >400ms, translate never >12px, no bounce. Designers
+ * tend to notice and complain when docs animations show off; these ride
+ * just under that threshold.
+ */
+
+/* Sidebar lands as a block on first page load. Uses `animation` (one-shot)
+ * rather than `transition` so it doesn't re-fire on route changes. */
+@keyframes docs-sidebar-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.docs-sidebar {
+  animation: docs-sidebar-in 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Staggered entrance for each top-level nav item. `--i` is the row's index
+ * (set inline); items 0..n ripple in over ~150ms total. */
+@keyframes docs-nav-row-in {
+  from { opacity: 0; transform: translateX(-4px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.docs-nav-row {
+  animation: docs-nav-row-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(80ms + var(--i, 0) * 28ms);
+}
+
+/* Content reveal on scroll / page mount. Applied by Layout's
+ * IntersectionObserver to each direct child of the current page wrapper.
+ * Starts invisible; `data-visible="true"` transitions in. */
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 380ms ease-out, transform 380ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+[data-reveal][data-visible="true"] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Respect users who've asked for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .docs-sidebar,
+  .docs-nav-row,
+  [data-reveal] {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

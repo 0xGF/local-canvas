@@ -182,11 +182,16 @@ function NavSection({
   pathname,
   hash,
   activeRef,
+  startIndex,
 }: {
   group: NavGroup;
   pathname: string;
   hash: string;
   activeRef: React.RefObject<HTMLLIElement | null>;
+  /** Running row index across the whole sidebar, used for the CSS stagger
+   *  variable `--i` on each `.docs-nav-row`. Each NavSection bumps it by
+   *  its item count before handing off to the next. */
+  startIndex: number;
 }) {
   return (
     <div className="mb-5">
@@ -196,12 +201,20 @@ function NavSection({
         </p>
       )}
       <ul>
-        {group.items.map((item) => {
+        {group.items.map((item, idx) => {
           const isActive = pathname === item.href;
           const hasChildren = !!item.children?.length;
           const activeHash = isActive ? hash.replace(/^#/, "") : "";
+          const row = startIndex + idx;
           return (
-            <li key={item.href} ref={isActive ? activeRef : undefined}>
+            <li
+              key={item.href}
+              ref={isActive ? activeRef : undefined}
+              // CSS stagger — sidebar sub-nav items ripple in on first
+              // mount via `.docs-nav-row` keyframe, 28ms apart.
+              className="docs-nav-row"
+              style={{ ["--i" as string]: row }}
+            >
               <Link
                 to={item.href}
                 className={`relative block py-1 pl-3 text-[12px] transition-colors ${
@@ -279,8 +292,15 @@ export function Sidebar() {
     }
   }, [pathname]);
 
+  // Running row counter so the NavSection stagger is continuous across
+  // sections (Editing nav row 0 comes right after Overview/Install/CLI,
+  // not restarting at 0 in its own group).
+  let rowOffset = 0;
+
   return (
-    <aside className="hidden md:flex flex-col w-[200px] shrink-0 border-neutral-100 px-3">
+    // `.docs-sidebar` applies the one-shot landing animation defined in
+    // index.css — fades + translates the whole aside in on first mount.
+    <aside className="docs-sidebar hidden md:flex flex-col w-[200px] shrink-0 border-neutral-100 px-3">
       <div className="pt-12 pb-6">
         <Link to="/overview" className="block">
           <LocalCanvasLogo className="h-6 w-auto" />
@@ -288,15 +308,20 @@ export function Sidebar() {
       </div>
 
       <nav ref={navRef} className="flex-1 overflow-y-auto -mx-3 px-3">
-        {groups.map((group, i) => (
-          <NavSection
-            key={group.title ?? i}
-            group={group}
-            pathname={pathname}
-            hash={hash}
-            activeRef={activeItemRef}
-          />
-        ))}
+        {groups.map((group, i) => {
+          const startIndex = rowOffset;
+          rowOffset += group.items.length;
+          return (
+            <NavSection
+              key={group.title ?? i}
+              group={group}
+              pathname={pathname}
+              hash={hash}
+              activeRef={activeItemRef}
+              startIndex={startIndex}
+            />
+          );
+        })}
       </nav>
 
       <div className="flex items-center gap-2 py-4 text-[11px] text-[#a8a29e]">

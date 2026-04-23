@@ -2,6 +2,14 @@ node_modules
 dist
 *.tsbuildinfo
 .DS_Store
+
+# Claude stuff
 .claude/worktrees
 .canvas-undo/
 .canvas-data/
+
+# Rust stuff
+target/
+
+# Claude scheduled-tasks runtime lock
+.claude/scheduled_tasks.lock

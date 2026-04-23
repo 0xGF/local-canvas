@@ -212,20 +212,39 @@ function NavSection({
               >
                 {item.label}
               </Link>
-              {isActive && hasChildren && (
-                <ul className="relative ml-3 mt-1 mb-2 border-l border-[#e7e5e4]">
-                  {item.children!.map((child, i) => (
-                    <SubNavItem
-                      key={child.hash}
-                      to={item.href}
-                      hash={child.hash}
-                      label={child.label}
-                      isActive={
-                        activeHash === child.hash || (!activeHash && i === 0)
-                      }
-                    />
-                  ))}
-                </ul>
+              {hasChildren && (
+                // Animated expand: grid-template-rows 0fr → 1fr with a
+                // transition gives the children an actual height animation
+                // (no JS measurement, browser does the interpolation).
+                // The opacity fade runs ~70% of the expand duration so
+                // children aren't fully visible until they've mostly
+                // settled into place — reads as a single cohesive motion
+                // rather than a fade-over-a-slide.
+                <div
+                  className={`grid transition-[grid-template-rows] duration-[280ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                    isActive ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                  }`}
+                >
+                  <div className="overflow-hidden">
+                    <ul
+                      className={`relative ml-3 mt-1 mb-2 border-l border-[#e7e5e4] transition-opacity duration-200 ${
+                        isActive ? "opacity-100" : "opacity-0"
+                      }`}
+                    >
+                      {item.children!.map((child, i) => (
+                        <SubNavItem
+                          key={child.hash}
+                          to={item.href}
+                          hash={child.hash}
+                          label={child.label}
+                          isActive={
+                            activeHash === child.hash || (!activeHash && i === 0)
+                          }
+                        />
+                      ))}
+                    </ul>
+                  </div>
+                </div>
               )}
             </li>
           );

@@ -1,0 +1,21 @@
+{
+  "name": "local-canvas-swc-plugin",
+  "version": "0.1.0",
+  "description": "SWC plugin that stamps JSX elements with data-source-* attrs so Local Canvas can map clicks back to source.",
+  "keywords": ["swc-plugin", "local-canvas", "nextjs", "turbopack"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xGF/local-canvas.git",
+    "directory": "src/plugin/swc"
+  },
+  "license": "MIT",
+  "main": "target/wasm32-wasip1/release/local_canvas_swc_plugin.wasm",
+  "files": [
+    "target/wasm32-wasip1/release/local_canvas_swc_plugin.wasm"
+  ],
+  "scripts": {
+    "build": "cargo build-wasip1 --release",
+    "prepublishOnly": "cargo build-wasip1 --release"
+  },
+  "preferUnplugged": true
+}

@@ -2,7 +2,10 @@ node_modules
 dist
 *.tsbuildinfo
 .DS_Store
+
+# Claude stuff
 .claude/worktrees
+.claude/scheduled_tasks.lock
 .canvas-undo/
 .canvas-data/
 

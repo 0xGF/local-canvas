@@ -9,7 +9,7 @@
  */
 import React from "react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, cleanup, fireEvent, screen } from "@testing-library/react";
+import { act, render, cleanup, fireEvent, screen } from "@testing-library/react";
 
 // ── Mocks (must be declared before importing the panel) ───────────────────
 
@@ -63,11 +63,18 @@ function selectElement(el: HTMLElement) {
   });
 }
 
-function mount(classes: string, opts: { tag?: string; inlineStyle?: string; breakpoint?: number } = {}) {
+async function mount(classes: string, opts: { tag?: string; inlineStyle?: string; breakpoint?: number } = {}) {
   useEditorStore.setState({ breakpoint: opts.breakpoint ?? 0 });
   const el = makeEl(classes, opts.tag ?? "div", opts.inlineStyle ?? "");
   selectElement(el);
-  const utils = render(<PropertiesPanel />);
+  let utils!: ReturnType<typeof render>;
+  // PropertiesPanel uses `React.lazy` for rarely-opened sections (Shadow,
+  // Typography, Filters, etc.). Flush the Suspense cycle before queries.
+  // Matches the helper in PropertiesPanel.test.tsx.
+  await act(async () => {
+    utils = render(<PropertiesPanel />);
+  });
+  await act(async () => { await Promise.resolve(); });
   return { el, ...utils };
 }
 
@@ -198,13 +205,13 @@ describe("Round-trip: READ decodes class → display; WRITE encodes display → 
   ];
 
   for (const c of cases) {
-    it(`${c.label} decodes to "${c.display}"`, () => {
-      mount(c.class);
+    it(`${c.label} decodes to "${c.display}"`, async () => {
+      await mount(c.class);
       expect(readScrub(c.field)).toBe(c.display);
     });
 
-    it(`typing "${c.typeValue}" from empty encodes to "${c.label}"`, () => {
-      mount("");
+    it(`typing "${c.typeValue}" from empty encodes to "${c.label}"`, async () => {
+      await mount("");
       typeInScrub(c.field, c.typeValue);
       const m = lastClassMutation();
       expect(m.add).toContain(c.class);
@@ -217,32 +224,32 @@ describe("Round-trip: READ decodes class → display; WRITE encodes display → 
 // ═════════════════════════════════════════════════════════════════════════
 
 describe("Arbitrary values", () => {
-  it("off-scale spacing writes `[Npx]` bracket", () => {
-    mount("");
+  it("off-scale spacing writes `[Npx]` bracket", async () => {
+    await mount("");
     typeInScrub("PX", "17");
     expect(lastClassMutation().add).toContain("px-[17px]");
   });
 
-  it("negative margin numeric writes `-mx-N` (scale form) for multiple-of-4", () => {
-    mount("");
+  it("negative margin numeric writes `-mx-N` (scale form) for multiple-of-4", async () => {
+    await mount("");
     typeInScrub("MX", "-8");
     const add = lastClassMutation().add || [];
     expect(add.some(c => /^(-mx-2|mx-\[-8px\])$/.test(c))).toBe(true);
   });
 
-  it("negative off-scale margin writes `mx-[-Npx]` bracket", () => {
-    mount("");
+  it("negative off-scale margin writes `mx-[-Npx]` bracket", async () => {
+    await mount("");
     typeInScrub("MX", "-7");
     const add = lastClassMutation().add || [];
     expect(add.some(c => /^(mx-\[-7px\]|-mx-\[7px\])$/.test(c))).toBe(true);
   });
 
-  it("round-trips an off-scale bracket radius through write", () => {
+  it("round-trips an off-scale bracket radius through write", async () => {
     // Starting from rounded-[13px], edit via the per-corner toggle entry
     // isn't reliable in jsdom (computed style is 0px), so exercise the
     // write path directly: the linked-mode ScrubField exists even when
     // computed radius is 0.
-    mount("rounded-[13px]");
+    await mount("rounded-[13px]");
     // The radius ScrubField has no title — find it by its `rounded-[13px]`
     // value on the rendered input.
     const inputs = Array.from(document.querySelectorAll<HTMLInputElement>("input"));
@@ -264,23 +271,23 @@ describe("Arbitrary values", () => {
 // ═════════════════════════════════════════════════════════════════════════
 
 describe("Breakpoint-prefix stacking", () => {
-  it("at md: breakpoint, writing width emits md:-prefixed class", () => {
+  it("at md: breakpoint, writing width emits md:-prefixed class", async () => {
     // breakpoint=768 → 'md' per getBreakpointPrefix
-    mount("", { breakpoint: 768 });
+    await mount("", { breakpoint: 768 });
     typeInScrub("W", "16");
     const add = lastClassMutation().add || [];
     expect(add.some(c => c === "md:w-4")).toBe(true);
   });
 
-  it("at md: breakpoint, reading shows md:-prefixed value, not base", () => {
-    mount("w-4 md:w-8", { breakpoint: 768 });
+  it("at md: breakpoint, reading shows md:-prefixed value, not base", async () => {
+    await mount("w-4 md:w-8", { breakpoint: 768 });
     // md:w-8 = 32px should win at md breakpoint
     expect(readScrub("W")).toBe("32px");
   });
 
-  it("at base breakpoint, md:-prefixed class is not stripped when editing base", () => {
+  it("at base breakpoint, md:-prefixed class is not stripped when editing base", async () => {
     // Bug shape: user edits W at base breakpoint, panel nukes md:w-8 too.
-    mount("w-4 md:w-8");
+    await mount("w-4 md:w-8");
     typeInScrub("W", "24");
     const m = lastClassMutation();
     // The base class must be swapped, but the md: override must survive.
@@ -288,8 +295,8 @@ describe("Breakpoint-prefix stacking", () => {
     expect(m.add).toContain("w-6");
   });
 
-  it("at md: breakpoint, editing removes only the md:-prefixed class", () => {
-    mount("w-4 md:w-8", { breakpoint: 768 });
+  it("at md: breakpoint, editing removes only the md:-prefixed class", async () => {
+    await mount("w-4 md:w-8", { breakpoint: 768 });
     typeInScrub("W", "24");
     const m = lastClassMutation();
     expect(m.remove || []).toContain("md:w-8");
@@ -303,8 +310,8 @@ describe("Breakpoint-prefix stacking", () => {
 // ═════════════════════════════════════════════════════════════════════════
 
 describe("Clearing values", () => {
-  it("clearing width removes the class entirely (no w-0 write)", () => {
-    mount("w-4");
+  it("clearing width removes the class entirely (no w-0 write)", async () => {
+    await mount("w-4");
     typeInScrub("W", "");
     const m = lastClassMutation();
     expect(m.remove || []).toContain("w-4");
@@ -312,22 +319,22 @@ describe("Clearing values", () => {
     expect(m.add || []).not.toContain("w-0");
   });
 
-  it("clearing padding removes px class", () => {
-    mount("px-4");
+  it("clearing padding removes px class", async () => {
+    await mount("px-4");
     typeInScrub("PX", "");
     expect(lastClassMutation().remove || []).toContain("px-4");
   });
 
-  it("clearing z-index removes z class", () => {
-    mount("z-10");
+  it("clearing z-index removes z class", async () => {
+    await mount("z-10");
     typeInScrub("Z", "");
     const m = lastClassMutation();
     expect(m.remove || []).toContain("z-10");
     expect(m.add || []).not.toContain("z-0");
   });
 
-  it("clearing a prefixed value (md:mx-4) removes the prefixed class", () => {
-    mount("md:mx-4");
+  it("clearing a prefixed value (md:mx-4) removes the prefixed class", async () => {
+    await mount("md:mx-4");
     typeInScrub("MX", "");
     expect(lastClassMutation().remove || []).toContain("md:mx-4");
   });
@@ -338,8 +345,8 @@ describe("Clearing values", () => {
 // ═════════════════════════════════════════════════════════════════════════
 
 describe("Inline style ↔ class handoff", () => {
-  it("editing width when element has inline `width: 20px` routes through modify-style", () => {
-    mount("", { inlineStyle: "width: 20px" });
+  it("editing width when element has inline `width: 20px` routes through modify-style", async () => {
+    await mount("", { inlineStyle: "width: 20px" });
     typeInScrub("W", "24");
     const styles = styleMutations();
     const classes = classMutations();
@@ -351,8 +358,8 @@ describe("Inline style ↔ class handoff", () => {
     expect(classes.some(m => (m.add || []).some(c => /^w-/.test(c)))).toBe(false);
   });
 
-  it("plain class edit (no inline style) stays on the class path", () => {
-    mount("w-4");
+  it("plain class edit (no inline style) stays on the class path", async () => {
+    await mount("w-4");
     typeInScrub("W", "24");
     const styles = styleMutations();
     const classes = classMutations();
@@ -366,8 +373,8 @@ describe("Inline style ↔ class handoff", () => {
 // ═════════════════════════════════════════════════════════════════════════
 
 describe("Selection change resets display", () => {
-  it("switching from w-4 to w-8 updates the field value", () => {
-    const { rerender } = mount("w-4");
+  it("switching from w-4 to w-8 updates the field value", async () => {
+    const { rerender } = await mount("w-4");
     expect(readScrub("W")).toBe("16px");
 
     const el2 = makeEl("w-8");
@@ -376,8 +383,8 @@ describe("Selection change resets display", () => {
     expect(readScrub("W")).toBe("32px");
   });
 
-  it("switching from no-class to w-4 populates the field", () => {
-    const { rerender } = mount("");
+  it("switching from no-class to w-4 populates the field", async () => {
+    const { rerender } = await mount("");
     expect(readScrub("W")).toBe("");
 
     const el2 = makeEl("w-4");
@@ -392,16 +399,16 @@ describe("Selection change resets display", () => {
 // ═════════════════════════════════════════════════════════════════════════
 
 describe("Conflict resolution", () => {
-  it("writing width removes the previous width class", () => {
-    mount("w-4");
+  it("writing width removes the previous width class", async () => {
+    await mount("w-4");
     typeInScrub("W", "24");
     const m = lastClassMutation();
     expect(m.remove || []).toContain("w-4");
     expect(m.add).toContain("w-6");
   });
 
-  it("writing a new display option removes the old one", () => {
-    mount("block");
+  it("writing a new display option removes the old one", async () => {
+    await mount("block");
     const btn = Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
       .find(b => (b.textContent || "").trim() === "Flex");
     expect(btn).toBeTruthy();
@@ -412,11 +419,11 @@ describe("Conflict resolution", () => {
     expect(m.add).toContain("flex");
   });
 
-  it("position=static from relative clears top/right/bottom/left intent", () => {
+  it("position=static from relative clears top/right/bottom/left intent", async () => {
     // Tailwind doesn't auto-clear these, but the panel should at least swap
     // the position class cleanly so the user doesn't end up with both
     // `relative` and `static`.
-    mount("relative");
+    await mount("relative");
     selectOption("Position", /^Static$/);
     const m = lastClassMutation();
     expect(m.remove || []).toContain("relative");
@@ -428,8 +435,8 @@ describe("Conflict resolution", () => {
 // ═════════════════════════════════════════════════════════════════════════
 
 describe("Shadow layer parsing & stacking", () => {
-  it("parses a single `shadow-[X_Y_B_S_rgba(...)]` layer", () => {
-    mount("shadow-[2px_4px_8px_0px_rgba(0,0,0,0.2)]");
+  it("parses a single `shadow-[X_Y_B_S_rgba(...)]` layer", async () => {
+    await mount("shadow-[2px_4px_8px_0px_rgba(0,0,0,0.2)]");
     // ShadowLayerRow renders ScrubFields with titles X/Y/B/S offset/Blur/Spread.
     const findByTitle = (t: string) => {
       const wrap = Array.from(document.querySelectorAll<HTMLElement>("[data-title]"))
@@ -442,8 +449,8 @@ describe("Shadow layer parsing & stacking", () => {
     expect(findByTitle("Spread")?.value).toBe("0px");
   });
 
-  it("editing X on a two-layer shadow preserves the second layer", () => {
-    mount("shadow-[2px_4px_8px_0px_rgba(0,0,0,0.2),1px_2px_4px_0px_rgba(0,0,0,0.1)]");
+  it("editing X on a two-layer shadow preserves the second layer", async () => {
+    await mount("shadow-[2px_4px_8px_0px_rgba(0,0,0,0.2),1px_2px_4px_0px_rgba(0,0,0,0.1)]");
     // Grab the FIRST X offset input (layer 0) and change it.
     const firstX = document.querySelector<HTMLInputElement>('[data-title="X offset"] input');
     expect(firstX).toBeTruthy();
@@ -458,8 +465,8 @@ describe("Shadow layer parsing & stacking", () => {
     expect(add).toContain("1px_2px_4px_0px_rgba(0,0,0,0.1)");
   });
 
-  it("editing a drop-shadow layer preserves a coexisting inset layer", () => {
-    mount("shadow-[2px_4px_8px_0px_rgba(0,0,0,0.2),inset_0px_1px_2px_0px_rgba(255,255,255,0.3)]");
+  it("editing a drop-shadow layer preserves a coexisting inset layer", async () => {
+    await mount("shadow-[2px_4px_8px_0px_rgba(0,0,0,0.2),inset_0px_1px_2px_0px_rgba(255,255,255,0.3)]");
     const firstX = document.querySelector<HTMLInputElement>('[data-title="X offset"] input');
     fireEvent.change(firstX!, { target: { value: "5" } });
     fireEvent.blur(firstX!);
@@ -471,8 +478,8 @@ describe("Shadow layer parsing & stacking", () => {
     expect(add).toContain("inset_0px_1px_2px_0px_rgba(255,255,255,0.3)");
   });
 
-  it("adding a second shadow layer appends to the existing class", () => {
-    mount("shadow-[2px_4px_8px_0px_rgba(0,0,0,0.2)]");
+  it("adding a second shadow layer appends to the existing class", async () => {
+    await mount("shadow-[2px_4px_8px_0px_rgba(0,0,0,0.2)]");
     const addBtn = Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
       .find(b => /Add shadow layer/i.test(b.getAttribute("title") || b.getAttribute("aria-label") || ""));
     expect(addBtn).toBeTruthy();
@@ -488,10 +495,10 @@ describe("Shadow layer parsing & stacking", () => {
     expect(add).toContain("0px_4px_8px_0px_rgba(0,0,0,0.1)");
   });
 
-  it("depth counter: rgba(…) commas inside the token don't split layers", () => {
+  it("depth counter: rgba(…) commas inside the token don't split layers", async () => {
     // If the layer splitter naively split on commas, this would look like
     // five layers instead of one.
-    mount("shadow-[0px_4px_8px_2px_rgba(0,0,0,0.2)]");
+    await mount("shadow-[0px_4px_8px_2px_rgba(0,0,0,0.2)]");
     const firstX = document.querySelector<HTMLInputElement>('[data-title="X offset"] input');
     expect(firstX?.value).toBe("0px");
     const firstY = document.querySelector<HTMLInputElement>('[data-title="Y offset"] input');
@@ -506,8 +513,8 @@ describe("Shadow layer parsing & stacking", () => {
 describe("Filter stacking", () => {
   // FilterRow labels are abbreviated ("Bright", "Satur", "Cntr", …) so
   // they fit on one line next to the slider. Keep the strings exact.
-  it("editing brightness preserves an existing blur", () => {
-    mount("blur-[8px] brightness-150");
+  it("editing brightness preserves an existing blur", async () => {
+    await mount("blur-[8px] brightness-150");
     typeInScrub("Bright", "75");
     const m = lastClassMutation();
     expect(m.remove || []).toContain("brightness-150");
@@ -515,8 +522,8 @@ describe("Filter stacking", () => {
     expect(m.add || []).toContain("brightness-75");
   });
 
-  it("editing blur preserves an existing hue-rotate", () => {
-    mount("blur-[8px] hue-rotate-[45deg]");
+  it("editing blur preserves an existing hue-rotate", async () => {
+    await mount("blur-[8px] hue-rotate-[45deg]");
     typeInScrub("Blur", "4");
     const m = lastClassMutation();
     expect(m.remove || []).toContain("blur-[8px]");
@@ -524,10 +531,10 @@ describe("Filter stacking", () => {
     expect(m.add || []).toContain("blur-[4px]");
   });
 
-  it("setting saturate to 100 (neutral) removes the class", () => {
+  it("setting saturate to 100 (neutral) removes the class", async () => {
     // pctFilter(100).encode returns "" at neutral → the class gets removed
     // entirely rather than written as `saturate-100`.
-    mount("saturate-200");
+    await mount("saturate-200");
     typeInScrub("Satur", "100");
     const m = lastClassMutation();
     expect(m.remove || []).toContain("saturate-200");
@@ -543,8 +550,8 @@ describe("ColorField hex input", () => {
   // ColorField is only visible when a fill/border/outline/shadow needs it.
   // The simplest trigger is the Fill section: element must have a bg-* for
   // the ColorField to render.
-  function mountWithFill(bg: string) {
-    return mount(bg);
+  async function mountWithFill(bg: string) {
+    return await mount(bg);
   }
 
   // Locate the ColorField hex input by its formatted display string
@@ -555,15 +562,15 @@ describe("ColorField hex input", () => {
       .find(i => i.value !== "" && /^\s*[0-9A-F]{6}\s*\/\s*\d+%?/i.test(i.value));
   }
 
-  it("displays the fill color in the ColorField input", () => {
-    mountWithFill("bg-[#ff0000]");
+  it("displays the fill color in the ColorField input", async () => {
+    await mountWithFill("bg-[#ff0000]");
     const inp = findColorFieldInput();
     expect(inp).toBeTruthy();
     expect(inp!.value.toUpperCase()).toMatch(/FF0000/);
   });
 
-  it("typing a new hex commits through onChange → class mutation", () => {
-    mountWithFill("bg-[#ff0000]");
+  it("typing a new hex commits through onChange → class mutation", async () => {
+    await mountWithFill("bg-[#ff0000]");
     const inp = findColorFieldInput();
     expect(inp).toBeTruthy();
     fireEvent.change(inp!, { target: { value: "00FF00" } });

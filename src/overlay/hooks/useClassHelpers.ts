@@ -312,26 +312,35 @@ export function useClassHelpers() {
     return classes.includes(bare) ? bare : undefined;
   }, [classes, bpPrefix]);
 
-  // Rewrite a modify-class mutation so its add/remove lists target only the
-  // active breakpoint. Callers often hand us a list of every variant of a
-  // class on the element (e.g. `border`, `md:border-2`, `2xl:border-4`) to
-  // "clear and replace" — but clearing across breakpoints while editing one
-  // is the bug: editing at 2xl silently strips the base and md values too.
-  // Drop entries that target a different breakpoint than the active one so
-  // each breakpoint's class is edited independently.
+  // Rewrite a modify-class mutation so its add/remove lists target the
+  // active breakpoint correctly:
+  //
+  //   - Bare `add` entries get the active bpPrefix applied (`border` →
+  //     `md:border` at md). So new values land at the breakpoint being
+  //     edited.
+  //   - Bare `remove` entries resolve to whichever variant is actually on
+  //     the element (prefer the active-bp form, fall back to the bare).
+  //     This covers the common "replace" pattern where the caller doesn't
+  //     know whether the existing class is prefixed.
+  //   - Explicitly-prefixed `remove` entries (e.g. `md:border-2`) pass
+  //     through untouched. Callers frequently hand us a list of every
+  //     variant of a class found on the element (the "sweep and replace"
+  //     pattern used by flip toggles, border/outline reset, shadow layer
+  //     removal, typography style toggles, etc.) — those callers already
+  //     picked the exact classes they want removed, and silently dropping
+  //     off-breakpoint entries made toggles look broken.
   const scopeToBreakpoint = useCallback(
     (mutation: Extract<Mutation, { type: "modify-class" }>): Extract<Mutation, { type: "modify-class" }> => {
       const prefixedAdd = mutation.add?.map((c) => prefixCls(c));
       const resolvedRemove = mutation.remove
         ?.map((c) => {
-          const m = c.match(RESPONSIVE_PREFIX_RE);
-          if (m) {
-            const classBp = m[0].slice(0, -1);
-            return classBp === bpPrefix ? c : null;
-          }
+          // Already prefixed — trust the caller.
+          if (RESPONSIVE_PREFIX_RE.test(c)) return c;
+          // Bare — prefer the active-bp variant if it's on the element,
+          // otherwise keep the bare form.
           if (bpPrefix) {
             const prefixed = `${bpPrefix}:${c}`;
-            return classes.includes(prefixed) ? prefixed : null;
+            return classes.includes(prefixed) ? prefixed : (classes.includes(c) ? c : null);
           }
           return classes.includes(c) ? c : null;
         })

@@ -5,3 +5,6 @@ dist
 .claude/worktrees
 .canvas-undo/
 .canvas-data/
+/target
+^target/
+target

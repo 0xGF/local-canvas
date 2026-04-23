@@ -55,39 +55,46 @@
  * just under that threshold.
  */
 
-/* Sidebar lands as a block on first page load. Uses `animation` (one-shot)
- * rather than `transition` so it doesn't re-fire on route changes. */
-@keyframes docs-sidebar-in {
-  from { opacity: 0; transform: translateX(-6px); }
-  to   { opacity: 1; transform: translateX(0); }
+/* Sidebar entrance: logo fades in instantly, then nav items stagger.
+ * No aside-level transform — we had one and it compounded awkwardly
+ * with the per-row animation, which is what "sloppy" was. Single motion
+ * vocabulary: only the rows move. */
+@keyframes docs-sidebar-logo-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
-.docs-sidebar {
-  animation: docs-sidebar-in 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+.docs-sidebar-logo {
+  animation: docs-sidebar-logo-in 200ms ease-out both;
 }
 
-/* Staggered entrance for each top-level nav item. `--i` is the row's index
- * (set inline); items 0..n ripple in over ~150ms total. */
+/* Staggered entrance for each top-level nav item. `--i` is the row's
+ * index (set inline). Rises 6px and fades in — matches the content
+ * reveal direction so sidebar and main content feel like one motion. */
 @keyframes docs-nav-row-in {
-  from { opacity: 0; transform: translateX(-4px); }
-  to   { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 .docs-nav-row {
-  animation: docs-nav-row-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  animation-delay: calc(80ms + var(--i, 0) * 28ms);
+  animation: docs-nav-row-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(100ms + var(--i, 0) * 22ms);
 }
 
-/* Content reveal on scroll / page mount. Applied by Layout's
- * IntersectionObserver to each direct child of the current page wrapper.
- * Starts invisible; `data-visible="true"` transitions in. */
-[data-reveal] {
-  opacity: 0;
-  transform: translateY(8px);
-  transition: opacity 380ms ease-out, transform 380ms cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: opacity, transform;
+/* Content waterfall on page load. Layout's useLayoutEffect applies
+ * `.docs-content-row` + an inline `--i` (0, 1, 2, …) to each direct
+ * child of the page wrapper before first paint — so there's no flash
+ * of final-state content.
+ *
+ * Re-runs on every route change: React swaps the subtree, new DOM
+ * nodes restart the animation. Index is capped at 9 in Layout so a
+ * long page's tail doesn't have a seconds-long delay. */
+@keyframes docs-content-row-in {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
 }
-[data-reveal][data-visible="true"] {
-  opacity: 1;
-  transform: translateY(0);
+.docs-content-row {
+  animation: docs-content-row-in 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(60ms + var(--i, 0) * 55ms);
+  will-change: opacity, transform;
 }
 
 /* Respect users who've asked for less motion. */

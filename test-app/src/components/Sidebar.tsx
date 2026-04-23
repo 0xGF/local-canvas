@@ -298,10 +298,10 @@ export function Sidebar() {
   let rowOffset = 0;
 
   return (
-    // `.docs-sidebar` applies the one-shot landing animation defined in
-    // index.css — fades + translates the whole aside in on first mount.
-    <aside className="docs-sidebar hidden md:flex flex-col w-[200px] shrink-0 border-neutral-100 px-3">
-      <div className="pt-12 pb-6">
+    <aside className="hidden md:flex flex-col w-[200px] shrink-0 border-neutral-100 px-3">
+      {/* `.docs-sidebar-logo` fades the logo in without moving it, so the
+          logo settles first and then the nav rows rise in below it. */}
+      <div className="docs-sidebar-logo pt-12 pb-6">
         <Link to="/overview" className="block">
           <LocalCanvasLogo className="h-6 w-auto" />
         </Link>

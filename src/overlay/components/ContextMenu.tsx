@@ -79,6 +79,12 @@ function buildAnnotationOpts(
   fallbackSource: { filePath: string; line: number } | null | undefined,
   fallbackTag: string,
   fallbackClasses: string[],
+  /** Click-within-element offset (owner-doc px, 0,0 at element's top-
+   *  left). Single-element annotations pass it through as `x`/`y` so
+   *  the pin lands where the user clicked. Ignored for group
+   *  annotations — a click in one group member doesn't meaningfully
+   *  anchor the whole group. */
+  clickOffset?: { x: number; y: number },
 ) {
   if (multi.length > 1) {
     const paths = multi
@@ -103,6 +109,7 @@ function buildAnnotationOpts(
     element: `<${fallbackTag}>${fallbackClasses.length ? "." + fallbackClasses.join(".") : ""}`,
     elementPath: onlyEl && fallbackSource ? withOccurrence(onlyEl, fallbackPath) : fallbackPath,
     cssClasses: fallbackClasses.join(" "),
+    ...(clickOffset ? { x: clickOffset.x, y: clickOffset.y } : {}),
   };
 }
 
@@ -203,7 +210,7 @@ export const ContextMenu = React.memo(function ContextMenu() {
 
   if (!menu) return null;
 
-  const { x, y, element: el, source, initialMode } = menu;
+  const { x, y, element: el, source, initialMode, clickOffset } = menu;
   // Annotate flow passes x as the element's horizontal centre, not its left
   // edge, so the menu opens centred over the element instead of at its side.
   const anchorCentre = initialMode === "ai-prompt";
@@ -431,7 +438,7 @@ export const ContextMenu = React.memo(function ContextMenu() {
         elementTag={tag}
         onClose={close}
         onSubmit={(prompt) => {
-          const opts = buildAnnotationOpts(prompt, multiSelection, source, tag, classes);
+          const opts = buildAnnotationOpts(prompt, multiSelection, source, tag, classes, clickOffset);
           postAnnotation(opts).then(() => {
             useEditorStore.getState().showToast("Sent to agent");
           }).catch(() => {

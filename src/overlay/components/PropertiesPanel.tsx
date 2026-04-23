@@ -1477,11 +1477,29 @@ const BorderSection = React.memo(function BorderSection({ h, sel }: { h: ClassHe
     if (!sel.source) return;
     const widths = allBorderWidthClasses();
     const styles = BORDER_STYLE_CLASSES.map(c => h.actual(c)).filter(Boolean) as string[];
+    // Every remaining `border-*` class that isn't width / style / collapse /
+    // side-prefix is a colour — named (`border-neutral-200`, `border-red-500`)
+    // or arbitrary (`border-[#fff]`). The previous regex only caught the
+    // bracketed form, so named-only borders (common on <hr>s where the only
+    // border class is the colour) left nothing to remove and the mutation
+    // landed as a no-op.
     const colors = h.classes.filter(c => {
-      const m = h.stripBpPrefix(c).match(/^border-\[(.+)\]$/);
-      return !!m && /^(#|rgb|rgba|hsl|hsla|lch|color\(|var\(|color:)/i.test(m[1]);
+      const bare = h.stripBpPrefix(c);
+      if (!bare.startsWith("border-")) return false;
+      if (BORDER_WIDTH_CLASS_RE.test(bare)) return false;
+      if (BORDER_STYLE_CLASSES.includes(bare)) return false;
+      if (/^border-(collapse|separate|spacing)/.test(bare)) return false;
+      // A bare side prefix like `border-t` without a width is also a width
+      // class per the regex above — already filtered.
+      return true;
     });
     const remove = [...widths, ...styles, ...colors];
+    // Elements like <hr>, <fieldset>, <table> inherit a preflight border
+    // even with no `border-*` width class. Removing the user's colour
+    // alone wouldn't zero the preflight border, so the change would look
+    // like it didn't happen. Emit `border-0` explicitly in that case so
+    // the class mutation has a visible effect.
+    const add = widths.length === 0 ? ["border-0"] : undefined;
     // Anti-flash: drop the border visually before the class update lands.
     if (sel.element) {
       setStyleProp(sel.element, "borderWidth", "0px");
@@ -1490,6 +1508,7 @@ const BorderSection = React.memo(function BorderSection({ h, sel }: { h: ClassHe
     h.sendPrefixed({
       type: "modify-class", source: sel.source,
       remove: remove.length ? remove : undefined,
+      add,
     });
     if (sel.element) {
       clearInlineAfterClassUpdate(sel.element, "borderWidth");

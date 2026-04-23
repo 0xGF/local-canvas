@@ -6,7 +6,7 @@ export default function Overview() {
   return (
     <div className="max-w-[680px] px-6 pt-12 pb-16 space-y-8">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight mb-3">Introduction</h1>
+        <h1 className="text-2xl font-bold tracking-tight xl:mb-[17px]">Introduction</h1>
         <p className="text-[15px] text-neutral-500 leading-relaxed">
           <strong className="text-neutral-800">Local Canvas is a visual editing overlay for React + Tailwind apps.</strong>{" "}
           Select any element in your running dev server, drag to adjust spacing,
@@ -23,8 +23,8 @@ export default function Overview() {
       <hr className="border-neutral-200 2xl:mb-8" />
 
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold tracking-tight 2xl:text-left 2xl:text-[15px] 2xl:text-[23px] 2xl:mb-4 2xl:pb-[5px]" style={{ paddingBottom: "3px" }}>The Canvas</h2>
-        <p className="text-[14px] text-neutral-600 leading-relaxed">
+        <h2 className="text-lg font-semibold tracking-tight 2xl:text-left 2xl:text-[15px] 2xl:text-[23px] 2xl:mb-4 2xl:pb-[5px] xl:mb-2.5 xl:text-xl xl:font-bold" style={{ paddingBottom: "3px" }}>The Canvas</h2>
+        <p className="text-[14px] text-neutral-600 leading-relaxed xl:mb-[43px]">
           The editing chrome — hover outlines, selection outlines, spacing
           badges, resize grips, dimension readouts, drag value pills, zero-value
           notches — is painted on a{" "}
@@ -57,7 +57,6 @@ export default function Overview() {
         />
       </div>
 
-      <hr className="border-neutral-200" />
 
       <div className="space-y-4">
         <h2 className="text-lg font-semibold tracking-tight">Architecture</h2>
@@ -132,7 +131,6 @@ export default function Overview() {
         />
       </div>
 
-      <hr className="border-neutral-200" />
 
       <div className="space-y-4">
         <h2 className="text-lg font-semibold tracking-tight">Supported className patterns</h2>

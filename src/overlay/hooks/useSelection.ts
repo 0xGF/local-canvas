@@ -311,6 +311,19 @@ export function useSelection() {
         e.stopPropagation();
         const source = resolveSource(target);
         const rect = target.getBoundingClientRect();
+        // Capture the click offset within the element (in its owner-doc
+        // pixels). The annotation pin uses this so it lands where the
+        // user clicked, instead of always defaulting to a corner.
+        // `elementAtPoint` returns coords in the target's owner-doc space
+        // via its internal translation, so `e.clientX - rect.left` is
+        // only correct when `e.clientX` is already in that space. For
+        // iframe-origin events it is (iframe docs dispatch iframe-local
+        // coords); for main-doc events it's the outer viewport, which
+        // also matches `rect.left` from the same document.
+        const clickOffset = {
+          x: Math.max(0, Math.min(rect.width, e.clientX - rect.left)),
+          y: Math.max(0, Math.min(rect.height, e.clientY - rect.top)),
+        };
         // DO NOT call selectElement here. Annotate mode is a dedicated tool;
         // clicking an element should only open the AnnotatePill, not
         // promote the element into the main selection (which would show
@@ -321,7 +334,11 @@ export function useSelection() {
           : { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
         const menuX = screenBox.left + screenBox.width / 2;
         const menuY = screenBox.top;
-        setContextMenu({ x: menuX, y: menuY - 6, element: target, source, initialMode: "ai-prompt" });
+        setContextMenu({
+          x: menuX, y: menuY - 6, element: target, source,
+          initialMode: "ai-prompt",
+          clickOffset,
+        });
         // Stay in annotate mode — user stays armed until they toggle the
         // button off, press `A` again, or hit Escape (handled in
         // useKeyboard). Lets them drop multiple pins without re-arming.

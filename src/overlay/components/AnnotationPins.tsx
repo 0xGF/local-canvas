@@ -134,24 +134,45 @@ function computePinPosition(el: HTMLElement, a: Annotation, existingPins: PinPos
 
   const elRect = { left: r.left, top: r.top, width: r.width, height: r.height };
 
-  // If another pin already targets the same elementPath, share its corner
-  // instead of picking a new one. This keeps annotations for the same
-  // element visually clustered (stacked at the same corner) rather than
-  // scattered to opposite sides of the element by pickBestCorner's
-  // "avoid other pins" scoring.
+  // Stack key first — multiple annotations on the same element cascade
+  // from the first pin's position regardless of anchor strategy below.
   const myPath = a.elementPath;
   const sameElementPins = myPath
     ? existingPins.filter(p => p.annotation.elementPath === myPath)
     : [];
-  const corner = sameElementPins.length > 0
-    ? { x: sameElementPins[0].x - STACK_OFFSET_PX * sameElementPins.length,
-        y: sameElementPins[0].y + STACK_OFFSET_PX * sameElementPins.length }
-    : pickBestCorner(elRect, existingPins);
+
+  let anchor: { x: number; y: number };
+  if (sameElementPins.length > 0) {
+    // Stack-cascade on top of the first same-element pin.
+    anchor = {
+      x: sameElementPins[0].x - STACK_OFFSET_PX * sameElementPins.length,
+      y: sameElementPins[0].y + STACK_OFFSET_PX * sameElementPins.length,
+    };
+  } else if (a.x !== undefined && a.y !== undefined) {
+    // Pin at the user's click point within the element. `a.x`/`a.y` are
+    // owner-doc px offsets from the element's top-left at annotation
+    // time; translate to parent-viewport space via the iframe scale
+    // (the rest of the iframe offset is already baked into `elRect`).
+    const iframe = getEditorIframe();
+    const scale =
+      iframe && el.ownerDocument === iframe.contentDocument
+        ? getIframeOffset(iframe).scale
+        : 1;
+    // Clamp into the element's current rect so a resized element still
+    // renders the pin inside reasonable bounds.
+    const relX = Math.max(0, Math.min(a.x * scale, elRect.width));
+    const relY = Math.max(0, Math.min(a.y * scale, elRect.height));
+    anchor = { x: elRect.left + relX, y: elRect.top + relY };
+  } else {
+    // No click offset recorded (legacy annotations) — fall back to the
+    // "pick the empty corner" heuristic.
+    anchor = pickBestCorner(elRect, existingPins);
+  }
 
   return {
     annotation: a,
-    x: corner.x,
-    y: corner.y,
+    x: anchor.x,
+    y: anchor.y,
     elementRect: elRect,
     tagName: el.tagName.toLowerCase(),
     stackKey: myPath || a.id,

@@ -66,6 +66,11 @@ interface EditorState {
     source: SourceLocation | null;
     /** When set, open the menu directly into a specific sub-state. */
     initialMode?: "ai-prompt";
+    /** Click position relative to `element`'s top-left corner, in the
+     *  element's owner-document CSS pixels. Only set by the annotate-tool
+     *  click path; used to drop the pin where the user clicked instead
+     *  of defaulting to a corner. */
+    clickOffset?: { x: number; y: number };
   } | null;
   setContextMenu: (
     menu: {
@@ -74,6 +79,7 @@ interface EditorState {
       element: HTMLElement;
       source: SourceLocation | null;
       initialMode?: "ai-prompt";
+      clickOffset?: { x: number; y: number };
     } | null,
   ) => void;
 

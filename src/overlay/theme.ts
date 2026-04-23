@@ -36,9 +36,9 @@ export const THEME = {
   successHover: "#1ea961",
   successSoft: "rgba(36,202,113,0.16)",
 
-  warning: "#FFC300",             // "pending" / attention — bright yellow matching the palette saturation
-  warningHover: "#e0ab00",
-  warningSoft: "rgba(255,195,0,0.18)",
+  warning: "#FFB300",             // "pending" / attention — more saturated amber so it reads as urgent next to the blue/green status chips
+  warningHover: "#e09d00",
+  warningSoft: "rgba(255,179,0,0.22)",
 
   danger: "#FE3737",              // destructive actions
   dangerHover: "#e12929",

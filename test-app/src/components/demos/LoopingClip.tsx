@@ -49,7 +49,7 @@ export function LoopingClip({
   ];
 
   return (
-    <figure className="my-2 w-full 2xl:h-[356px] sm:h-[327px]">
+    <figure className="my-2 w-full 2xl:h-[356px] sm:h-[327px] xl:h-auto">
       <div
         className="relative w-full overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 sm:h-full xl:pb-0.5 xl:h-auto"
         style={{ aspectRatio }}
@@ -70,7 +70,7 @@ export function LoopingClip({
         </video>
       </div>
       {caption && (
-        <figcaption className="mt-2 text-[12px] text-neutral-500 leading-snug">
+        <figcaption className="mt-2 text-[12px] text-neutral-500 leading-snug xl:block">
           {caption}
         </figcaption>
       )}

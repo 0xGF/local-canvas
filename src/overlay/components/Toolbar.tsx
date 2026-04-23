@@ -731,73 +731,112 @@ const ChangesSaveButton = React.memo(function ChangesSaveButton({
           )}
         </div>
 
-        {/* Footer — scope-aware save. Primary = "this breakpoint + up";
+        {/* Footer — all three actions on one row so the panel reads as
+            a single control surface. Primary = "this breakpoint + up";
             secondary (only when editing a prefixed breakpoint) = "all
-            screens". Discard nukes pending changes. */}
+            screens". Discard sits to the right with a danger-tinted
+            border so it's visible at rest without dominating. */}
         <div style={{
           display: "flex", flexDirection: "column", gap: 6, padding: "8px 12px",
           borderTop: `1px solid ${C.border}`,
         }}>
-          <button
-            onClick={handleSaveScoped}
-            style={{
-              display: "flex", alignItems: "center", gap: 8,
-              height: 32, padding: "0 10px", borderRadius: 6, border: "none",
-              background: C.accent, color: "#fff",
-              fontSize: 11, fontWeight: 600, textAlign: "left",
-              cursor: "pointer", fontFamily: C.font,
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.18), 0 1px 2px rgba(0,0,0,0.25)",
-              transition: "background 120ms ease, transform 120ms ease, box-shadow 120ms ease",
-              outline: "none",
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = C.accentHover;
-              e.currentTarget.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.22), 0 2px 6px rgba(0,0,0,0.35)";
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = C.accent;
-              e.currentTarget.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.18), 0 1px 2px rgba(0,0,0,0.25)";
-            }}
-          >
-            <span style={{ flex: 1 }}>
-              {isBase ? "Save for all screens" : `Save for ${bpLabel} and up`}
-            </span>
-            <span style={{
-              fontSize: 9, opacity: 0.85, fontFamily: C.mono,
-              background: "rgba(255,255,255,0.18)", padding: "2px 6px", borderRadius: 3,
-            }}>⏎</span>
-          </button>
-
-          {!isBase && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <button
-              onClick={handleSaveAll}
+              onClick={handleSaveScoped}
               style={{
                 display: "flex", alignItems: "center", gap: 8,
-                height: 30, padding: "0 10px", borderRadius: 6,
-                border: `1px solid ${C.borderLight}`, background: C.bgAlt,
-                color: C.fg, fontSize: 11, fontWeight: 500, textAlign: "left",
+                flex: 1, minWidth: 0,
+                height: 32, padding: "0 10px", borderRadius: 6, border: "none",
+                background: C.accent, color: "#fff",
+                fontSize: 11, fontWeight: 600, textAlign: "left",
                 cursor: "pointer", fontFamily: C.font,
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.18), 0 1px 2px rgba(0,0,0,0.25)",
+                transition: "background 120ms ease, box-shadow 120ms ease",
+                outline: "none",
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = C.accentHover;
+                e.currentTarget.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.22), 0 2px 6px rgba(0,0,0,0.35)";
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = C.accent;
+                e.currentTarget.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.18), 0 1px 2px rgba(0,0,0,0.25)";
+              }}
+            >
+              <span style={{
+                flex: 1, minWidth: 0,
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}>
+                {isBase ? "Save for all screens" : `Save for ${bpLabel} and up`}
+              </span>
+              <span style={{
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                height: 20, minWidth: 22, padding: "0 6px",
+                fontSize: 11, fontFamily: C.mono, fontWeight: 600,
+                background: "rgba(255,255,255,0.2)", color: "#fff",
+                borderRadius: 4, flexShrink: 0,
+              }}>⏎</span>
+            </button>
+
+            {!isBase && (
+              <button
+                onClick={handleSaveAll}
+                title="Save without the breakpoint prefix — applies at every screen size."
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  height: 32, padding: "0 10px", borderRadius: 6,
+                  border: `1px solid ${C.borderLight}`, background: C.bgAlt,
+                  color: C.fg, fontSize: 11, fontWeight: 500, textAlign: "left",
+                  cursor: "pointer", fontFamily: C.font, flexShrink: 0,
+                  transition: "background 120ms ease, border-color 120ms ease, color 120ms ease",
+                  outline: "none",
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = C.bgHover;
+                  e.currentTarget.style.borderColor = C.border;
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = C.bgAlt;
+                  e.currentTarget.style.borderColor = C.borderLight;
+                }}
+              >
+                <span>All sizes</span>
+                <span style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  height: 20, minWidth: 32, padding: "0 6px",
+                  fontSize: 11, fontFamily: C.mono, fontWeight: 600,
+                  background: C.bg, color: C.fgDim,
+                  borderRadius: 4, flexShrink: 0,
+                }}>⇧⏎</span>
+              </button>
+            )}
+
+            <button
+              onClick={handleReset}
+              title="Drop every pending change"
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                height: 32, padding: "0 12px", borderRadius: 6,
+                border: `1px solid ${C.dangerSoft}`,
+                background: "transparent",
+                color: C.danger,
+                fontSize: 11, fontWeight: 500, fontFamily: C.font,
+                cursor: "pointer", flexShrink: 0,
                 transition: "background 120ms ease, border-color 120ms ease, color 120ms ease",
                 outline: "none",
               }}
               onMouseEnter={e => {
-                e.currentTarget.style.background = C.bgHover;
-                e.currentTarget.style.borderColor = C.border;
-                e.currentTarget.style.color = C.fg;
+                e.currentTarget.style.background = C.dangerSoft;
+                e.currentTarget.style.borderColor = C.danger;
               }}
               onMouseLeave={e => {
-                e.currentTarget.style.background = C.bgAlt;
-                e.currentTarget.style.borderColor = C.borderLight;
-                e.currentTarget.style.color = C.fg;
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.borderColor = C.dangerSoft;
               }}
             >
-              <span style={{ flex: 1 }}>Save for all screen sizes</span>
-              <span style={{
-                fontSize: 9, opacity: 0.75, fontFamily: C.mono,
-                background: C.bg, padding: "2px 6px", borderRadius: 3,
-              }}>⇧⏎</span>
+              Discard
             </button>
-          )}
+          </div>
 
           {!isBase && (
             <span style={{ fontSize: 9, color: C.fgMuted, lineHeight: 1.4 }}>
@@ -805,29 +844,6 @@ const ChangesSaveButton = React.memo(function ChangesSaveButton({
               screens inherit the next lower breakpoint.
             </span>
           )}
-
-          <button
-            onClick={handleReset}
-            style={{
-              height: 26, padding: "0 10px", borderRadius: 6,
-              border: "none", background: "transparent",
-              color: C.fgDim, fontSize: 10, fontWeight: 500,
-              cursor: "pointer", fontFamily: C.font,
-              alignSelf: "flex-start",
-              transition: "background 120ms ease, color 120ms ease",
-              outline: "none",
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = C.dangerSoft;
-              e.currentTarget.style.color = C.danger;
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = C.fgDim;
-            }}
-          >
-            Discard changes
-          </button>
         </div>
       </PopSlideUp>
       </>,

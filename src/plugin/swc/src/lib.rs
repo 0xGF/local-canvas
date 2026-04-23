@@ -1,7 +1,7 @@
 use std::path::{Component, Path, PathBuf};
 
 use swc_core::{
-    common::{plugin::metadata::TransformPluginMetadataContextKind, SourceMapper, Span},
+    common::{SourceMapper, Span, plugin::metadata::TransformPluginMetadataContextKind, source_map::SmallPos},
     ecma::{
         ast::{
             IdentName, JSXAttr, JSXAttrName, JSXAttrOrSpread, JSXAttrValue, JSXElementName,
@@ -19,6 +19,12 @@ struct SourceContext {
 struct TransformVisitor {
     source: Option<SourceContext>,
     metadata: TransformPluginProgramMetadata,
+}
+
+struct Location<'a> {
+    relative_path: &'a str,
+    line: usize,
+    col: usize
 }
 
 impl TransformVisitor {
@@ -50,15 +56,23 @@ impl VisitMut for TransformVisitor {
         }
 
         let loc = self.metadata.source_map.lookup_char_pos(node.span.lo);
-        apply_source_attrs(node, &source.relative_path, loc.line, loc.col.0);
+        apply_source_attrs(node, &Location {
+            relative_path: &source.relative_path,
+            line: loc.line,
+            col: loc.col.to_usize(),
+        });
     }
 }
 
-fn apply_source_attrs(node: &mut JSXOpeningElement, relative_path: &str, line: usize, col: usize) {
+fn apply_source_attrs(node: &mut JSXOpeningElement, loc: &Location) {
+    let path = loc.relative_path;
+    let line = loc.line.to_string();
+    let col = loc.col.to_string();
+
     node.attrs.extend([
-        make_attr("data-source-file", relative_path, node.span),
-        make_attr("data-source-line", &line.to_string(), node.span),
-        make_attr("data-source-col", &col.to_string(), node.span),
+        make_attr("data-source-file", &path, node.span),
+        make_attr("data-source-line", &line, node.span),
+        make_attr("data-source-col", &col, node.span),
     ]);
 }
 
@@ -145,7 +159,7 @@ pub fn process_transform(
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_source_attrs, diff_paths};
+    use super::*;
     use std::path::Path;
     use swc_core::{
         common::DUMMY_SP,
@@ -194,7 +208,11 @@ mod tests {
 
         assert_eq!(render_opening_tag(&node), r#"<Button className="primary">"#);
 
-        apply_source_attrs(&mut node, "src/components/Button.tsx", 12, 4);
+        apply_source_attrs(&mut node, &Location {
+            relative_path: "src/components/Button.tsx",
+            line: 12,
+            col: 4,
+        });
 
         assert_eq!(
             render_opening_tag(&node),

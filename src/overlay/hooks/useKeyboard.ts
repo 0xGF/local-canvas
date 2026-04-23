@@ -48,7 +48,11 @@ export function useKeyboard() {
       }
       const typing = isTyping(e);
       if (!typing && !useEditorStore.getState().editingText) {
-        if (isMeta && e.key === "z" && !e.shiftKey) { e.preventDefault(); if (useEditorStore.getState().pendingCount <= 0) return; s.undo(); s.didUndo(); s.decrementPending(); useEditorStore.getState().showToast("↩ Undo"); return; }
+        // Gate on the writer's undoStack (via history-store `canUndo`), not
+        // on `pendingCount`. Save zeroes the pending counter, but the
+        // writer's undo snapshots are still there — without this, ⌘Z
+        // silently no-ops after a save. Matches the toolbar button fix.
+        if (isMeta && e.key === "z" && !e.shiftKey) { e.preventDefault(); if (!useHistoryStore.getState().canUndo) return; s.undo(); s.didUndo(); s.decrementPending(); useEditorStore.getState().showToast("↩ Undo"); return; }
         if (isMeta && e.key === "y") { e.preventDefault(); s.redo(); s.didRedo(); s.incrementPending(); useEditorStore.getState().showToast("↪ Redo"); return; }
         if (isMeta && e.key === "z" && e.shiftKey) { e.preventDefault(); s.redo(); s.didRedo(); s.incrementPending(); useEditorStore.getState().showToast("↪ Redo"); return; }
       }

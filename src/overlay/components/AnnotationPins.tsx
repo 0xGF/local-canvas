@@ -7,6 +7,7 @@ import {
   listAnnotations,
   appendAnnotationThread,
   updateAnnotationStatus,
+  deleteAnnotation,
   getHiddenAnnotationIds,
   hideAnnotation,
   findElementForAnnotation,
@@ -332,11 +333,32 @@ function statusColor(status: string | undefined) {
 const PinPopover = React.memo(function PinPopover({ position, onClose, onSent, skipAutoFocus }: PinPopoverProps) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  // Two-stage delete: first click arms (button flips to "Delete?"), second
+  // click actually deletes. Prevents an accidental click on a Delete button
+  // near the top of the popover from nuking the annotation.
+  const [armDelete, setArmDelete] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const status = position.annotation.status ?? "pending";
   const isResolved = status === "resolved" || status === "dismissed";
   const thread = ((position.annotation as unknown as { thread?: ThreadEntry[] }).thread) || [];
+
+  const handleDelete = useCallback(async () => {
+    if (!armDelete) {
+      setArmDelete(true);
+      return;
+    }
+    const ok = await deleteAnnotation(position.annotation.id);
+    useEditorStore.getState().showToast(ok ? "Deleted" : "Delete failed");
+    onClose();
+  }, [armDelete, position.annotation.id, onClose]);
+
+  // If the user moves away / waits, disarm so a later click doesn't delete.
+  useEffect(() => {
+    if (!armDelete) return;
+    const t = window.setTimeout(() => setArmDelete(false), 2000);
+    return () => window.clearTimeout(t);
+  }, [armDelete]);
 
   useEffect(() => {
     if (!isResolved && !skipAutoFocus) inputRef.current?.focus();
@@ -528,7 +550,24 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent, s
       )}
 
       {isResolved ? (
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, padding: "8px 12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px" }}>
+          <button
+            onClick={handleDelete}
+            title={armDelete ? "Click again to confirm" : "Permanently delete this annotation"}
+            style={{
+              background: armDelete ? C.dangerSoft : "transparent",
+              border: "none",
+              color: armDelete ? C.danger : C.fgMuted, fontSize: 10,
+              padding: "4px 8px", borderRadius: 4, cursor: "pointer",
+              fontFamily: C.font,
+              transition: "background 120ms ease, color 120ms ease",
+            }}
+            onMouseEnter={e => { if (!armDelete) { e.currentTarget.style.background = C.dangerSoft; e.currentTarget.style.color = C.danger; } }}
+            onMouseLeave={e => { if (!armDelete) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = C.fgMuted; } }}
+          >
+            {armDelete ? "Delete?" : "Delete"}
+          </button>
+          <div style={{ flex: 1 }} />
           <button
             onClick={onClose}
             style={{
@@ -585,7 +624,24 @@ const PinPopover = React.memo(function PinPopover({ position, onClose, onSent, s
               resize: "vertical", lineHeight: 1.4,
             }}
           />
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+            <button
+              onClick={handleDelete}
+              title={armDelete ? "Click again to confirm" : "Permanently delete this annotation"}
+              style={{
+                background: armDelete ? C.dangerSoft : "transparent",
+                border: "none",
+                color: armDelete ? C.danger : C.fgMuted, fontSize: 10,
+                padding: "4px 8px", borderRadius: 4, cursor: "pointer",
+                fontFamily: C.font,
+                transition: "background 120ms ease, color 120ms ease",
+              }}
+              onMouseEnter={e => { if (!armDelete) { e.currentTarget.style.background = C.dangerSoft; e.currentTarget.style.color = C.danger; } }}
+              onMouseLeave={e => { if (!armDelete) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = C.fgMuted; } }}
+            >
+              {armDelete ? "Delete?" : "Delete"}
+            </button>
+            <div style={{ flex: 1 }} />
             <button
               onClick={onClose}
               style={{

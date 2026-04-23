@@ -142,6 +142,7 @@ export function useClassHelpers() {
   const { sendMutation } = useWebSocket();
 
   const markReadonly = useReadonlyStyleStore((s) => s.mark);
+  const markClassReadonly = useReadonlyStyleStore((s) => s.markClassReadonly);
 
   const trackedSendMutation = useCallback(
     async (mutation: Mutation) => {
@@ -162,9 +163,27 @@ export function useClassHelpers() {
           result.result.error ?? "inline style not mutable",
         );
       }
+      // Surface modify-class failures the same way — the writer returns
+      // `success: false` when the className expression is a shape it
+      // can't safely edit (identifier, ternary, template literal with
+      // interpolation, arbitrary function call without a string arg).
+      // Without this marker the UI would keep accepting drags and clicks
+      // that silently never land.
+      if (
+        mutation.type === "modify-class" &&
+        result &&
+        "result" in result &&
+        !result.result.success
+      ) {
+        markClassReadonly(
+          mutation.source.filePath,
+          mutation.source.line,
+          result.result.error ?? "className not mutable",
+        );
+      }
       return result;
     },
-    [sendMutation, incrementPending, markReadonly]
+    [sendMutation, incrementPending, markReadonly, markClassReadonly]
   );
 
   // Debounced mutation sender — prevents 30 mutations when scrolling dropdowns

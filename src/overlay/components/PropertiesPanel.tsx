@@ -156,6 +156,19 @@ export const PropertiesPanel = React.memo(function PropertiesPanel() {
       if (key.startsWith(keyPrefix)) unmutableProps.push(key.slice(keyPrefix.length));
     }
   }
+  // Whole-element read-only (className expression is dynamic — identifier,
+  // ternary, interpolated template, etc). Populated when a modify-class
+  // mutation comes back with success: false; dims the panel body and
+  // blocks pointer events so the user isn't dragging handles that never
+  // land. One store subscription keyed on the file:line so the dim flips
+  // on the next render after a failed mutation.
+  const classReadonlyKey = sel.source
+    ? `${sel.source.filePath}:${sel.source.line}`
+    : "";
+  const classReadonlyError = useReadonlyStyleStore(
+    (s) => classReadonlyKey ? s.classReadonly[classReadonlyKey] : undefined,
+  );
+  const classReadonly = Boolean(classReadonlyError);
 
   return (
     <div style={panelStyle} data-canvas-overlay="true">
@@ -189,7 +202,28 @@ export const PropertiesPanel = React.memo(function PropertiesPanel() {
         </div>
       </div>
 
-      {unmutableProps.length > 0 && (
+      {classReadonly && (
+        <div style={{
+          padding: "8px 10px",
+          fontSize: 11,
+          color: C.danger,
+          background: C.dangerSoft,
+          borderBottom: `1px solid ${C.border}`,
+          lineHeight: 1.5,
+        }}>
+          <strong style={{ fontFamily: C.mono, fontSize: 10 }}>Read-only</strong>
+          {" — "}
+          <span style={{ color: C.fg }}>
+            the <code style={{ fontFamily: C.mono, fontSize: 10, background: C.bgAlt, padding: "1px 4px", borderRadius: 3 }}>className</code> on this element is a
+            dynamic expression the writer can't safely edit (template literal
+            with interpolation, identifier, ternary, or function call).
+            Convert it to a string literal or{" "}
+            <code style={{ fontFamily: C.mono, fontSize: 10, background: C.bgAlt, padding: "1px 4px", borderRadius: 3 }}>cn(&quot;…&quot;)</code>
+            {" "}call with a string arg to edit from here.
+          </span>
+        </div>
+      )}
+      {!classReadonly && unmutableProps.length > 0 && (
         <div style={{
           padding: "6px 10px",
           fontSize: 10,
@@ -205,7 +239,18 @@ export const PropertiesPanel = React.memo(function PropertiesPanel() {
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overlay-scroll-stable">
+      <div
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overlay-scroll-stable"
+        style={classReadonly ? {
+          // Visually disable edits while the source is unreachable.
+          // Pointer-events: none blocks every input / button / drag on
+          // the sections below; opacity makes "nothing here responds to
+          // you" obvious at a glance.
+          pointerEvents: "none",
+          opacity: 0.55,
+          filter: "saturate(0.4)",
+        } : undefined}
+      >
         <LayoutSection h={helpers} sel={sel} />
         <SpacingSection h={helpers} sel={sel} />
         <Suspense fallback={null}>
@@ -807,7 +852,9 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
         </div>
       )}
       <div className="grid grid-cols-[1fr_1fr] gap-1.5">
-        <SelectField value={positionType} options={POSITION_SELECT}
+        <SelectField
+          icon="Pos"
+          value={positionType} options={POSITION_SELECT}
           placeholder="Static"
           title="Position"
           onChange={v => {
@@ -831,7 +878,9 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
         </div>
       )}
       <div className="grid grid-cols-2 gap-1.5">
-        <SelectField value={h.get("overflow")} options={OVERFLOW_SELECT}
+        <SelectField
+          icon="Ovf"
+          value={h.get("overflow")} options={OVERFLOW_SELECT}
           placeholder="Visible" title="Overflow"
           onChange={v => h.set("overflow", v)} />
         <ScrubField label="AR" value={h.get("aspect")}
@@ -840,6 +889,7 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
       </div>
       <div className="grid grid-cols-2 gap-1.5">
         <SelectField
+          icon="Fit"
           value={["contain","cover","fill","none","scale-down"].find(c => h.has(`object-${c}`)) || ""}
           options={OBJECT_FIT_SELECT}
           placeholder="Fill" title="Object fit"
@@ -848,7 +898,7 @@ const LayoutSection = React.memo(function LayoutSection({ h, sel }: { h: ClassHe
             h.sendPrefixed({ type: "modify-class", source: sel.source!, remove: oldActual.length ? oldActual : undefined, add: v ? [`object-${v}`] : undefined });
           }}
         />
-        <ScrubField label="Pos" value={h.get("object")}
+        <ScrubField label="Obj" value={h.get("object")}
           presets={OBJECT_POSITION_PRESETS.map(p => ({ value: p.value, label: p.label ?? p.value }))}
           onChange={v => h.set("object", v)} placeholder="center" title="Object position" />
       </div>

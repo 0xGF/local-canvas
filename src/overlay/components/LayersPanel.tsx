@@ -293,13 +293,14 @@ export const LayersPanel = React.memo(function LayersPanel() {
       iframeRef: fromIframe ? iframe! : undefined,
     });
 
-    // Ctrl+click (or Cmd+click on non-Mac) → open the same context menu as
-    // Ctrl+click on the canvas, anchored to the right edge of the row.
-    // Right-click (contextmenu) also opens the menu — mirrors canvas right-click.
-    const isMac = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent);
+    // Any modifier-click opens the context menu: Ctrl or Cmd on either
+    // platform, plus right-click / two-finger-click (contextmenu event).
+    // The canvas-side pick has the same policy — the original code only
+    // accepted Cmd on non-Mac, which meant Cmd-click in the layers panel
+    // on macOS silently did nothing.
     const wantsMenu =
       event.ctrlKey ||
-      (event.metaKey && !isMac) ||
+      event.metaKey ||
       event.type === "contextmenu";
     if (wantsMenu) {
       event.preventDefault();

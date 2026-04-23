@@ -73,6 +73,14 @@ export class MutationWriter {
       const netAdd = [...addMap.values()].filter((a) => !allRemove.includes(a) || allAdd.lastIndexOf(a) > allRemove.lastIndexOf(a));
 
       if (netAdd.length > 0 || netRemove.length > 0) {
+        // Snapshot the AST text before the edit. `modifyClassName` silently
+        // falls through on shapes it can't safely mutate (identifier
+        // className, template literal with interpolation only, function
+        // call without a string arg, etc.). Comparing in-memory text
+        // before/after is the cheapest way to distinguish "applied" from
+        // "no-op"; when unchanged, surface the failure so the UI can mark
+        // the element read-only rather than silently dropping the edit.
+        const beforeText = sourceFile.getFullText();
         modifyClassName(
           sourceFile,
           mutations[0].source.line,
@@ -80,6 +88,15 @@ export class MutationWriter {
           netAdd.length > 0 ? netAdd : undefined,
           netRemove.length > 0 ? netRemove : undefined
         );
+        const afterText = sourceFile.getFullText();
+        if (beforeText === afterText) {
+          sourceFile.refreshFromFileSystemSync();
+          return {
+            success: false,
+            error: "className could not be mutated (dynamic value — template literal with interpolation, identifier, ternary, or function call).",
+            filesModified: [],
+          };
+        }
       }
 
       sourceFile.saveSync();
@@ -135,6 +152,7 @@ export class MutationWriter {
     try {
       switch (mutation.type) {
         case "modify-class": {
+          const beforeText = sourceFile.getFullText();
           modifyClassName(
             sourceFile,
             mutation.source.line,
@@ -142,6 +160,18 @@ export class MutationWriter {
             mutation.add,
             mutation.remove
           );
+          const afterText = sourceFile.getFullText();
+          const requestedChange =
+            (mutation.add && mutation.add.length > 0) ||
+            (mutation.remove && mutation.remove.length > 0);
+          if (requestedChange && beforeText === afterText) {
+            sourceFile.refreshFromFileSystemSync();
+            return {
+              success: false,
+              error: "className could not be mutated (dynamic value — template literal with interpolation, identifier, ternary, or function call).",
+              filesModified: [],
+            };
+          }
           break;
         }
 

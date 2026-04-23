@@ -229,6 +229,33 @@ export async function updateAnnotationStatus(
 }
 
 /**
+ * Permanently remove a single annotation from the project's sqlite store.
+ * Used by the pin popover's "Delete" button — harder action than
+ * "dismiss" (which flips status to dismissed but keeps the row).
+ * Returns true on success, false on failure.
+ */
+export async function deleteAnnotation(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!res.ok) return false;
+    const data = await res.json().catch(() => null);
+    if (data && data.ok === false) return false;
+    // Drop any local hidden-ID bookkeeping for this annotation — it no
+    // longer exists server-side, so there's nothing to hide.
+    const hidden = getHiddenAnnotationIds();
+    if (hidden.has(id)) {
+      hidden.delete(id);
+      writeHidden(hidden);
+    }
+    // Nudge anything polling so the pin disappears without a wait.
+    window.dispatchEvent(new CustomEvent("canvas:annotation-posted", { detail: { annotation: null } }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Destructive: delete every annotation in the project's sqlite store.
  * Clears the local hidden-IDs set too (those IDs are gone server-side, no
  * point tracking them). Returns the count deleted, or null on failure.

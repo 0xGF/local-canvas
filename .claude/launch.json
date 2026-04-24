@@ -14,6 +14,13 @@
       "runtimeArgs": ["dist/cli/index.js", "dev", "--target", "4200", "--port", "6966", "--root", "test-app"],
       "port": 6966,
       "autoPort": false
+    },
+    {
+      "name": "test-app-next",
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": ["-c", "cd test-app-next && PATH=/opt/homebrew/bin:/Users/0xgf/.bun/bin:$PATH npm run dev"],
+      "port": 3001,
+      "autoPort": false
     }
   ],
   "autoVerify": false

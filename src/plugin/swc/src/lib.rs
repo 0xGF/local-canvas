@@ -60,11 +60,29 @@ impl TransformVisitor {
             .or(cwd.as_deref())
             .map(PathBuf::from);
 
-        let source = filename.map(|filename| SourceContext {
-            relative_path: base
-                .as_deref()
-                .map(|base| relative_forward_slash(Path::new(&filename), base))
-                .unwrap_or_else(|| forward_slash(&filename)),
+        let source = filename.map(|filename| {
+            // Hosts like Turbopack hand us a filename that's already relative
+            // to a workspace root above the project (common when a lockfile
+            // exists further up the filesystem). If we try to compute a
+            // relative path from that against an absolute `base`, pathdiff
+            // gives up and we emit the host-workspace-prefixed path verbatim,
+            // which the resolver can't open. Join with the host's cwd first
+            // so pathdiff always sees two absolute paths.
+            let filename_path = Path::new(&filename);
+            let absolute: PathBuf = if filename_path.is_absolute() {
+                filename_path.to_path_buf()
+            } else if let Some(cwd_str) = cwd.as_deref() {
+                Path::new(cwd_str).join(filename_path)
+            } else {
+                filename_path.to_path_buf()
+            };
+
+            SourceContext {
+                relative_path: base
+                    .as_deref()
+                    .map(|base| relative_forward_slash(&absolute, base))
+                    .unwrap_or_else(|| forward_slash(&absolute.to_string_lossy())),
+            }
         });
 
         Self { source, metadata }
@@ -188,6 +206,27 @@ mod tests {
         assert_eq!(
             relative_forward_slash(Path::new("/repo/src/app.tsx"), Path::new("/repo")),
             "src/app.tsx"
+        );
+    }
+
+    #[test]
+    fn relative_path_joins_cwd_when_filename_is_relative() {
+        // Simulates Turbopack's behavior: filename is already relative to
+        // a workspace root above the project, cwd is that workspace root,
+        // projectRoot is the project itself. We expect paths clean of both.
+        let cwd = Path::new("/workspace-root");
+        let project_root = Path::new("/workspace-root/apps/web");
+        let filename = Path::new("apps/web/src/app/page.tsx");
+
+        let absolute = if filename.is_absolute() {
+            filename.to_path_buf()
+        } else {
+            cwd.join(filename)
+        };
+
+        assert_eq!(
+            relative_forward_slash(&absolute, project_root),
+            "src/app/page.tsx"
         );
     }
 

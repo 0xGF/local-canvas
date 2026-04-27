@@ -772,7 +772,12 @@ dependencies = [
  "pathdiff",
  "serde",
  "serde_json",
+ "swc_common",
  "swc_core",
+ "swc_ecma_ast",
+ "swc_ecma_codegen",
+ "swc_ecma_parser",
+ "swc_ecma_visit",
 ]
 
 [[package]]

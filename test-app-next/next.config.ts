@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import path from "node:path";
 
 const nextConfig: NextConfig = {
   // `experimental.swcPlugins` is Next's own config key — the plugin API
@@ -12,25 +11,15 @@ const nextConfig: NextConfig = {
   // `./swc` subpath export.
   //
   // `projectRoot` tells the plugin which directory `data-source-file`
-  // paths should be relative to. Without it, Turbopack hands the plugin
-  // filenames already stripped against its own workspace root (which can
-  // be above this project when a lockfile exists further up, common in
-  // monorepos). The plugin joins those with the host CWD before computing
-  // relative-to-projectRoot, so the stamped paths come out clean
-  // (`src/app/page.tsx`, not `apps/web/src/app/page.tsx`).
+  // paths should be relative to. The plugin handles the Turbopack quirk
+  // where filenames come in already-stripped against its workspace root
+  // — when the workspace root is above the project (e.g. a file:.. link
+  // to an outside package, or a monorepo), it detects the overlap and
+  // strips it without needing any further config.
   experimental: {
     swcPlugins: [
       ["local-canvas/swc", { projectRoot: __dirname }],
     ],
-  },
-
-  // Consuming `local-canvas` via `file:..` means npm symlinks the package
-  // into our node_modules but the real files live one directory up (the
-  // local-canvas repo root). Per Next 16's turbopack docs, when any linked
-  // dependency lives outside the project root, `turbopack.root` must be
-  // the common parent of both the project and the linked dep.
-  turbopack: {
-    root: path.join(__dirname, ".."),
   },
 };
 

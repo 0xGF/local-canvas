@@ -63,15 +63,18 @@ export default defineConfig({
           </TabsContent>
           <TabsContent value="next">
             <CodeBlock
-              filename="next.config.js"
-              code={`/** @type {import('next').NextConfig} */
-module.exports = {
+              filename="next.config.ts"
+              code={`import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
   experimental: {
     swcPlugins: [
-      [require.resolve('local-canvas/swc'), {}],
+      ["local-canvas/swc", { projectRoot: __dirname }],
     ],
   },
-}`}
+};
+
+export default nextConfig;`}
             />
             <p className="text-[14px] text-neutral-500 leading-relaxed mt-3">
               Uses the bundled SWC plugin (WASM) — runs inside Next's own SWC
@@ -79,6 +82,16 @@ module.exports = {
               automatically. The{" "}
               <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">experimental.swcPlugins</code>{" "}
               key is Next's own naming; the plugin itself is stable.
+            </p>
+            <p className="text-[14px] text-neutral-500 leading-relaxed mt-3">
+              <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">projectRoot</code>{" "}
+              anchors{" "}
+              <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">data-source-file</code>{" "}
+              paths to this project's directory. Set it when Turbopack's
+              workspace root is above the project (a monorepo, or a{" "}
+              <code className="text-[12px] bg-neutral-100 px-1 py-0.5 rounded">file:..</code>{" "}
+              link to a sibling package) so stamped paths come out clean
+              instead of workspace-prefixed. Verified against Next.js 16.2.
             </p>
           </TabsContent>
           <TabsContent value="babel">

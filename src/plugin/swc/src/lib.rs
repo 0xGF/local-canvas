@@ -2,7 +2,10 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use swc_core::{
-    common::{SourceMapper, Span, plugin::metadata::TransformPluginMetadataContextKind, source_map::SmallPos},
+    common::{
+        plugin::metadata::TransformPluginMetadataContextKind, source_map::SmallPos, SourceMapper,
+        Span,
+    },
     ecma::{
         ast::{
             IdentName, JSXAttr, JSXAttrName, JSXAttrOrSpread, JSXAttrValue, JSXElementName,
@@ -35,9 +38,9 @@ struct SourceContext {
     relative_path: String,
 }
 
-struct TransformVisitor {
+struct TransformVisitor<'a, S: SourceMapper + ?Sized> {
     source: Option<SourceContext>,
-    metadata: TransformPluginProgramMetadata,
+    source_map: &'a S,
 }
 
 struct Location<'a> {
@@ -46,50 +49,84 @@ struct Location<'a> {
     col: usize,
 }
 
-impl TransformVisitor {
-    fn new(metadata: TransformPluginProgramMetadata, config: PluginConfig) -> Self {
-        let filename = metadata.get_context(&TransformPluginMetadataContextKind::Filename);
-        let cwd = metadata.get_context(&TransformPluginMetadataContextKind::Cwd);
+/// Resolve the project-relative source path from host-provided metadata. Kept
+/// separate from the visitor so tests can construct a `SourceContext` without
+/// a live plugin host.
+fn resolve_source_context(
+    filename: Option<String>,
+    cwd: Option<String>,
+    config: &PluginConfig,
+) -> Option<SourceContext> {
+    // Prefer the explicit `projectRoot` option when provided so monorepo
+    // setups emit paths the resolver expects; fall back to the host's CWD
+    // so single-package projects just work.
+    let base = config
+        .project_root
+        .as_deref()
+        .or(cwd.as_deref())
+        .map(PathBuf::from);
 
-        // Prefer the explicit `projectRoot` option when provided so monorepo
-        // setups emit paths the resolver expects; fall back to the host's CWD
-        // so single-package projects just work.
-        let base = config
-            .project_root
-            .as_deref()
-            .or(cwd.as_deref())
-            .map(PathBuf::from);
+    filename.map(|filename| {
+        // Hosts like Turbopack hand us a filename that's already relative
+        // to a workspace root somewhere above the project (common when a
+        // lockfile exists further up the filesystem). If we diff that
+        // against an absolute `base`, pathdiff gives up and we emit the
+        // host-workspace-prefixed path verbatim — which the resolver
+        // can't open.
+        //
+        // Three ways to produce a clean project-relative path:
+        //   (1) filename is already absolute → diff against `base` directly
+        //   (2) the host gives us its Cwd → join, then diff
+        //   (3) neither — walk projectRoot's trailing components looking
+        //       for the longest match against filename's leading
+        //       components and strip it. Works regardless of *how far*
+        //       above the project the host's workspace root sits.
+        let filename_path = Path::new(&filename);
 
-        let source = filename.map(|filename| {
-            // Hosts like Turbopack hand us a filename that's already relative
-            // to a workspace root above the project (common when a lockfile
-            // exists further up the filesystem). If we try to compute a
-            // relative path from that against an absolute `base`, pathdiff
-            // gives up and we emit the host-workspace-prefixed path verbatim,
-            // which the resolver can't open. Join with the host's cwd first
-            // so pathdiff always sees two absolute paths.
-            let filename_path = Path::new(&filename);
-            let absolute: PathBuf = if filename_path.is_absolute() {
-                filename_path.to_path_buf()
-            } else if let Some(cwd_str) = cwd.as_deref() {
-                Path::new(cwd_str).join(filename_path)
-            } else {
-                filename_path.to_path_buf()
-            };
+        // Resolution order is deliberately strip-before-join:
+        //   (a) absolute filename → diff against `base` directly
+        //   (b) try strip_project_root_overlap first — if filename's
+        //       leading components match a trailing suffix of
+        //       `base`, that's a high-confidence alignment
+        //   (c) fall back to joining the host's cwd and diffing
+        //   (d) give up — emit filename as-is
+        //
+        // (b) has to come before (c) because Turbopack's metadata is
+        // mismatched: it reports `cwd` as the project dir but hands us
+        // filenames relative to a workspace root *above* the project.
+        // Blindly doing `cwd.join(filename)` produces a nonexistent
+        // path that `pathdiff` then "successfully" diffs, giving us a
+        // silently-wrong result. The strip heuristic only returns Some
+        // when there's a real overlap, so it won't false-positive.
+        let resolved: Option<String> = if filename_path.is_absolute() {
+            base.as_deref()
+                .map(|b| relative_forward_slash(filename_path, b))
+        } else {
+            base.as_deref()
+                .and_then(|b| strip_project_root_overlap(filename_path, b))
+                .or_else(|| {
+                    cwd.as_deref().and_then(|cwd_str| {
+                        let absolute = Path::new(cwd_str).join(filename_path);
+                        base.as_deref()
+                            .map(|b| relative_forward_slash(&absolute, b))
+                    })
+                })
+        };
 
-            SourceContext {
-                relative_path: base
-                    .as_deref()
-                    .map(|base| relative_forward_slash(&absolute, base))
-                    .unwrap_or_else(|| forward_slash(&absolute.to_string_lossy())),
-            }
-        });
+        SourceContext {
+            relative_path: resolved
+                .unwrap_or_else(|| forward_slash(&filename_path.to_string_lossy())),
+        }
+    })
+}
 
-        Self { source, metadata }
+impl<'a, S: SourceMapper + ?Sized> TransformVisitor<'a, S> {
+    fn new(source: Option<SourceContext>, source_map: &'a S) -> Self {
+        Self { source, source_map }
     }
 }
 
-impl VisitMut for TransformVisitor {
+impl<'a, S: SourceMapper + ?Sized> VisitMut for TransformVisitor<'a, S> {
     fn visit_mut_jsx_opening_element(&mut self, node: &mut JSXOpeningElement) {
         node.visit_mut_children_with(self);
 
@@ -101,7 +138,7 @@ impl VisitMut for TransformVisitor {
             return;
         }
 
-        let loc = self.metadata.source_map.lookup_char_pos(node.span.lo);
+        let loc = self.source_map.lookup_char_pos(node.span.lo);
         apply_source_attrs(
             node,
             &Location {
@@ -176,6 +213,44 @@ fn forward_slash(s: &str) -> String {
     s.replace('\\', "/")
 }
 
+/// When the host hands us a relative filename (e.g. Turbopack pre-strips
+/// against its workspace root), find the longest run of leading filename
+/// components that match a trailing suffix of `project_root` and drop them
+/// from the filename. Returns `None` if no overlap exists.
+///
+/// Example: filename = `local-canvas/test-app-next/src/app/page.tsx`,
+/// project_root = `/Users/…/local-canvas/test-app-next`. The last two
+/// components of `project_root` (`local-canvas`, `test-app-next`) match the
+/// first two of `filename`, so the result is `src/app/page.tsx`.
+fn strip_project_root_overlap(filename: &Path, project_root: &Path) -> Option<String> {
+    let fname: Vec<_> = filename
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_string())
+        .collect();
+    let root: Vec<_> = project_root
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_string())
+        .collect();
+    if fname.is_empty() || root.is_empty() {
+        return None;
+    }
+    // Try progressively shorter trailing slices of project_root. First
+    // successful alignment wins — this is the longest overlap.
+    let max_overlap = fname.len().min(root.len());
+    for take in (1..=max_overlap).rev() {
+        let trailing = &root[root.len() - take..];
+        if fname[..take]
+            .iter()
+            .zip(trailing.iter())
+            .all(|(a, b)| a == b)
+            && fname.len() > take
+        {
+            return Some(fname[take..].join("/"));
+        }
+    }
+    None
+}
+
 #[plugin_transform]
 pub fn process_transform(
     mut program: Program,
@@ -185,7 +260,10 @@ pub fn process_transform(
         .get_transform_plugin_config()
         .and_then(|raw| serde_json::from_str(&raw).ok())
         .unwrap_or_default();
-    program.visit_mut_with(&mut TransformVisitor::new(metadata, config));
+    let filename = metadata.get_context(&TransformPluginMetadataContextKind::Filename);
+    let cwd = metadata.get_context(&TransformPluginMetadataContextKind::Cwd);
+    let source = resolve_source_context(filename, cwd, &config);
+    program.visit_mut_with(&mut TransformVisitor::new(source, &metadata.source_map));
     program
 }
 
@@ -242,6 +320,48 @@ mod tests {
     }
 
     #[test]
+    fn strip_project_root_overlap_finds_longest_match() {
+        // Turbopack handed us `local-canvas/test-app-next/src/app/page.tsx`
+        // (relative to a workspace root above our project). projectRoot is
+        // the project's absolute path. Trailing two components match the
+        // filename's leading two — we strip and return `src/app/page.tsx`.
+        assert_eq!(
+            strip_project_root_overlap(
+                Path::new("local-canvas/test-app-next/src/app/page.tsx"),
+                Path::new("/Users/me/dev/local-canvas/test-app-next"),
+            ),
+            Some("src/app/page.tsx".to_string())
+        );
+    }
+
+    #[test]
+    fn strip_project_root_overlap_single_segment() {
+        // The common single-level-up case: workspace root is projectRoot's
+        // parent, so filename has one leading segment to strip.
+        assert_eq!(
+            strip_project_root_overlap(
+                Path::new("apps/web/src/app.tsx"),
+                Path::new("/monorepo/apps/web"),
+            ),
+            Some("src/app.tsx".to_string())
+        );
+    }
+
+    #[test]
+    fn strip_project_root_overlap_returns_none_when_no_alignment() {
+        // Filename's leading components don't appear in projectRoot's
+        // trailing components → no safe strip, return None so the caller
+        // can fall back to emitting the filename verbatim.
+        assert_eq!(
+            strip_project_root_overlap(
+                Path::new("src/app/page.tsx"),
+                Path::new("/Users/me/dev/some-other-app"),
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn relative_path_normalizes_windows_separators() {
         // Emulate what `pathdiff` emits on Windows by passing backslash-heavy
         // input; `relative_forward_slash` is expected to flip them regardless
@@ -276,21 +396,15 @@ mod tests {
         let plain = jsx_opening("div", vec![]);
         assert!(!has_source_attr(&plain));
 
-        let stamped = jsx_opening(
-            "div",
-            vec![jsx_str_attr("data-source-file", "src/app.tsx")],
-        );
+        let stamped = jsx_opening("div", vec![jsx_str_attr("data-source-file", "src/app.tsx")]);
         assert!(has_source_attr(&stamped));
     }
 
     #[test]
     fn fragment_detection_matches_ident_and_member_expr() {
         // <Fragment>
-        let frag_ident = JSXElementName::Ident(Ident::new(
-            "Fragment".into(),
-            DUMMY_SP,
-            Default::default(),
-        ));
+        let frag_ident =
+            JSXElementName::Ident(Ident::new("Fragment".into(), DUMMY_SP, Default::default()));
         assert!(is_fragment_name(&frag_ident));
 
         // <></>
@@ -350,5 +464,156 @@ mod tests {
         } else {
             format!("<{} {}>", tag_name, attrs.join(" "))
         }
+    }
+}
+
+#[cfg(test)]
+mod e2e_tests {
+    //! End-to-end: parse real JSX → run the visitor → code-gen the result.
+    //! Covers the composed plugin flow that the per-helper unit tests don't.
+
+    use super::*;
+    use std::sync::Arc;
+    use swc_common::{FileName, SourceMap};
+    use swc_ecma_ast::EsVersion;
+    use swc_ecma_codegen::{text_writer::JsWriter, Emitter};
+    use swc_ecma_parser::{lexer::Lexer, Parser, StringInput, Syntax, TsSyntax};
+    use swc_ecma_visit::VisitMutWith;
+
+    fn transform(input: &str, relative_path: &str) -> String {
+        let cm: Arc<SourceMap> = Default::default();
+        let fm = cm.new_source_file(
+            Arc::new(FileName::Real(relative_path.into())),
+            input.to_owned(),
+        );
+        let lexer = Lexer::new(
+            Syntax::Typescript(TsSyntax {
+                tsx: true,
+                ..Default::default()
+            }),
+            EsVersion::EsNext,
+            StringInput::from(&*fm),
+            None,
+        );
+        let mut parser = Parser::new_from(lexer);
+        let module = parser.parse_module().expect("parse failed");
+        let mut program = Program::Module(module);
+
+        let source_ctx = Some(SourceContext {
+            relative_path: relative_path.to_string(),
+        });
+        program.visit_mut_with(&mut TransformVisitor::new(source_ctx, cm.as_ref()));
+
+        let mut buf = vec![];
+        {
+            let writer = JsWriter::new(cm.clone(), "\n", &mut buf, None);
+            let mut emitter = Emitter {
+                cfg: Default::default(),
+                cm: cm.clone(),
+                comments: None,
+                wr: writer,
+            };
+            emitter.emit_program(&program).expect("emit failed");
+        }
+        String::from_utf8(buf).expect("utf-8")
+    }
+
+    #[test]
+    fn stamps_data_source_attrs_on_plain_jsx() {
+        let input = "\
+export default function Button() {
+  return <button className=\"primary\">Click</button>;
+}
+";
+        let output = transform(input, "src/Button.tsx");
+
+        // Attrs land on the opening tag with the expected values.
+        assert!(
+            output.contains(r#"data-source-file="src/Button.tsx""#),
+            "missing file attr:\n{output}"
+        );
+        // The JSX opens on line 2 (after the `export default function` header).
+        assert!(
+            output.contains(r#"data-source-line="2""#),
+            "missing or wrong line attr:\n{output}"
+        );
+        assert!(
+            output.contains(r#"data-source-col="#),
+            "missing col attr:\n{output}"
+        );
+    }
+
+    #[test]
+    fn skips_fragments_and_preserves_existing_attrs() {
+        // `<></>` fragment sugar and explicit `<Fragment>` both bypass the
+        // stamp. Non-fragment children still get tagged.
+        let input = "\
+export default function List() {
+  return (
+    <>
+      <li data-source-file=\"already-stamped.tsx\">keep me</li>
+      <li>stamp me</li>
+    </>
+  );
+}
+";
+        let output = transform(input, "src/List.tsx");
+
+        // Pre-existing data-source-file is preserved verbatim — visitor bails
+        // on nodes that already carry the marker.
+        assert!(
+            output.contains(r#"data-source-file="already-stamped.tsx""#),
+            "pre-stamped attr was overwritten:\n{output}"
+        );
+        // The un-stamped sibling picks up our path.
+        assert!(
+            output.contains(r#"data-source-file="src/List.tsx""#),
+            "new-stamp missing on unstamped sibling:\n{output}"
+        );
+        // Fragment itself has no opening tag to stamp — verify no stray
+        // attr leaked onto the enclosing empty tag.
+        let fragment_opens = output.matches("<>").count();
+        assert_eq!(fragment_opens, 1, "fragment lost or doubled:\n{output}");
+    }
+
+    #[test]
+    fn no_filename_context_is_a_no_op() {
+        // When resolve_source_context returns None (e.g. host didn't pass a
+        // filename), the visitor must not stamp anything.
+        let input = "export const x = <div>hi</div>;\n";
+        let cm: Arc<SourceMap> = Default::default();
+        let fm = cm.new_source_file(Arc::new(FileName::Anon), input.to_string());
+        let lexer = Lexer::new(
+            Syntax::Typescript(TsSyntax {
+                tsx: true,
+                ..Default::default()
+            }),
+            EsVersion::EsNext,
+            StringInput::from(&*fm),
+            None,
+        );
+        let mut parser = Parser::new_from(lexer);
+        let module = parser.parse_module().expect("parse failed");
+        let mut program = Program::Module(module);
+
+        program.visit_mut_with(&mut TransformVisitor::new(None, cm.as_ref()));
+
+        let mut buf = vec![];
+        {
+            let writer = JsWriter::new(cm.clone(), "\n", &mut buf, None);
+            let mut emitter = Emitter {
+                cfg: Default::default(),
+                cm: cm.clone(),
+                comments: None,
+                wr: writer,
+            };
+            emitter.emit_program(&program).expect("emit failed");
+        }
+        let output = String::from_utf8(buf).expect("utf-8");
+
+        assert!(
+            !output.contains("data-source-"),
+            "stamped attrs despite missing source context:\n{output}"
+        );
     }
 }

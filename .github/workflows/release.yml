@@ -1,0 +1,108 @@
+name: Release
+
+# Strategy: single release flow.
+#
+#   git tag v0.2.0 && git push --tags
+#
+# fires this workflow, which publishes the root `local-canvas` package and
+# the standalone `local-canvas-swc-plugin` at the same version to npm.
+# The plugin version is synced from the root package.json at publish time,
+# so the single source of truth is `package.json`.
+#
+# Prereqs (one-time):
+#   - Settings → Secrets → Actions → add `NPM_TOKEN` (Automation token
+#     scoped to the two package names).
+#   - On npm: the account owning `local-canvas` must also own
+#     `local-canvas-swc-plugin` (or be granted publish on it).
+#   - Make sure the root `package.json` version matches the tag you push —
+#     the workflow exits early if they disagree.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Run `npm publish --dry-run` instead of publishing"
+        type: boolean
+        default: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # for npm provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src/plugin/swc
+
+      - name: Verify tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG=${GITHUB_REF#refs/tags/v}
+          PKG=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag v$TAG != package.json version $PKG — bump package.json first"
+            exit 1
+          fi
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build (main bundle + wasm)
+        run: |
+          npm run build
+          npm run build:swc
+
+      - name: Test
+        run: |
+          # Node tests (overlay, writer, etc.)
+          npm test --if-present
+          # Rust tests (plugin visitor)
+          cd src/plugin/swc && cargo test --all-targets
+
+      - name: Sync plugin version to root
+        run: |
+          ROOT=$(node -p "require('./package.json').version")
+          node -e "
+            const fs = require('fs');
+            const p = 'src/plugin/swc/package.json';
+            const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+            j.version = '$ROOT';
+            fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+          "
+          echo "plugin version -> $ROOT"
+
+      - name: Publish local-canvas
+        run: |
+          if [ "${{ inputs.dry-run }}" = "true" ]; then
+            npm publish --dry-run --provenance --access public
+          else
+            npm publish --provenance --access public
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish local-canvas-swc-plugin
+        working-directory: src/plugin/swc
+        run: |
+          if [ "${{ inputs.dry-run }}" = "true" ]; then
+            npm publish --dry-run --provenance --access public
+          else
+            npm publish --provenance --access public
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

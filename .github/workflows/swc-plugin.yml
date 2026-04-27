@@ -1,0 +1,78 @@
+name: SWC plugin
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/plugin/swc/**"
+      - ".github/workflows/swc-plugin.yml"
+    tags: ["swc-plugin-v*"]
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/plugin/swc/**"
+      - ".github/workflows/swc-plugin.yml"
+  workflow_dispatch:
+
+# The wasm binary ships inside the main `local-canvas` npm package under
+# `./swc`, so any change to the plugin needs to be verified to compile
+# against the wasm32-wasip1 target Next's SWC host loads. Host-side tests
+# cover the visitor logic; the wasm build verifies no wasm-incompatible
+# dependency crept in via a refactor.
+
+jobs:
+  build:
+    name: test + build wasm
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/plugin/swc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src/plugin/swc
+          # Bust cache when Cargo.lock or the .cargo config changes — avoids
+          # a stale cache silently resolving to old swc_core versions.
+          key: ${{ hashFiles('src/plugin/swc/Cargo.lock', 'src/plugin/swc/.cargo/config.toml') }}
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test (host)
+        run: cargo test --all-targets
+
+      - name: cargo build-wasip1 --release
+        run: cargo build-wasip1 --release
+
+      - name: Check wasm size
+        run: |
+          WASM=target/wasm32-wasip1/release/local_canvas_swc_plugin.wasm
+          SIZE=$(wc -c < "$WASM")
+          # Current size is ~885 KB (Apr 2026). Ceiling is a 2× headroom —
+          # anything above this deserves investigation (accidental dep, LTO
+          # regression, swc_core major version with new transitive crates).
+          # Tighten the ceiling if the binary stays comfortably under.
+          CEILING=1800000
+          echo "wasm size: $SIZE bytes (ceiling: $CEILING)"
+          if [ "$SIZE" -gt "$CEILING" ]; then
+            echo "::error::wasm exceeded size ceiling — investigate before merging"
+            exit 1
+          fi
+
+      - name: Upload wasm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-canvas-swc-plugin-wasm
+          path: src/plugin/swc/target/wasm32-wasip1/release/local_canvas_swc_plugin.wasm
+          retention-days: 30

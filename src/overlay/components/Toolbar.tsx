@@ -1071,6 +1071,11 @@ export const Toolbar = React.memo(function Toolbar() {
     setMode("edit");
   }, [setMode]);
 
+  // useSlideUp must run BEFORE any early returns — otherwise the hook count
+  // changes when `toolbarVisible` flips (e.g. after an annotation triggers a
+  // popover that hides the bar) and React tears the overlay tree down (#310).
+  const slideUp = useSlideUp();
+
   if (!toolbarVisible) return null;
 
   const barBase: React.CSSProperties = {
@@ -1090,7 +1095,6 @@ export const Toolbar = React.memo(function Toolbar() {
 
   const isEdit = mode === "edit";
 
-  const slideUp = useSlideUp();
   return (
     <>
     <div

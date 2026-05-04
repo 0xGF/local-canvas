@@ -116,6 +116,21 @@ export const PropertiesPanel = React.memo(function PropertiesPanel() {
   const toggle = useEditorStore((s) => s.toggleProperties);
   const helpers = useClassHelpers();
   const readonlyEntries = useReadonlyStyleStore((s) => s.entries);
+  // Whole-element read-only (className expression is dynamic — identifier,
+  // ternary, interpolated template, etc). Populated when a modify-class
+  // mutation comes back with success: false; dims the panel body and
+  // blocks pointer events so the user isn't dragging handles that never
+  // land. One store subscription keyed on the file:line so the dim flips
+  // on the next render after a failed mutation. Hook MUST run before the
+  // early returns below — otherwise the hook count changes between
+  // unselected and selected renders and React tears the tree down (#310).
+  const classReadonlyKey = sel?.source
+    ? `${sel.source.filePath}:${sel.source.line}`
+    : "";
+  const classReadonlyError = useReadonlyStyleStore(
+    (s) => classReadonlyKey ? s.classReadonly[classReadonlyKey] : undefined,
+  );
+  const classReadonly = Boolean(classReadonlyError);
 
   if (!open) return null;
   // Show an empty state when no element is selected — the panel used to
@@ -156,20 +171,6 @@ export const PropertiesPanel = React.memo(function PropertiesPanel() {
       if (key.startsWith(keyPrefix)) unmutableProps.push(key.slice(keyPrefix.length));
     }
   }
-  // Whole-element read-only (className expression is dynamic — identifier,
-  // ternary, interpolated template, etc). Populated when a modify-class
-  // mutation comes back with success: false; dims the panel body and
-  // blocks pointer events so the user isn't dragging handles that never
-  // land. One store subscription keyed on the file:line so the dim flips
-  // on the next render after a failed mutation.
-  const classReadonlyKey = sel.source
-    ? `${sel.source.filePath}:${sel.source.line}`
-    : "";
-  const classReadonlyError = useReadonlyStyleStore(
-    (s) => classReadonlyKey ? s.classReadonly[classReadonlyKey] : undefined,
-  );
-  const classReadonly = Boolean(classReadonlyError);
-
   return (
     <div style={panelStyle} data-canvas-overlay="true">
       {/* Header */}

@@ -218,7 +218,16 @@ const BreakpointIframe = React.memo(function BreakpointIframe({ width }: { width
         }
       };
       setTimeout(updateHeight, 100);
-      ro = new ResizeObserver(updateHeight);
+      // rAF-defer + coalesce: the RO callback writes height back to the outer
+      // wrap which can re-flow the iframe's intrinsic width and re-fire the
+      // observer. Deferring to the next frame and de-duping pending ticks
+      // breaks the synchronous loop that produces "ResizeObserver loop
+      // completed with undelivered notifications" spam in the console.
+      let roTick = 0;
+      ro = new ResizeObserver(() => {
+        if (roTick) return;
+        roTick = requestAnimationFrame(() => { roTick = 0; updateHeight(); });
+      });
       ro.observe(doc.body);
       ro.observe(doc.documentElement);
       // Polling fallback — ResizeObserver can miss layout changes driven by

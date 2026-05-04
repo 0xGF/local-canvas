@@ -16,13 +16,40 @@ function resetCachesForHMR() {
 window.addEventListener("vite:beforeUpdate", resetCachesForHMR);
 window.addEventListener("vite:beforeFullReload", resetCachesForHMR);
 
-// Suppress ResizeObserver loop error — benign, caused by layout settling across frames
-window.addEventListener("error", (e) => {
-  if (e.message?.includes("ResizeObserver loop")) {
-    e.stopImmediatePropagation();
-    e.preventDefault();
-  }
-});
+// Suppress benign "ResizeObserver loop completed with undelivered notifications"
+// warnings — Chromium fires them whenever an RO callback writes a layout value
+// that re-flows the next frame, which is normal during canvas zoom + iframe
+// height settling. We can't beat Vite's HMR client to register a regular error
+// listener (the host page's bundle loads first), so we wrap addEventListener:
+// any 'error' listener registered AFTER this runs will be filtered before it
+// receives the RO warning. The host's listeners (already registered by the time
+// our overlay loads) are cleaned up via console.error filtering further down.
+{
+  const RO_MSG = "ResizeObserver loop";
+  const origAdd = window.addEventListener.bind(window);
+  type Listener = EventListenerOrEventListenerObject | null;
+  window.addEventListener = function (this: Window, type: string, listener: Listener, options?: boolean | AddEventListenerOptions) {
+    if (type === "error" && listener) {
+      const wrapped: EventListener = function (this: unknown, e) {
+        if (e instanceof ErrorEvent && e.message && e.message.includes(RO_MSG)) return;
+        if (typeof listener === "function") return listener.call(this, e);
+        return (listener as EventListenerObject).handleEvent.call(listener, e);
+      };
+      return origAdd(type, wrapped, options);
+    }
+    return origAdd(type, listener as EventListener, options);
+  } as typeof window.addEventListener;
+
+  // Vite's HMR client logs unhandled errors via console.error too — drop the
+  // RO warning there so it doesn't pile up in the dev terminal either.
+  const origConsoleError = console.error.bind(console);
+  console.error = ((...args: unknown[]) => {
+    const first = args[0];
+    if (typeof first === "string" && first.includes(RO_MSG)) return;
+    if (first instanceof Error && first.message.includes(RO_MSG)) return;
+    return origConsoleError(...args);
+  }) as typeof console.error;
+}
 
 function bootstrap() {
   const params = new URLSearchParams(location.search);

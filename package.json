@@ -43,7 +43,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test-app": "npm run dev --prefix test-app",
-    "test-app:canvas": "npm run build && node dist/cli/index.js dev",
+    "test-app:canvas": "npm run build && node dist/cli/index.js dev --root test-app",
     "start": "bash bin/start.sh"
   },
   "dependencies": {
